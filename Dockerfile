@@ -4,6 +4,8 @@ WORKDIR /app
 
 FROM base AS deps
 COPY pyproject.toml .
+COPY README.md .
+COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
 FROM base AS production
@@ -16,8 +18,8 @@ CMD ["uvicorn", "opendms.main:app", "--host", "0.0.0.0", "--port", "8002"]
 
 FROM base AS development
 COPY pyproject.toml .
-RUN pip install --no-cache-dir ".[dev]"
+COPY README.md .
 COPY src/ ./src/
-COPY tests/ ./tests/
+RUN pip install --no-cache-dir ".[dev]"
 RUN mkdir -p /data/documents
 CMD ["uvicorn", "opendms.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
