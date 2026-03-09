@@ -61,6 +61,20 @@ OpenDMS does not talk directly to VeriDocs Register. All DID and VC lifecycle op
 
 **Flow:** `OpenDMS -> VeriDocs SDK -> VeriDocs Register`
 
+- OpenDMS calls SDK APIs only.
+- SDK handles authentication to VeriDocs Register.
+- VeriDocs Register API is protected by bearer authentication.
+
+## Docker deployment requirements for SDK/Register
+
+The `sdk` service in `docker-compose.yml` must receive these environment variables:
+
+- `REGISTRY_URL`
+- `REGISTRY_EMAIL`
+- `REGISTRY_PASSWORD`
+
+When VeriDocs Register runs in a separate Compose stack, attach the OpenDMS `sdk` service to the Register Docker network (for example `veridocs-register_default`) so SDK can reach the Register API container directly.
+
 ## Storage Configuration
 
 | Backend | Env vars | Description |
@@ -105,19 +119,27 @@ OpenDMS does not talk directly to VeriDocs Register. All DID and VC lifecycle op
 The platform exposes dedicated endpoints to separate application health from SDK onboarding readiness:
 
 - `GET /api/health`: Overall OpenDMS health (database, storage, SDK service status, and aggregated SDK setup snapshot).
-- `GET /api/sdk/setup-status`: Direct SDK onboarding and registry connectivity state (mothership ping/status).
+- `GET /api/sdk/setup-status`: Direct SDK onboarding and registry connectivity/auth state.
 - `POST /api/organizations/{id}/register-did`: Starts/updates organization onboarding in SDK and stores the local organization DID.
-- `GET /api/organizations/{id}/did-status`: Compares local OpenDMS org DID with the SDK active org DID and returns match status.
+- `GET /api/organizations/{id}/did-status`: Compares local OpenDMS org DID with the SDK active org DID and returns match status plus registry auth indicators.
+
+Key SDK setup fields:
+
+- `registry_connected`: SDK can reach VeriDocs Register over network.
+- `registry_auth_configured`: SDK has registry credentials configured.
+- `registry_authenticated`: SDK successfully authenticated to Register.
+- `registry_auth_error`: Auth failure details returned by SDK (if any).
 
 ### Partial setup warning
 
-A returned DID alone does **not** prove full end-to-end readiness. Full readiness requires:
+A returned DID alone does **not** prove full end-to-end readiness. A local DID can exist even when the central Register entry is not yet created.
 
-1. SDK reachable.
-2. Registry connected.
-3. SDK org DID configured.
+Common partial causes:
 
-If only a DID is returned while registry connectivity or SDK org DID configuration is missing, onboarding should be treated as **partial**.
+1. Registry credentials are missing (`REGISTRY_EMAIL` / `REGISTRY_PASSWORD`).
+2. Registry authentication failed (invalid or expired credentials).
+3. Registry connectivity problem (SDK cannot reach Register).
+
 
 ## Organizations UI updates
 

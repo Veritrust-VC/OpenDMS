@@ -195,6 +195,9 @@ async def health():
         "org_did": None,
         "org_did_configured": False,
         "registry_connected": False,
+        "registry_auth_configured": False,
+        "registry_authenticated": False,
+        "registry_auth_error": None,
     }
 
     return {
@@ -216,6 +219,9 @@ async def sdk_setup_status(user=Depends(get_current_user)):
             "org_did": None,
             "org_did_configured": False,
             "registry_connected": False,
+            "registry_auth_configured": False,
+            "registry_authenticated": False,
+            "registry_auth_error": None,
         }
     return await sdk_client.setup_status()
 

@@ -31,6 +31,8 @@ services:
       ORG_DID: ${ORG_DID:-}
       REGISTRY_URL: http://veridocs-register-api-1:8001
       REGISTRY_API_KEY: ${REGISTRY_API_KEY:-}
+      REGISTRY_EMAIL: ${REGISTRY_EMAIL:-}
+      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:-}
       REGISTRY_DOMAIN: ${REGISTRY_DOMAIN:-register.opendms.dev}
       SIGNING_MODE: ${SIGNING_MODE:-local}
       VERAMO_API_KEY: ${VERAMO_API_KEY:-}
