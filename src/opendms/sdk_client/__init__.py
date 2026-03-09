@@ -27,9 +27,13 @@ async def close():
         _client = None
 
 
-async def setup_org(org_code: str, org_name: str) -> Optional[Dict]:
+async def setup_org(org_code: str, org_name: str, org_description: str = "") -> Optional[Dict]:
     try:
-        r = await _get_client().post("/api/setup/org", json={"orgCode": org_code, "orgName": org_name})
+        r = await _get_client().post("/api/setup/org", json={
+            "orgCode": org_code,
+            "orgName": org_name,
+            "orgDescription": org_description,
+        })
         return r.json() if r.status_code in (200, 201) else None
     except Exception as e:
         logger.error("SDK setup_org: %s", e)
@@ -111,5 +115,13 @@ async def health() -> Dict:
     try:
         r = await _get_client().get("/api/health")
         return r.json() if r.status_code == 200 else {"status": "error"}
+    except Exception as e:
+        return {"status": "unavailable", "detail": str(e)}
+
+
+async def setup_status() -> Dict:
+    try:
+        r = await _get_client().get("/api/setup/status")
+        return r.json() if r.status_code == 200 else {"status": "unavailable", "detail": f"http_{r.status_code}"}
     except Exception as e:
         return {"status": "unavailable", "detail": str(e)}

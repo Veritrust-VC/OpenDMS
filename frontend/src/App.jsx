@@ -102,10 +102,21 @@ function LoginPage({ onLogin, brand }) {
 function DashboardPage({ notify, user }) {
   const [stats, setStats] = useState(null); const [health, setHealth] = useState(null);
   useEffect(() => { api("/stats").then(setStats).catch(e=>notify(e.message,"error")); api("/health").then(setHealth).catch(()=>{}); }, []);
+
+  const statusBadge = (ok, text) => (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{text}</span>
+  );
+
   return (<div>
     <h2 className="text-xl font-bold text-gray-900 mb-4">Dashboard</h2>
-    {health && <div className="flex gap-3 mb-4 text-xs text-gray-500">
-      <span className={`w-2 h-2 rounded-full mt-0.5 ${health.status==="ok"?"bg-green-500":"bg-amber-500"}`}/> DB: {health.database} | Storage: {health.storage_backend} | SDK: {health.sdk?.status||"?"}
+    {health && <div className="bg-white border rounded-lg p-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+        <span>DB: {statusBadge(health.database === "connected", health.database)}</span>
+        <span>Storage: <strong>{health.storage_backend}</strong></span>
+        <span>SDK service: {statusBadge((health.sdk?.status || "").toLowerCase() === "ok", health.sdk?.status || "unknown")}</span>
+        <span>Registry connected: {statusBadge(Boolean(health.sdk_setup?.registry_connected), health.sdk_setup?.registry_connected ? "Yes" : "No")}</span>
+        <span>SDK org DID configured: {statusBadge(Boolean(health.sdk_setup?.org_did_configured), health.sdk_setup?.org_did_configured ? "Yes" : "No")}</span>
+      </div>
     </div>}
     {stats && <div className="grid grid-cols-4 gap-3 mb-6">
       {[["Documents",stats.documents,"text-blue-600"],["Users",stats.users,"text-emerald-600"],["Organizations",stats.organizations,"text-violet-600"],["Events",stats.events,"text-amber-600"]].map(([l,v,c])=>(
@@ -245,25 +256,96 @@ function UsersPage({ notify }) {
 
 function OrgsPage({ notify }) {
   const [orgs, setOrgs] = useState([]); const [show, setShow] = useState(false);
+  const [sdkStatus, setSdkStatus] = useState(null); const [orgDidStatus, setOrgDidStatus] = useState({});
+  const [registering, setRegistering] = useState({}); const [checking, setChecking] = useState({});
+
   const load = async () => { try { setOrgs(await api("/organizations")); } catch(e){notify(e.message,"error");} };
-  useEffect(()=>{load();},[]);
-  const [nf, setNf] = useState({name:"",code:""});
-  const create = async () => { try { await api("/organizations",{method:"POST",body:JSON.stringify(nf)}); notify("Organization created"); setShow(false); load(); } catch(e){notify(e.message,"error");} };
-  const regDid = async (id) => { try { const r = await api(`/organizations/${id}/register-did`,{method:"POST"}); notify(`DID registered: ${r.did}`); load(); } catch(e){notify(e.message,"error");} };
+  const loadSdkStatus = async () => { try { setSdkStatus(await api("/sdk/setup-status")); } catch(e){ notify(e.message,"error"); } };
+  useEffect(()=>{load(); loadSdkStatus();},[]);
+
+  const [nf, setNf] = useState({name:"",code:"",description:""});
+  const create = async () => {
+    try {
+      await api("/organizations",{method:"POST",body:JSON.stringify(nf)});
+      notify("Organization created");
+      setShow(false);
+      setNf({name:"",code:"",description:""});
+      load();
+    } catch(e){notify(e.message,"error");}
+  };
+
+  const checkDidStatus = async (id) => {
+    setChecking(prev => ({...prev, [id]: true}));
+    try {
+      const status = await api(`/organizations/${id}/did-status`);
+      setOrgDidStatus(prev => ({...prev, [id]: status}));
+    } catch(e){notify(e.message,"error");}
+    finally { setChecking(prev => ({...prev, [id]: false})); }
+  };
+
+  const regDid = async (id) => {
+    setRegistering(prev => ({...prev, [id]: true}));
+    try {
+      const r = await api(`/organizations/${id}/register-did`,{method:"POST"});
+      if (r.status === "ready") {
+        notify(`DID onboarding ready: ${r.did}`);
+      } else {
+        notify(r.message || "DID created but SDK/Registry setup is incomplete", "error");
+      }
+      await load();
+      await loadSdkStatus();
+      await checkDidStatus(id);
+    } catch(e){notify(e.message,"error");}
+    finally { setRegistering(prev => ({...prev, [id]: false})); }
+  };
+
   return (<div>
     <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-bold">Organizations</h2><button onClick={()=>setShow(!show)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">+ New</button></div>
+
+    {sdkStatus && <div className="bg-white border rounded-lg p-4 mb-4">
+      <h3 className="text-sm font-semibold mb-2">SDK / Registry Status</h3>
+      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div>SDK service status: <strong>{sdkStatus.status || "unknown"}</strong></div>
+        <div>Registry URL: <strong>{sdkStatus.registry_url || "n/a"}</strong></div>
+        <div>Registry connected: <strong className={sdkStatus.registry_connected ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_connected ? "Yes" : "No"}</strong></div>
+        <div>SDK org DID configured: <strong className={sdkStatus.org_did_configured ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_did_configured ? "Yes" : "No"}</strong></div>
+        <div>Managed DID count: <strong>{sdkStatus.managed_did_count ?? "n/a"}</strong></div>
+      </div>
+    </div>}
+
     {show && <div className="bg-white border rounded-lg p-4 mb-4 flex gap-2">
       <input value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})} placeholder="Name" className="flex-1 text-sm px-3 py-2 border rounded" />
       <input value={nf.code} onChange={e=>setNf({...nf,code:e.target.value})} placeholder="Code" className="w-32 text-sm px-3 py-2 border rounded" />
+      <input value={nf.description} onChange={e=>setNf({...nf,description:e.target.value})} placeholder="Description" className="flex-1 text-sm px-3 py-2 border rounded" />
       <button onClick={create} className="text-sm px-4 py-2 bg-emerald-600 text-white rounded">Create</button>
     </div>}
     <div className="bg-white rounded-lg border divide-y">
-      {orgs.map(o=>(<div key={o.id} className="px-4 py-3 flex items-center justify-between">
-        <div><div className="text-sm font-medium">{o.name}</div><div className="text-xs text-gray-400">Code: {o.code}</div>
-          {o.org_did && <div className="text-xs text-emerald-600 font-mono mt-0.5">{o.org_did}</div>}
-        </div>
-        {!o.org_did && <button onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded">Register DID</button>}
-      </div>))}
+      {orgs.map(o=>{
+        const status = orgDidStatus[o.id];
+        const setup = status?.sdk_setup_status;
+        return (<div key={o.id} className="px-4 py-3 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium">{o.name}</div>
+            <div className="text-xs text-gray-400">Code: {o.code}</div>
+            {o.org_did && <div className="text-xs text-emerald-600 font-mono mt-0.5">{o.org_did}</div>}
+            {setup && <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+              <div>SDK org DID configured: <strong>{setup.org_did_configured ? "Yes" : "No"}</strong></div>
+              <div>Registry connected: <strong>{setup.registry_connected ? "Yes" : "No"}</strong></div>
+              <div>Local DID matches SDK: <strong>{status.matches_local_org_did ? "Yes" : "No"}</strong></div>
+            </div>}
+            {o.org_did && (!setup || !setup.org_did_configured || !setup.registry_connected) && (
+              <div className="text-xs text-amber-600 mt-1">Partial setup — DID exists locally, but lifecycle hook readiness is not confirmed.</div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {!o.org_did && <button disabled={registering[o.id]} onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-60">{registering[o.id] ? "Registering..." : "Register DID"}</button>}
+            {o.org_did && <>
+              <button disabled={checking[o.id]} onClick={()=>checkDidStatus(o.id)} className="text-xs px-3 py-1 border rounded text-gray-700 disabled:opacity-60">{checking[o.id] ? "Checking..." : "Check status"}</button>
+              <button disabled={registering[o.id]} onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-60">{registering[o.id] ? "Registering..." : "Re-check setup"}</button>
+            </>}
+          </div>
+        </div>);
+      })}
     </div>
   </div>);
 }

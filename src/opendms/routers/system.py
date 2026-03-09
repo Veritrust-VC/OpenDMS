@@ -190,6 +190,12 @@ async def health():
         pass
 
     sdk_status = await sdk_client.health() if s.sdk_enabled else {"status": "disabled"}
+    sdk_setup = await sdk_client.setup_status() if s.sdk_enabled else {
+        "status": "disabled",
+        "org_did": None,
+        "org_did_configured": False,
+        "registry_connected": False,
+    }
 
     return {
         "status": "ok" if db_ok else "degraded",
@@ -197,7 +203,21 @@ async def health():
         "database": "connected" if db_ok else "error",
         "storage_backend": s.storage_backend,
         "sdk": sdk_status,
+        "sdk_setup": sdk_setup,
     }
+
+
+@health_router.get("/api/sdk/setup-status")
+async def sdk_setup_status(user=Depends(get_current_user)):
+    s = get_settings()
+    if not s.sdk_enabled:
+        return {
+            "status": "disabled",
+            "org_did": None,
+            "org_did_configured": False,
+            "registry_connected": False,
+        }
+    return await sdk_client.setup_status()
 
 
 @health_router.get("/api/stats")
