@@ -55,6 +55,12 @@ docker compose up --build
                         └────┘
 ```
 
+## SDK and Registry Integration Model
+
+OpenDMS does not talk directly to VeriDocs Register. All DID and VC lifecycle operations are brokered through the VeriDocs SDK sidecar.
+
+**Flow:** `OpenDMS -> VeriDocs SDK -> VeriDocs Register`
+
 ## Storage Configuration
 
 | Backend | Env vars | Description |
@@ -92,6 +98,36 @@ docker compose up --build
 | `POST` | `/api/archive/batches/{id}/export` | Export batch as ZIP |
 | `GET/PUT` | `/api/settings` | System settings (branding, etc.) |
 | `GET` | `/api/settings/branding` | Public branding (no auth) |
+
+
+## SDK and Registry status
+
+The platform exposes dedicated endpoints to separate application health from SDK onboarding readiness:
+
+- `GET /api/health`: Overall OpenDMS health (database, storage, SDK service status, and aggregated SDK setup snapshot).
+- `GET /api/sdk/setup-status`: Direct SDK onboarding and registry connectivity state (mothership ping/status).
+- `POST /api/organizations/{id}/register-did`: Starts/updates organization onboarding in SDK and stores the local organization DID.
+- `GET /api/organizations/{id}/did-status`: Compares local OpenDMS org DID with the SDK active org DID and returns match status.
+
+### Partial setup warning
+
+A returned DID alone does **not** prove full end-to-end readiness. Full readiness requires:
+
+1. SDK reachable.
+2. Registry connected.
+3. SDK org DID configured.
+
+If only a DID is returned while registry connectivity or SDK org DID configuration is missing, onboarding should be treated as **partial**.
+
+## Organizations UI updates
+
+Organizations now include `name`, `code`, and `description` at creation time.
+The Organizations page exposes:
+
+- Local DID
+- SDK setup status
+- Registry connectivity
+- Local DID vs SDK DID match status
 
 ## Related Repositories
 

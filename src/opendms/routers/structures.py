@@ -47,12 +47,62 @@ async def register_org_did(org_id: int, user=Depends(require_role("superadmin", 
         org = await conn.fetchrow("SELECT * FROM organizations WHERE id = $1", org_id)
     if not org: raise HTTPException(404, "Organization not found")
 
-    result = await sdk_client.setup_org(org["code"], org["name"])
+    org_data = dict(org)
+    result = await sdk_client.setup_org(org_data["code"], org_data["name"], org_data.get("description") or "")
     if not result: raise HTTPException(502, "SDK setup failed")
 
+    setup_status = await sdk_client.setup_status()
+    did = result.get("did")
+    did_created = bool(did)
+    registry_connected = bool(setup_status.get("registry_connected"))
+    org_did_configured_in_sdk = bool(setup_status.get("org_did_configured"))
+    sdk_org_did = setup_status.get("org_did")
+    central_registration_claimed = result.get("registry", {}).get("status") in ("ok", "registered", "success")
+    is_ready = did_created and registry_connected and org_did_configured_in_sdk
+
     async with pool.acquire() as conn:
-        await conn.execute("UPDATE organizations SET org_did = $1 WHERE id = $2", result.get("did"), org_id)
-    return {"status": "registered", "did": result.get("did"), "sdk_response": result}
+        await conn.execute("UPDATE organizations SET org_did = $1 WHERE id = $2", did, org_id)
+
+    message = (
+        "Organization DID created and SDK lifecycle hooks are fully configured."
+        if is_ready else
+        "Organization DID created, but SDK is not yet fully configured for lifecycle hooks."
+    )
+    return {
+        "status": "ready" if is_ready else "partial",
+        "did": did,
+        "did_created": did_created,
+        "registry_connected": registry_connected,
+        "org_did_configured_in_sdk": org_did_configured_in_sdk,
+        "sdk_org_did": sdk_org_did,
+        "central_registration_claimed": central_registration_claimed,
+        "sdk_response": result,
+        "sdk_setup_status": setup_status,
+        "message": message,
+    }
+
+
+@org_router.get("/{org_id}/did-status")
+async def org_did_status(org_id: int, user=Depends(get_current_user)):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        org = await conn.fetchrow("SELECT * FROM organizations WHERE id = $1", org_id)
+    if not org: raise HTTPException(404, "Organization not found")
+
+    setup_status = await sdk_client.setup_status()
+    org_data = dict(org)
+    local_did = org_data.get("org_did")
+    sdk_org_did = setup_status.get("org_did")
+    return {
+        "organization": {
+            "id": org["id"],
+            "name": org["name"],
+            "code": org["code"],
+            "org_did": local_did,
+        },
+        "sdk_setup_status": setup_status,
+        "matches_local_org_did": bool(local_did and sdk_org_did and local_did == sdk_org_did),
+    }
 
 
 @org_router.get("/{org_id}")
