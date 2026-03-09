@@ -29,7 +29,7 @@ services:
       PORT: "3100"
       SECRET_KEY: ${SECRET_KEY}
       ORG_DID: ${ORG_DID:-}
-      REGISTRY_URL: ${REGISTRY_URL:-http://host.docker.internal:18001}
+      REGISTRY_URL: ${REGISTRY_URL:-http://veridocs-register-api-1:8001}
       REGISTRY_API_KEY: ${REGISTRY_API_KEY:-}
       REGISTRY_DOMAIN: ${REGISTRY_DOMAIN:-register.opendms.dev}
       SIGNING_MODE: ${SIGNING_MODE:-local}
@@ -40,6 +40,9 @@ services:
       - sdk-data:/app/status-data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - veridocs-register_default
 
   api:
     build:
@@ -88,3 +91,7 @@ volumes:
   pgdata:
   sdk-data:
   doc-storage:
+
+networks:
+  veridocs-register_default:
+    external: true
