@@ -115,6 +115,8 @@ function DashboardPage({ notify, user }) {
         <span>Storage: <strong>{health.storage_backend}</strong></span>
         <span>SDK service: {statusBadge((health.sdk?.status || "").toLowerCase() === "ok", health.sdk?.status || "unknown")}</span>
         <span>Registry connected: {statusBadge(Boolean(health.sdk_setup?.registry_connected), health.sdk_setup?.registry_connected ? "Yes" : "No")}</span>
+        <span>Registry auth configured: {statusBadge(Boolean(health.sdk_setup?.registry_auth_configured), health.sdk_setup?.registry_auth_configured ? "Yes" : "No")}</span>
+        <span>Registry authenticated: {statusBadge(Boolean(health.sdk_setup?.registry_authenticated), health.sdk_setup?.registry_authenticated ? "Yes" : "No")}</span>
         <span>SDK org DID configured: {statusBadge(Boolean(health.sdk_setup?.org_did_configured), health.sdk_setup?.org_did_configured ? "Yes" : "No")}</span>
       </div>
     </div>}
@@ -290,7 +292,7 @@ function OrgsPage({ notify }) {
       if (r.status === "ready") {
         notify(`DID onboarding ready: ${r.did}`);
       } else {
-        notify(r.message || "DID created but SDK/Registry setup is incomplete", "error");
+        notify(r.message || "DID created locally, but SDK could not authenticate to central Register.", "error");
       }
       await load();
       await loadSdkStatus();
@@ -308,9 +310,17 @@ function OrgsPage({ notify }) {
         <div>SDK service status: <strong>{sdkStatus.status || "unknown"}</strong></div>
         <div>Registry URL: <strong>{sdkStatus.registry_url || "n/a"}</strong></div>
         <div>Registry connected: <strong className={sdkStatus.registry_connected ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_connected ? "Yes" : "No"}</strong></div>
+        <div>Registry auth configured: <strong className={sdkStatus.registry_auth_configured ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_auth_configured ? "Yes" : "No"}</strong></div>
+        <div>Registry authenticated: <strong className={sdkStatus.registry_authenticated ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_authenticated ? "Yes" : "No"}</strong></div>
         <div>SDK org DID configured: <strong className={sdkStatus.org_did_configured ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_did_configured ? "Yes" : "No"}</strong></div>
         <div>Managed DID count: <strong>{sdkStatus.managed_did_count ?? "n/a"}</strong></div>
       </div>
+      {!sdkStatus.registry_auth_configured && (
+        <div className="text-xs text-amber-700 mt-2">Set REGISTRY_EMAIL and REGISTRY_PASSWORD in OpenDMS docker-compose for the SDK service.</div>
+      )}
+      {sdkStatus.registry_auth_error && (
+        <div className="text-xs text-amber-700 mt-2">Registry auth error: {sdkStatus.registry_auth_error}</div>
+      )}
     </div>}
 
     {show && <div className="bg-white border rounded-lg p-4 mb-4 flex gap-2">
@@ -331,10 +341,21 @@ function OrgsPage({ notify }) {
             {setup && <div className="text-xs text-gray-500 mt-1 space-y-0.5">
               <div>SDK org DID configured: <strong>{setup.org_did_configured ? "Yes" : "No"}</strong></div>
               <div>Registry connected: <strong>{setup.registry_connected ? "Yes" : "No"}</strong></div>
+              <div>Registry auth configured: <strong>{setup.registry_auth_configured ? "Yes" : "No"}</strong></div>
+              <div>Registry authenticated: <strong>{setup.registry_authenticated ? "Yes" : "No"}</strong></div>
+              {setup.registry_auth_error && <div>Registry auth error: <strong>{setup.registry_auth_error}</strong></div>}
               <div>Local DID matches SDK: <strong>{status.matches_local_org_did ? "Yes" : "No"}</strong></div>
             </div>}
-            {o.org_did && (!setup || !setup.org_did_configured || !setup.registry_connected) && (
-              <div className="text-xs text-amber-600 mt-1">Partial setup — DID exists locally, but lifecycle hook readiness is not confirmed.</div>
+            {o.org_did && (!setup || !setup.org_did_configured || !setup.registry_connected || !setup.registry_auth_configured || !setup.registry_authenticated) && (
+              <div className="text-xs text-amber-600 mt-1">
+                {!setup || !setup.registry_connected
+                  ? "Registry unreachable"
+                  : !setup.registry_auth_configured
+                  ? "Registry credentials not configured"
+                  : !setup.registry_authenticated
+                  ? "Registry authentication failed"
+                  : "SDK org DID not fully configured"}
+              </div>
             )}
           </div>
           <div className="flex gap-2">

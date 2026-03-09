@@ -55,24 +55,39 @@ async def register_org_did(org_id: int, user=Depends(require_role("superadmin", 
     did = result.get("did")
     did_created = bool(did)
     registry_connected = bool(setup_status.get("registry_connected"))
+    registry_auth_configured = bool(setup_status.get("registry_auth_configured"))
+    registry_authenticated = bool(setup_status.get("registry_authenticated"))
+    registry_auth_error = setup_status.get("registry_auth_error")
     org_did_configured_in_sdk = bool(setup_status.get("org_did_configured"))
     sdk_org_did = setup_status.get("org_did")
     central_registration_claimed = result.get("registry", {}).get("status") in ("ok", "registered", "success")
-    is_ready = did_created and registry_connected and org_did_configured_in_sdk
+    is_ready = (
+        did_created
+        and registry_connected
+        and registry_auth_configured
+        and registry_authenticated
+        and org_did_configured_in_sdk
+    )
 
     async with pool.acquire() as conn:
         await conn.execute("UPDATE organizations SET org_did = $1 WHERE id = $2", did, org_id)
 
+    auth_incomplete = not registry_auth_configured or not registry_authenticated
     message = (
         "Organization DID created and SDK lifecycle hooks are fully configured."
         if is_ready else
-        "Organization DID created, but SDK is not yet fully configured for lifecycle hooks."
+        "Organization DID created locally, but central registry authentication is not configured or failed."
+        if auth_incomplete else
+        "Organization DID created locally, but central registry is unreachable."
     )
     return {
         "status": "ready" if is_ready else "partial",
         "did": did,
         "did_created": did_created,
         "registry_connected": registry_connected,
+        "registry_auth_configured": registry_auth_configured,
+        "registry_authenticated": registry_authenticated,
+        "registry_auth_error": registry_auth_error,
         "org_did_configured_in_sdk": org_did_configured_in_sdk,
         "sdk_org_did": sdk_org_did,
         "central_registration_claimed": central_registration_claimed,
@@ -101,6 +116,10 @@ async def org_did_status(org_id: int, user=Depends(get_current_user)):
             "org_did": local_did,
         },
         "sdk_setup_status": setup_status,
+        "registry_connected": setup_status.get("registry_connected"),
+        "registry_auth_configured": setup_status.get("registry_auth_configured"),
+        "registry_authenticated": setup_status.get("registry_authenticated"),
+        "registry_auth_error": setup_status.get("registry_auth_error"),
         "matches_local_org_did": bool(local_did and sdk_org_did and local_did == sdk_org_did),
     }
 
