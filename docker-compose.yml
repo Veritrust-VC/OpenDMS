@@ -42,7 +42,7 @@ services:
       - sdk-data:/app/status-data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-      networks:
+    networks:
       - default
       - veridocs-register_default
 
