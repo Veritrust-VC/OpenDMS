@@ -42,9 +42,6 @@ services:
       - sdk-data:/app/status-data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks:
-      - default
-      - veridocs-register_default
 
   api:
     build:
@@ -94,6 +91,3 @@ volumes:
   sdk-data:
   doc-storage:
 
-networks:
-  veridocs-register_default:
-    external: true
