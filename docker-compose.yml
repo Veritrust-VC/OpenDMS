@@ -42,6 +42,8 @@ services:
       - sdk-data:/app/status-data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "api.register.opendms.dev:host-gateway"
+      - "register.opendms.dev:host-gateway"
 
   api:
     build:
