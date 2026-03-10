@@ -21,6 +21,7 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [brand, setBrand] = useState({ brand_name: "OpenDMS", brand_primary_color: "#0d7c66", brand_logo_url: "" });
   const [toast, setToast] = useState(null);
+  const [auditFilters, setAuditFilters] = useState(null);
   const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
 
   useEffect(() => { api("/settings/branding").then(setBrand).catch(()=>{}); }, []);
@@ -34,6 +35,7 @@ export default function App() {
     { id:"documents", label:"Documents", icon:"\u{1F4C4}" },
     ...(isAdmin ? [
       { id:"users", label:"Users", icon:"\u{1F465}" },
+      { id:"audit", label:"Audit Logs", icon:"\u{1F4DD}" },
       { id:"organizations", label:"Organizations", icon:"\u{1F3E2}" },
       { id:"registers", label:"Registers", icon:"\u{1F4C1}" },
       { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F" },
@@ -52,7 +54,7 @@ export default function App() {
         </div>
         <nav className="flex-1 py-2 px-2 space-y-0.5">
           {nav.map(n=>(
-            <button key={n.id} onClick={()=>setPage(n.id)} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm ${page===n.id?"bg-emerald-50 text-emerald-700 font-medium":"text-gray-600 hover:bg-gray-50"}`}>
+            <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id!=="audit") setAuditFilters(null); }} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm ${page===n.id?"bg-emerald-50 text-emerald-700 font-medium":"text-gray-600 hover:bg-gray-50"}`}>
               <span>{n.icon}</span>{n.label}
             </button>
           ))}
@@ -67,10 +69,11 @@ export default function App() {
         {page==="dashboard" && <DashboardPage notify={notify} user={user} />}
         {page==="documents" && <DocumentsPage notify={notify} user={user} />}
         {page==="users" && <UsersPage notify={notify} />}
-        {page==="organizations" && <OrgsPage notify={notify} />}
+        {page==="organizations" && <OrgsPage notify={notify} onViewLogs={(filters)=>{ setAuditFilters(filters); setPage("audit"); }} />}
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
         {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
         {page==="archive" && <ArchivePage notify={notify} />}
+        {page==="audit" && <AuditLogsPage notify={notify} initialFilters={auditFilters} />}
         {page==="settings" && <SettingsPage notify={notify} brand={brand} setBrand={setBrand} />}
       </main>
     </div>
@@ -115,9 +118,12 @@ function DashboardPage({ notify, user }) {
         <span>Storage: <strong>{health.storage_backend}</strong></span>
         <span>SDK service: {statusBadge((health.sdk?.status || "").toLowerCase() === "ok", health.sdk?.status || "unknown")}</span>
         <span>Registry connected: {statusBadge(Boolean(health.sdk_setup?.registry_connected), health.sdk_setup?.registry_connected ? "Yes" : "No")}</span>
-        <span>Registry auth configured: {statusBadge(Boolean(health.sdk_setup?.registry_auth_configured), health.sdk_setup?.registry_auth_configured ? "Yes" : "No")}</span>
         <span>Registry authenticated: {statusBadge(Boolean(health.sdk_setup?.registry_authenticated), health.sdk_setup?.registry_authenticated ? "Yes" : "No")}</span>
         <span>SDK org DID configured: {statusBadge(Boolean(health.sdk_setup?.org_did_configured), health.sdk_setup?.org_did_configured ? "Yes" : "No")}</span>
+        <span>Org registered in registry: {statusBadge(Boolean(health.sdk_setup?.org_registered_in_registry), health.sdk_setup?.org_registered_in_registry ? "Yes" : "No")}</span>
+        <span>Org verified in registry: {statusBadge(Boolean(health.sdk_setup?.org_verified_in_registry), health.sdk_setup?.org_verified_in_registry ? "Yes" : "No")}</span>
+        <span>Last sync error: <strong>{health.sdk_setup?.last_sync_error || "none"}</strong></span>
+        <span>Last trace ID: <code>{health.sdk_setup?.trace_id || "n/a"}</code></span>
       </div>
     </div>}
     {stats && <div className="grid grid-cols-4 gap-3 mb-6">
@@ -256,7 +262,7 @@ function UsersPage({ notify }) {
   </div>);
 }
 
-function OrgsPage({ notify }) {
+function OrgsPage({ notify, onViewLogs }) {
   const [orgs, setOrgs] = useState([]); const [show, setShow] = useState(false);
   const [sdkStatus, setSdkStatus] = useState(null); const [orgDidStatus, setOrgDidStatus] = useState({});
   const [registering, setRegistering] = useState({}); const [checking, setChecking] = useState({});
@@ -310,10 +316,12 @@ function OrgsPage({ notify }) {
         <div>SDK service status: <strong>{sdkStatus.status || "unknown"}</strong></div>
         <div>Registry URL: <strong>{sdkStatus.registry_url || "n/a"}</strong></div>
         <div>Registry connected: <strong className={sdkStatus.registry_connected ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_connected ? "Yes" : "No"}</strong></div>
-        <div>Registry auth configured: <strong className={sdkStatus.registry_auth_configured ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_auth_configured ? "Yes" : "No"}</strong></div>
         <div>Registry authenticated: <strong className={sdkStatus.registry_authenticated ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_authenticated ? "Yes" : "No"}</strong></div>
         <div>SDK org DID configured: <strong className={sdkStatus.org_did_configured ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_did_configured ? "Yes" : "No"}</strong></div>
-        <div>Managed DID count: <strong>{sdkStatus.managed_did_count ?? "n/a"}</strong></div>
+        <div>Org registered in registry: <strong className={sdkStatus.org_registered_in_registry ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_registered_in_registry ? "Yes" : "No"}</strong></div>
+        <div>Org verified in registry: <strong className={sdkStatus.org_verified_in_registry ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_verified_in_registry ? "Yes" : "No"}</strong></div>
+        <div>Last sync error: <strong>{sdkStatus.last_sync_error || "none"}</strong></div>
+        <div>Last trace ID: <strong>{sdkStatus.trace_id || "n/a"}</strong></div>
       </div>
       {!sdkStatus.registry_auth_configured && (
         <div className="text-xs text-amber-700 mt-2">Set REGISTRY_EMAIL and REGISTRY_PASSWORD in OpenDMS docker-compose for the SDK service.</div>
@@ -363,12 +371,71 @@ function OrgsPage({ notify }) {
             {o.org_did && <>
               <button disabled={checking[o.id]} onClick={()=>checkDidStatus(o.id)} className="text-xs px-3 py-1 border rounded text-gray-700 disabled:opacity-60">{checking[o.id] ? "Checking..." : "Check status"}</button>
               <button disabled={registering[o.id]} onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-60">{registering[o.id] ? "Registering..." : "Re-check setup"}</button>
+              <button onClick={()=>onViewLogs?.({organization_id:o.id, trace_id:orgDidStatus[o.id]?.trace_id || ""})} className="text-xs px-3 py-1 border rounded text-blue-700">View sync logs</button>
             </>}
           </div>
         </div>);
       })}
     </div>
   </div>);
+}
+
+
+function AuditLogsPage({ notify, initialFilters }) {
+  const [summary, setSummary] = useState(null);
+  const [openLogs, setOpenLogs] = useState([]);
+  const [sdkLogs, setSdkLogs] = useState([]);
+  const [activeTab, setActiveTab] = useState("opendms");
+  const [selected, setSelected] = useState(null);
+  const [filters, setFilters] = useState({ limit:50, offset:0, action:"", success:"", trace_id:"", organization_id:"", ...(initialFilters || {}) });
+
+  const load = useCallback(async()=>{
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", String(filters.limit || 50));
+      params.set("offset", String(filters.offset || 0));
+      if(filters.action) params.set("action", filters.action);
+      if(filters.success !== "") params.set("success", filters.success);
+      if(filters.trace_id) params.set("trace_id", filters.trace_id);
+      if(filters.organization_id) params.set("organization_id", filters.organization_id);
+      const [s, local, sdk] = await Promise.all([
+        api("/audit/summary"),
+        api(`/audit/logs?${params.toString()}`),
+        api(`/audit/sdk-logs?limit=${filters.limit || 50}&offset=${filters.offset || 0}`),
+      ]);
+      setSummary(s); setOpenLogs(local.items || []); setSdkLogs(sdk.items || sdk.logs || []);
+    } catch (e) { notify(e.message, "error"); }
+  }, [filters, notify]);
+
+  useEffect(()=>{ load(); }, [load]);
+
+  const statusClass = (row) => row.success ? "text-emerald-700" : (row.action?.includes("requested") ? "text-amber-700" : "text-red-700");
+
+  const rows = activeTab === "opendms" ? openLogs : sdkLogs;
+  return <div>
+    <h2 className="text-xl font-bold mb-4">Audit Logs</h2>
+    {summary && <div className="grid grid-cols-3 gap-3 mb-4">
+      {[["OpenDMS actions", summary.opendms_actions],["SDK remote sync calls", summary.sdk_remote_sync_calls],["Failures", summary.failures],["Auth failures", summary.auth_failures],["Org sync failures", summary.org_sync_failures],["Doc sync failures", summary.doc_sync_failures]].map(([k,v])=><div key={k} className="bg-white border rounded p-3"><div className="text-xs text-gray-500">{k}</div><div className="text-xl font-bold">{v}</div></div>)}
+    </div>}
+    <div className="bg-white border rounded p-3 mb-3 flex gap-2 items-center">
+      <button onClick={()=>setActiveTab("opendms")} className={`text-xs px-2 py-1 rounded ${activeTab==='opendms'?'bg-emerald-100 text-emerald-700':'bg-gray-100'}`}>OpenDMS Logs</button>
+      <button onClick={()=>setActiveTab("sdk")} className={`text-xs px-2 py-1 rounded ${activeTab==='sdk'?'bg-emerald-100 text-emerald-700':'bg-gray-100'}`}>SDK Logs</button>
+      <input value={filters.trace_id} onChange={e=>setFilters({...filters,trace_id:e.target.value})} placeholder="Trace ID" className="text-xs border rounded px-2 py-1" />
+      <input value={filters.organization_id} onChange={e=>setFilters({...filters,organization_id:e.target.value})} placeholder="Organization ID" className="text-xs border rounded px-2 py-1 w-28" />
+      <input value={filters.action} onChange={e=>setFilters({...filters,action:e.target.value})} placeholder="Action" className="text-xs border rounded px-2 py-1" />
+      <select value={filters.success} onChange={e=>setFilters({...filters,success:e.target.value})} className="text-xs border rounded px-2 py-1"><option value="">all</option><option value="true">success</option><option value="false">failed</option></select>
+      <button onClick={load} className="text-xs px-3 py-1 bg-blue-600 text-white rounded">Apply</button>
+    </div>
+    <div className="bg-white border rounded overflow-auto">
+      <table className="w-full text-xs"><thead className="bg-gray-50"><tr><th className="p-2 text-left">timestamp</th><th className="p-2 text-left">trace ID</th><th className="p-2 text-left">action</th><th className="p-2 text-left">actor</th><th className="p-2 text-left">organization</th><th className="p-2 text-left">entity</th><th className="p-2 text-left">target</th><th className="p-2 text-left">status</th><th className="p-2 text-left">success</th><th className="p-2 text-left">error</th></tr></thead>
+      <tbody>{rows.map((r,idx)=><tr key={r.id || idx} onClick={()=>setSelected(r)} className="border-t hover:bg-gray-50 cursor-pointer"><td className="p-2">{new Date(r.created_at || r.timestamp || Date.now()).toLocaleString()}</td><td className="p-2 font-mono">{r.trace_id || "-"}</td><td className="p-2">{r.action}</td><td className="p-2">{r.actor_email || r.actor || "-"}</td><td className="p-2">{r.organization_code || r.organization_id || "-"}</td><td className="p-2">{r.entity_type} / {r.entity_did || r.entity_id || "-"}</td><td className="p-2">{r.target_system}</td><td className="p-2">{r.response_status || "-"}</td><td className={`p-2 ${statusClass(r)}`}>{String(r.success)}</td><td className="p-2">{r.error_message || "-"}</td></tr>)}</tbody></table>
+    </div>
+    {selected && <div className="fixed inset-0 bg-black/30 flex items-center justify-center" onClick={()=>setSelected(null)}><div className="bg-white rounded p-4 w-[680px] max-h-[80vh] overflow-auto" onClick={e=>e.stopPropagation()}>
+      <h3 className="font-semibold mb-2">Audit details</h3>
+      <div className="text-xs space-y-1"><div><strong>Trace ID:</strong> <code>{selected.trace_id}</code></div><div><strong>Target path:</strong> {selected.request_path}</div><div><strong>Payload summary:</strong> <pre className="bg-gray-50 p-2 rounded whitespace-pre-wrap">{selected.request_payload_summary}</pre></div><div><strong>Response summary:</strong> <pre className="bg-gray-50 p-2 rounded whitespace-pre-wrap">{selected.response_summary}</pre></div><div><strong>Error:</strong> {selected.error_message || "none"}</div></div>
+      <button onClick={()=>setSelected(null)} className="mt-3 text-xs px-3 py-1 border rounded">Close</button>
+    </div></div>}
+  </div>;
 }
 
 function StructurePage({ type, notify }) {

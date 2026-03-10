@@ -1,6 +1,7 @@
 """Document management with lifecycle workflow and SDK integration."""
 
 import json
+import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel
@@ -9,6 +10,7 @@ from opendms.middleware.auth import get_current_user, require_role
 from opendms.storage import get_storage, generate_storage_key
 from opendms.config import get_settings
 from opendms import sdk_client
+from opendms.audit import log_integration_event, summarize_payload
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -88,27 +90,42 @@ async def list_documents(
 async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
     pool = await get_pool()
     s = get_settings()
+    trace_id = str(uuid.uuid4())
+    actor = {"id": user.get("id"), "email": user.get("email"), "role": user.get("role")}
     async with pool.acquire() as conn:
-        # Generate registration number
         org_id = user.get("org_id") or 1
         count = await conn.fetchval("SELECT COUNT(*) FROM documents WHERE org_id = $1", org_id)
         reg_num = f"{org_id}-{count + 1:05d}"
 
-        # Create via SDK if enabled
+        await log_integration_event(
+            trace_id=trace_id,
+            actor_user_id=user.get("id"),
+            actor_email=user.get("email"),
+            actor_role=user.get("role"),
+            organization_id=org_id,
+            entity_type="document",
+            entity_id=reg_num,
+            action="opendms.doc.create.requested",
+            target_system="sdk",
+            request_method="POST",
+            request_path="/api/documents/create",
+            request_payload_summary=summarize_payload({"title": req.title, "registrationNumber": reg_num}),
+        )
+
         doc_did = None
         sdk_result = None
         if s.sdk_enabled:
-            try:
-                sdk_result = await sdk_client.create_document(
-                    title=req.title,
-                    classification=req.metadata.get("classification", ""),
-                    reg_number=reg_num,
-                    metadata=req.metadata,
-                )
-                if sdk_result:
-                    doc_did = sdk_result.get("docDid")
-            except Exception as e:
-                pass  # Don't fail document creation if SDK is down
+            sdk_result = await sdk_client.create_document(
+                title=req.title,
+                classification=req.metadata.get("classification", ""),
+                reg_number=reg_num,
+                metadata=req.metadata,
+                trace_id=trace_id,
+                actor=actor,
+            )
+            if sdk_result:
+                trace_id = sdk_result.get("trace_id") or trace_id
+                doc_did = sdk_result.get("docDid")
 
         row = await conn.fetchrow(
             """INSERT INTO documents (title, registration_number, doc_did, status, org_id,
@@ -119,14 +136,33 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
             req.classification_id, req.content_summary,
             json.dumps(req.metadata), user["id"])
 
-        # Log event
         await conn.execute(
             "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,$2,$3,$4,$5)",
             row["id"], "DocumentCreated", user["id"], doc_did is not None,
             json.dumps({"registration_number": reg_num, "sdk_did": doc_did}))
 
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=row["org_id"],
+        entity_type="document",
+        entity_id=str(row["id"]),
+        entity_did=doc_did,
+        action="opendms.doc.create.completed",
+        target_system="sdk",
+        request_method="POST",
+        request_path="/api/documents/create",
+        response_status=sdk_result.get("_meta", {}).get("status_code", 200) if sdk_result else 502,
+        response_summary=summarize_payload(sdk_result or {"detail": "SDK unavailable"}),
+        success=sdk_result is not None,
+        error_message=None if sdk_result else "SDK document creation unavailable",
+    )
+
     result = dict(row)
     result["sdk_result"] = sdk_result
+    result["trace_id"] = trace_id
     return result
 
 
@@ -192,19 +228,38 @@ async def get_document(doc_id: int, user=Depends(get_current_user)):
 
 # ── Lifecycle transitions ──
 
-async def _transition(doc_id: int, event_type: str, new_status: str, user: dict, sdk_fn, sdk_args: dict, extra_details: dict = None):
+async def _transition(doc_id: int, event_type: str, new_status: str, user: dict, sdk_fn, sdk_args: dict, extra_details: dict = None, action_name: str = "opendms.doc.lifecycle"):
     pool = await get_pool()
+    trace_id = str(uuid.uuid4())
+    actor = {"id": user.get("id"), "email": user.get("email"), "role": user.get("role")}
     async with pool.acquire() as conn:
-        doc = await conn.fetchrow("SELECT id, doc_did, status FROM documents WHERE id = $1", doc_id)
+        doc = await conn.fetchrow("SELECT id, doc_did, status, org_id FROM documents WHERE id = $1", doc_id)
         if not doc: raise HTTPException(404, "Document not found")
+        doc_data = dict(doc)
+
+        await log_integration_event(
+            trace_id=trace_id,
+            actor_user_id=user.get("id"),
+            actor_email=user.get("email"),
+            actor_role=user.get("role"),
+            organization_id=doc_data.get("org_id"),
+            entity_type="document",
+            entity_id=str(doc_id),
+            entity_did=doc_data.get("doc_did"),
+            action=f"{action_name}.requested",
+            target_system="sdk",
+            request_method="POST",
+            request_path=f"/api/documents/{doc_data.get('doc_did')}/{new_status}",
+            request_payload_summary=summarize_payload(sdk_args),
+        )
 
         vc_submitted = False
+        sdk_result = None
         if get_settings().sdk_enabled and doc["doc_did"]:
-            try:
-                result = await sdk_fn(doc["doc_did"], **sdk_args)
-                vc_submitted = result is not None
-            except Exception:
-                pass
+            sdk_result = await sdk_fn(doc["doc_did"], **sdk_args, trace_id=trace_id, actor=actor)
+            vc_submitted = sdk_result is not None
+            if sdk_result:
+                trace_id = sdk_result.get("trace_id") or trace_id
 
         update_cols = ["status = $1"]
         update_params = [new_status]
@@ -217,21 +272,40 @@ async def _transition(doc_id: int, event_type: str, new_status: str, user: dict,
         await conn.execute(
             "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,$2,$3,$4,$5)",
             doc_id, event_type, user["id"], vc_submitted, json.dumps(extra_details or {}))
-    return {"status": new_status, "vc_submitted": vc_submitted}
+
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=doc_data.get("org_id"),
+        entity_type="document",
+        entity_id=str(doc_id),
+        entity_did=doc_data.get("doc_did"),
+        action=f"{action_name}.completed",
+        target_system="sdk",
+        request_method="POST",
+        request_path=f"/api/documents/{doc_data.get('doc_did')}/{new_status}",
+        response_status=sdk_result.get("_meta", {}).get("status_code", 200) if sdk_result else 502,
+        response_summary=summarize_payload(sdk_result or {"detail": "SDK unavailable"}),
+        success=vc_submitted,
+        error_message=None if vc_submitted else "SDK lifecycle call failed or disabled",
+    )
+    return {"status": new_status, "vc_submitted": vc_submitted, "trace_id": trace_id}
 
 
 @router.post("/{doc_id}/send")
 async def send_document(doc_id: int, req: DocumentSend, user=Depends(get_current_user)):
     return await _transition(doc_id, "DocumentSent", "sent", user,
         sdk_client.send_document, {"recipient_did": req.recipient_org_did, "method": req.delivery_method},
-        {"recipient": req.recipient_org_did, "method": req.delivery_method})
+        {"recipient": req.recipient_org_did, "method": req.delivery_method}, action_name="opendms.doc.send")
 
 
 @router.post("/{doc_id}/receive")
 async def receive_document(doc_id: int, req: DocumentReceive, user=Depends(get_current_user)):
     return await _transition(doc_id, "DocumentReceived", "received", user,
         sdk_client.receive_document, {"sender_did": req.sender_org_did, "local_reg": req.local_registration_number or ""},
-        {"sender": req.sender_org_did, "local_reg": req.local_registration_number})
+        {"sender": req.sender_org_did, "local_reg": req.local_registration_number}, action_name="opendms.doc.receive")
 
 
 @router.post("/{doc_id}/assign")
@@ -242,21 +316,21 @@ async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(get_cur
     if not assignee: raise HTTPException(404, "User not found")
     return await _transition(doc_id, "DocumentAssigned", "assigned", user,
         sdk_client.assign_document, {"assignee": assignee["full_name"], "department": req.department or ""},
-        {"user_id": req.user_id, "assignee": assignee["full_name"], "department": req.department, "assigned_to": req.user_id})
+        {"user_id": req.user_id, "assignee": assignee["full_name"], "department": req.department, "assigned_to": req.user_id}, action_name="opendms.doc.assign")
 
 
 @router.post("/{doc_id}/decide")
 async def decide_document(doc_id: int, req: DocumentDecide, user=Depends(get_current_user)):
     return await _transition(doc_id, "DocumentDecided", "decided", user,
         sdk_client.decide_document, {"decision": req.decision, "resolution": req.resolution or ""},
-        {"decision": req.decision, "resolution": req.resolution})
+        {"decision": req.decision, "resolution": req.resolution}, action_name="opendms.doc.decide")
 
 
 @router.post("/{doc_id}/archive")
 async def archive_document(doc_id: int, archive_reference: Optional[str] = None, user=Depends(get_current_user)):
     return await _transition(doc_id, "DocumentArchived", "archived", user,
         sdk_client.archive_document, {"ref": archive_reference or ""},
-        {"archive_reference": archive_reference})
+        {"archive_reference": archive_reference}, action_name="opendms.doc.archive")
 
 
 @router.get("/{doc_id}/track")
@@ -264,8 +338,61 @@ async def track_document(doc_id: int, user=Depends(get_current_user)):
     """Track document via VeriDocs Registry (through SDK)."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        doc = await conn.fetchrow("SELECT doc_did FROM documents WHERE id = $1", doc_id)
+        doc = await conn.fetchrow("SELECT doc_did, org_id FROM documents WHERE id = $1", doc_id)
     if not doc or not doc["doc_did"]: raise HTTPException(404, "No DID assigned")
-    result = await sdk_client.track_document(doc["doc_did"])
-    if not result: raise HTTPException(502, "Tracking unavailable")
+    doc_data = dict(doc)
+    trace_id = str(uuid.uuid4())
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=doc_data.get("org_id"),
+        entity_type="document",
+        entity_id=str(doc_id),
+        entity_did=doc_data.get("doc_did"),
+        action="opendms.doc.track.requested",
+        target_system="sdk",
+        request_method="GET",
+        request_path=f"/api/documents/{doc.get('doc_did')}/track",
+    )
+    result = await sdk_client.track_document(doc_data["doc_did"], trace_id=trace_id, actor=user)
+    if not result:
+        await log_integration_event(
+            trace_id=trace_id,
+            actor_user_id=user.get("id"),
+            actor_email=user.get("email"),
+            actor_role=user.get("role"),
+            organization_id=doc_data.get("org_id"),
+            entity_type="document",
+            entity_id=str(doc_id),
+            entity_did=doc_data.get("doc_did"),
+            action="opendms.doc.track.completed",
+            target_system="sdk",
+            request_method="GET",
+            request_path=f"/api/documents/{doc.get('doc_did')}/track",
+            success=False,
+            response_status=502,
+            error_message="Tracking unavailable",
+        )
+        raise HTTPException(502, "Tracking unavailable")
+    trace_id = result.get("trace_id") or trace_id
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=doc_data.get("org_id"),
+        entity_type="document",
+        entity_id=str(doc_id),
+        entity_did=doc_data.get("doc_did"),
+        action="opendms.doc.track.completed",
+        target_system="sdk",
+        request_method="GET",
+        request_path=f"/api/documents/{doc.get('doc_did')}/track",
+        response_status=result.get("_meta", {}).get("status_code", 200),
+        response_summary=summarize_payload(result),
+        success=True,
+    )
+    result["trace_id"] = trace_id
     return result

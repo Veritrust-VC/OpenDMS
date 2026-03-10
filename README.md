@@ -161,3 +161,42 @@ The Organizations page exposes:
 ## License
 
 MIT
+
+## Audit logging and trace propagation
+
+OpenDMS now stores an internal integration audit trail in PostgreSQL (`integration_audit_log`) for organization and document operations initiated from OpenDMS.
+
+Each OpenDMS → SDK call propagates a trace identifier using `X-Trace-Id`. If one is not provided, OpenDMS generates a UUID. Actor context (`X-Actor-User-Id`, `X-Actor-Email`) is included for traceability only and is not added to SDK authentication tokens.
+
+### Audit APIs
+
+- `GET /api/audit/logs` — OpenDMS local audit rows
+- `GET /api/audit/logs/{id}` — OpenDMS local audit row detail
+- `GET /api/audit/sdk-logs` — proxied SDK audit logs
+- `GET /api/audit/sdk-logs/{id}` — proxied SDK audit log detail
+- `GET /api/audit/summary` — combined high-level counters (OpenDMS + SDK)
+
+Supported local-log filters: `limit`, `offset`, `action`, `success`, `trace_id`, `organization_id`.
+
+## Audit Logs GUI
+
+The admin sidebar includes **Audit Logs** with:
+
+- summary cards for OpenDMS actions, SDK sync calls, and failures
+- tabs for OpenDMS logs vs SDK logs
+- trace/action/success/org filters
+- row detail modal with full trace ID, request/response summaries, and error details
+
+Organizations page also includes **View sync logs** to jump into filtered audit logs by organization and trace context.
+
+## Central registration truth model
+
+A DID should be treated as centrally ready only when all are true:
+
+- `registry_connected`
+- `registry_authenticated`
+- `org_registered_in_registry`
+- `org_verified_in_registry`
+- `org_did_configured`
+
+If any of these are false, onboarding is partial (local DID may exist, but central verification is incomplete).

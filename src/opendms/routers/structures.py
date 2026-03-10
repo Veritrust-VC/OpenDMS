@@ -1,12 +1,14 @@
 """Organization, Register, and Classification management."""
 
 import json
+import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel
 from opendms.database import get_pool
 from opendms.middleware.auth import get_current_user, require_role
 from opendms import sdk_client
+from opendms.audit import log_integration_event, summarize_payload
 
 # ═══════════════════════════════════
 # Organizations
@@ -48,49 +50,104 @@ async def register_org_did(org_id: int, user=Depends(require_role("superadmin", 
     if not org: raise HTTPException(404, "Organization not found")
 
     org_data = dict(org)
-    result = await sdk_client.setup_org(org_data["code"], org_data["name"], org_data.get("description") or "")
-    if not result: raise HTTPException(502, "SDK setup failed")
+    trace_id = str(uuid.uuid4())
+    actor = {"id": user.get("id"), "email": user.get("email"), "role": user.get("role")}
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=org_data.get("id"),
+        organization_code=org_data.get("code"),
+        organization_did=org_data.get("org_did"),
+        entity_type="organization",
+        entity_id=str(org_id),
+        action="opendms.org.register_did.requested",
+        target_system="sdk",
+        request_method="POST",
+        request_path="/api/setup/org",
+        request_payload_summary=summarize_payload({"orgCode": org_data["code"], "orgName": org_data["name"]}),
+    )
 
-    setup_status = await sdk_client.setup_status()
+    result = await sdk_client.setup_org(org_data["code"], org_data["name"], org_data.get("description") or "", trace_id=trace_id, actor=actor)
+    if not result:
+        await log_integration_event(
+            trace_id=trace_id,
+            actor_user_id=user.get("id"),
+            actor_email=user.get("email"),
+            actor_role=user.get("role"),
+            organization_id=org_data.get("id"),
+            organization_code=org_data.get("code"),
+            organization_did=org_data.get("org_did"),
+            entity_type="organization",
+            entity_id=str(org_id),
+            action="opendms.org.register_did.completed",
+            target_system="sdk",
+            request_method="POST",
+            request_path="/api/setup/org",
+            response_status=502,
+            response_summary="SDK setup failed",
+            success=False,
+            error_message="SDK setup failed",
+        )
+        raise HTTPException(502, "SDK setup failed")
+
+    trace_id = result.get("trace_id") or trace_id
+    setup_status = await sdk_client.setup_status(trace_id=trace_id, actor=actor)
     did = result.get("did")
     did_created = bool(did)
     registry_connected = bool(setup_status.get("registry_connected"))
-    registry_auth_configured = bool(setup_status.get("registry_auth_configured"))
     registry_authenticated = bool(setup_status.get("registry_authenticated"))
-    registry_auth_error = setup_status.get("registry_auth_error")
-    org_did_configured_in_sdk = bool(setup_status.get("org_did_configured"))
+    org_registered_in_registry = bool(setup_status.get("org_registered_in_registry"))
+    org_verified_in_registry = bool(setup_status.get("org_verified_in_registry"))
+    org_did_configured = bool(setup_status.get("org_did_configured"))
     sdk_org_did = setup_status.get("org_did")
-    central_registration_claimed = result.get("registry", {}).get("status") in ("ok", "registered", "success")
-    is_ready = (
-        did_created
-        and registry_connected
-        and registry_auth_configured
-        and registry_authenticated
-        and org_did_configured_in_sdk
-    )
+    registry_auth_error = setup_status.get("registry_auth_error")
+    is_ready = all([
+        registry_connected,
+        registry_authenticated,
+        org_registered_in_registry,
+        org_verified_in_registry,
+        org_did_configured,
+    ])
 
     async with pool.acquire() as conn:
-        await conn.execute("UPDATE organizations SET org_did = $1 WHERE id = $2", did, org_id)
+        await conn.execute("UPDATE organizations SET org_did = COALESCE($1, org_did) WHERE id = $2", did, org_id)
 
-    auth_incomplete = not registry_auth_configured or not registry_authenticated
-    message = (
-        "Organization DID created and SDK lifecycle hooks are fully configured."
-        if is_ready else
-        "Organization DID created locally, but central registry authentication is not configured or failed."
-        if auth_incomplete else
-        "Organization DID created locally, but central registry is unreachable."
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=org_data.get("id"),
+        organization_code=org_data.get("code"),
+        organization_did=did or org_data.get("org_did"),
+        entity_type="organization",
+        entity_id=str(org_id),
+        entity_did=did,
+        action="opendms.org.register_did.completed",
+        target_system="sdk",
+        request_method="POST",
+        request_path="/api/setup/org",
+        response_status=result.get("_meta", {}).get("status_code", 200),
+        response_summary=summarize_payload({"sdk_response": result, "sdk_setup": setup_status}),
+        success=is_ready,
+        error_message=registry_auth_error if not is_ready else None,
     )
+
+    message = "Organization centrally registered and verified." if is_ready else "Organization DID exists locally, central registration is partial."
     return {
         "status": "ready" if is_ready else "partial",
+        "trace_id": trace_id,
         "did": did,
         "did_created": did_created,
         "registry_connected": registry_connected,
-        "registry_auth_configured": registry_auth_configured,
         "registry_authenticated": registry_authenticated,
+        "org_registered_in_registry": org_registered_in_registry,
+        "org_verified_in_registry": org_verified_in_registry,
+        "org_did_configured": org_did_configured,
         "registry_auth_error": registry_auth_error,
-        "org_did_configured_in_sdk": org_did_configured_in_sdk,
         "sdk_org_did": sdk_org_did,
-        "central_registration_claimed": central_registration_claimed,
         "sdk_response": result,
         "sdk_setup_status": setup_status,
         "message": message,
@@ -104,11 +161,32 @@ async def org_did_status(org_id: int, user=Depends(get_current_user)):
         org = await conn.fetchrow("SELECT * FROM organizations WHERE id = $1", org_id)
     if not org: raise HTTPException(404, "Organization not found")
 
-    setup_status = await sdk_client.setup_status()
+    trace_id = str(uuid.uuid4())
+    setup_status = await sdk_client.setup_status(trace_id=trace_id, actor=user)
     org_data = dict(org)
     local_did = org_data.get("org_did")
     sdk_org_did = setup_status.get("org_did")
+    await log_integration_event(
+        trace_id=trace_id,
+        actor_user_id=user.get("id"),
+        actor_email=user.get("email"),
+        actor_role=user.get("role"),
+        organization_id=org_data.get("id"),
+        organization_code=org_data.get("code"),
+        organization_did=local_did,
+        entity_type="organization",
+        entity_id=str(org_id),
+        entity_did=local_did,
+        action="opendms.org.did_status.checked",
+        target_system="sdk",
+        request_method="GET",
+        request_path="/api/setup/status",
+        response_status=setup_status.get("_meta", {}).get("status_code", 200),
+        response_summary=summarize_payload(setup_status),
+        success=bool(setup_status.get("registry_connected")),
+    )
     return {
+        "trace_id": setup_status.get("trace_id") or trace_id,
         "organization": {
             "id": org["id"],
             "name": org["name"],
@@ -117,8 +195,10 @@ async def org_did_status(org_id: int, user=Depends(get_current_user)):
         },
         "sdk_setup_status": setup_status,
         "registry_connected": setup_status.get("registry_connected"),
-        "registry_auth_configured": setup_status.get("registry_auth_configured"),
         "registry_authenticated": setup_status.get("registry_authenticated"),
+        "org_registered_in_registry": setup_status.get("org_registered_in_registry"),
+        "org_verified_in_registry": setup_status.get("org_verified_in_registry"),
+        "org_did_configured": setup_status.get("org_did_configured"),
         "registry_auth_error": setup_status.get("registry_auth_error"),
         "matches_local_org_did": bool(local_did and sdk_org_did and local_did == sdk_org_did),
     }
