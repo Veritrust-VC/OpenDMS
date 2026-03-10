@@ -163,6 +163,33 @@ async def _create_schema(conn):
             PRIMARY KEY (batch_id, document_id)
         );
 
+
+
+        -- Integration audit trail
+        CREATE TABLE IF NOT EXISTS integration_audit_log (
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            trace_id TEXT,
+            actor_user_id BIGINT,
+            actor_email TEXT,
+            actor_role TEXT,
+            organization_id BIGINT,
+            organization_code TEXT,
+            organization_did TEXT,
+            entity_type TEXT,
+            entity_id TEXT,
+            entity_did TEXT,
+            action TEXT NOT NULL,
+            target_system TEXT NOT NULL,
+            request_method TEXT,
+            request_path TEXT,
+            request_payload_summary TEXT,
+            response_status INTEGER,
+            response_summary TEXT,
+            success BOOLEAN NOT NULL DEFAULT FALSE,
+            error_message TEXT
+        );
+
         -- System settings (key-value for branding, config)
         CREATE TABLE IF NOT EXISTS system_settings (
             key TEXT PRIMARY KEY,
@@ -181,6 +208,12 @@ async def _create_schema(conn):
         CREATE INDEX IF NOT EXISTS idx_registers_parent ON registers(parent_id);
         CREATE INDEX IF NOT EXISTS idx_classifications_parent ON classifications(parent_id);
         CREATE INDEX IF NOT EXISTS idx_users_org ON users(org_id);
+
+
+        CREATE INDEX IF NOT EXISTS idx_audit_created_at ON integration_audit_log(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_trace_id ON integration_audit_log(trace_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_action ON integration_audit_log(action);
+        CREATE INDEX IF NOT EXISTS idx_audit_success ON integration_audit_log(success);
 
         -- Updated_at trigger
         CREATE OR REPLACE FUNCTION update_updated_at() RETURNS TRIGGER AS $$

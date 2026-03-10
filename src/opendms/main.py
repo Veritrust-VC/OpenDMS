@@ -13,6 +13,7 @@ from opendms.routers.documents import router as documents_router
 from opendms.routers.structures import org_router, reg_router, cls_router
 from opendms.routers.system import archive_router, settings_router, health_router
 from opendms.routers.ai import router as ai_router
+from opendms.routers.audit import router as audit_router
 
 
 def create_app() -> FastAPI:
@@ -34,7 +35,7 @@ def create_app() -> FastAPI:
                        allow_methods=["*"], allow_headers=["*"])
 
     for r in [auth_router, users_router, documents_router, org_router, reg_router,
-              cls_router, archive_router, settings_router, health_router, ai_router]:
+              cls_router, archive_router, settings_router, health_router, ai_router, audit_router]:
         app.include_router(r)
 
     return app
