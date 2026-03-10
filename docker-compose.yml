@@ -29,7 +29,7 @@ services:
       PORT: "3100"
       SECRET_KEY: ${SECRET_KEY}
       ORG_DID: ${ORG_DID:-}
-      REGISTRY_URL: http://veridocs-register-api-1:8001
+      REGISTRY_URL: ${REGISTRY_URL:-https://api.register.opendms.dev}
       REGISTRY_API_KEY: ${REGISTRY_API_KEY:-}
       REGISTRY_EMAIL: ${REGISTRY_EMAIL:-}
       REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:-}
