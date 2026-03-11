@@ -76,7 +76,19 @@ async def _create_schema(conn):
             org_did TEXT,
             description TEXT,
             is_active BOOLEAN DEFAULT TRUE,
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
             created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+        UPDATE organizations
+        SET is_default = TRUE
+        WHERE id = (
+            SELECT id FROM organizations
+            ORDER BY created_at, id
+            LIMIT 1
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM organizations WHERE is_default = TRUE
         );
         ALTER TABLE users ADD COLUMN IF NOT EXISTS org_id BIGINT REFERENCES organizations(id);
 

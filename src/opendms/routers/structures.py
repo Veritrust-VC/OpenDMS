@@ -27,7 +27,7 @@ class OrgCreate(BaseModel):
 async def list_orgs(user=Depends(get_current_user)):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM organizations ORDER BY name")
+        rows = await conn.fetch("SELECT * FROM organizations ORDER BY is_default DESC, name")
     return [dict(r) for r in rows]
 
 
@@ -35,10 +35,51 @@ async def list_orgs(user=Depends(get_current_user)):
 async def create_org(req: OrgCreate, user=Depends(require_role("superadmin", "admin"))):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        has_default = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM organizations WHERE is_default = TRUE)")
         row = await conn.fetchrow(
-            "INSERT INTO organizations (name, code, description) VALUES ($1, $2, $3) RETURNING *",
-            req.name, req.code, req.description)
-    return dict(row)
+            """INSERT INTO organizations (name, code, description, is_default)
+               VALUES ($1, $2, $3, $4)
+               RETURNING *""",
+            req.name, req.code, req.description, (not has_default),
+        )
+
+    org = dict(row)
+    sdk_result = {"selected": False}
+    if org.get("is_default") and org.get("org_did"):
+        selection = await sdk_client.select_active_org(org.get("org_did"), actor=user)
+        sdk_result = selection or {"selected": False}
+
+    org["sdk"] = sdk_result
+    return org
+
+
+@org_router.post("/{org_id}/make-default")
+async def make_default_org(org_id: int, user=Depends(require_role("superadmin", "admin"))):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        target = await conn.fetchrow("SELECT * FROM organizations WHERE id = $1", org_id)
+        if not target:
+            raise HTTPException(404, "Organization not found")
+
+        async with conn.transaction():
+            await conn.execute("UPDATE organizations SET is_default = FALSE WHERE is_default = TRUE")
+            updated_target = await conn.fetchrow(
+                "UPDATE organizations SET is_default = TRUE WHERE id = $1 RETURNING *",
+                org_id,
+            )
+
+    target_data = dict(updated_target)
+    if target_data.get("org_did"):
+        sdk_result = await sdk_client.select_active_org(target_data.get("org_did"), actor=user)
+    else:
+        sdk_result = await sdk_client.select_active_org(None, actor=user)
+
+    return {
+        "status": "ok",
+        "message": f"Default organization switched to {target_data['name']}",
+        "organization": target_data,
+        "sdk": sdk_result,
+    }
 
 
 @org_router.post("/{org_id}/register-did")

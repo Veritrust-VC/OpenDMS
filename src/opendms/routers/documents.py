@@ -11,6 +11,7 @@ from opendms.storage import get_storage, generate_storage_key
 from opendms.config import get_settings
 from opendms import sdk_client
 from opendms.audit import log_integration_event, summarize_payload
+from opendms.org_context import get_default_org_required
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -53,17 +54,20 @@ async def list_documents(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     user=Depends(get_current_user),
 ):
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
+
     pool = await get_pool()
     async with pool.acquire() as conn:
-        wheres, params, idx = [], [], 1
-        for field, val in [("d.org_id", org_id), ("d.status", status), ("d.register_id", register_id),
+        wheres, params, idx = ["d.org_id = $1"], [workspace_org_id], 2
+        for field, val in [("d.status", status), ("d.register_id", register_id),
                            ("d.classification_id", classification_id), ("d.assigned_to", assigned_to)]:
             if val is not None:
                 wheres.append(f"{field} = ${idx}"); params.append(val); idx += 1
         if search:
             wheres.append(f"(d.title ILIKE ${idx} OR d.registration_number ILIKE ${idx})"); params.append(f"%{search}%"); idx += 1
 
-        where = " AND ".join(wheres) if wheres else "TRUE"
+        where = " AND ".join(wheres)
         total = await conn.fetchval(f"SELECT COUNT(*) FROM documents d WHERE {where}", *params)
         rows = await conn.fetch(
             f"""SELECT d.*, o.name as org_name, r.name as register_name, c.name as classification_name,
@@ -93,7 +97,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
     trace_id = str(uuid.uuid4())
     actor = {"id": user.get("id"), "email": user.get("email"), "role": user.get("role")}
     async with pool.acquire() as conn:
-        org_id = user.get("org_id") or 1
+        default_org = await get_default_org_required()
+        org_id = default_org["id"]
         count = await conn.fetchval("SELECT COUNT(*) FROM documents WHERE org_id = $1", org_id)
         reg_num = f"{org_id}-{count + 1:05d}"
 
@@ -170,9 +175,11 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
 
 @router.post("/{doc_id}/upload")
 async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
     pool = await get_pool()
     async with pool.acquire() as conn:
-        doc = await conn.fetchrow("SELECT * FROM documents WHERE id = $1", doc_id)
+        doc = await conn.fetchrow("SELECT * FROM documents WHERE id = $1 AND org_id = $2", doc_id, workspace_org_id)
     if not doc: raise HTTPException(404, "Document not found")
 
     storage = get_storage()
@@ -190,9 +197,11 @@ async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(ge
 
 @router.get("/{doc_id}/download")
 async def download_file(doc_id: int, user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
     pool = await get_pool()
     async with pool.acquire() as conn:
-        doc = await conn.fetchrow("SELECT storage_key, file_name, mime_type FROM documents WHERE id = $1", doc_id)
+        doc = await conn.fetchrow("SELECT storage_key, file_name, mime_type FROM documents WHERE id = $1 AND org_id = $2", doc_id, workspace_org_id)
     if not doc or not doc["storage_key"]: raise HTTPException(404, "No file attached")
 
     from fastapi.responses import Response
@@ -207,6 +216,8 @@ async def download_file(doc_id: int, user=Depends(get_current_user)):
 
 @router.get("/{doc_id}")
 async def get_document(doc_id: int, user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
     pool = await get_pool()
     async with pool.acquire() as conn:
         doc = await conn.fetchrow(
@@ -215,7 +226,7 @@ async def get_document(doc_id: int, user=Depends(get_current_user)):
                FROM documents d LEFT JOIN organizations o ON d.org_id = o.id
                LEFT JOIN registers r ON d.register_id = r.id LEFT JOIN classifications c ON d.classification_id = c.id
                LEFT JOIN users u ON d.assigned_to = u.id LEFT JOIN users cr ON d.created_by = cr.id
-               WHERE d.id = $1""", doc_id)
+               WHERE d.id = $1 AND d.org_id = $2""", doc_id, workspace_org_id)
         if not doc: raise HTTPException(404, "Document not found")
         events = await conn.fetch(
             """SELECT de.*, u.full_name as actor_name FROM document_events de
@@ -229,11 +240,13 @@ async def get_document(doc_id: int, user=Depends(get_current_user)):
 # ── Lifecycle transitions ──
 
 async def _transition(doc_id: int, event_type: str, new_status: str, user: dict, sdk_fn, sdk_args: dict, extra_details: dict = None, action_name: str = "opendms.doc.lifecycle"):
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
     pool = await get_pool()
     trace_id = str(uuid.uuid4())
     actor = {"id": user.get("id"), "email": user.get("email"), "role": user.get("role")}
     async with pool.acquire() as conn:
-        doc = await conn.fetchrow("SELECT id, doc_did, status, org_id FROM documents WHERE id = $1", doc_id)
+        doc = await conn.fetchrow("SELECT id, doc_did, status, org_id FROM documents WHERE id = $1 AND org_id = $2", doc_id, workspace_org_id)
         if not doc: raise HTTPException(404, "Document not found")
         doc_data = dict(doc)
 
@@ -336,9 +349,11 @@ async def archive_document(doc_id: int, archive_reference: Optional[str] = None,
 @router.get("/{doc_id}/track")
 async def track_document(doc_id: int, user=Depends(get_current_user)):
     """Track document via VeriDocs Registry (through SDK)."""
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
     pool = await get_pool()
     async with pool.acquire() as conn:
-        doc = await conn.fetchrow("SELECT doc_did, org_id FROM documents WHERE id = $1", doc_id)
+        doc = await conn.fetchrow("SELECT doc_did, org_id FROM documents WHERE id = $1 AND org_id = $2", doc_id, workspace_org_id)
     if not doc or not doc["doc_did"]: raise HTTPException(404, "No DID assigned")
     doc_data = dict(doc)
     trace_id = str(uuid.uuid4())
