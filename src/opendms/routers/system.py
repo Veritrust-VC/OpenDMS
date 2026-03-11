@@ -10,6 +10,7 @@ from opendms.middleware.auth import get_current_user, require_role
 from opendms.storage import get_storage
 from opendms.config import get_settings
 from opendms import sdk_client
+from opendms.org_context import get_default_org
 
 # ═══════════════════════════════════
 # Archive
@@ -223,19 +224,38 @@ async def sdk_setup_status(user=Depends(get_current_user)):
             "registry_authenticated": False,
             "registry_auth_error": None,
         }
-    return await sdk_client.setup_status()
+    sdk = await sdk_client.setup_status()
+    default_org = await get_default_org()
+    sdk["default_organization"] = default_org
+    sdk["selected_organization"] = default_org
+    return sdk
 
 
 @health_router.get("/api/stats")
 async def stats(user=Depends(get_current_user)):
+    default_org = await get_default_org()
+    default_org_id = default_org["id"] if default_org else None
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         return {
             "users": await conn.fetchval("SELECT COUNT(*) FROM users"),
             "organizations": await conn.fetchval("SELECT COUNT(*) FROM organizations"),
-            "documents": await conn.fetchval("SELECT COUNT(*) FROM documents"),
-            "events": await conn.fetchval("SELECT COUNT(*) FROM document_events"),
+            "documents": await conn.fetchval(
+                "SELECT COUNT(*) FROM documents WHERE ($1::BIGINT IS NULL OR org_id = $1)",
+                default_org_id,
+            ),
+            "events": await conn.fetchval(
+                """SELECT COUNT(*)
+                   FROM document_events e
+                   JOIN documents d ON d.id = e.document_id
+                   WHERE ($1::BIGINT IS NULL OR d.org_id = $1)""",
+                default_org_id,
+            ),
             "registers": await conn.fetchval("SELECT COUNT(*) FROM registers"),
             "classifications": await conn.fetchval("SELECT COUNT(*) FROM classifications"),
-            "by_status": dict(await conn.fetch("SELECT status, COUNT(*)::int as count FROM documents GROUP BY status")),
+            "by_status": dict(await conn.fetch(
+                "SELECT status, COUNT(*)::int as count FROM documents WHERE ($1::BIGINT IS NULL OR org_id = $1) GROUP BY status",
+                default_org_id,
+            )),
         }

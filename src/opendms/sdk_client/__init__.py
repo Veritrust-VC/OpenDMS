@@ -129,6 +129,16 @@ async def track_document(doc_did: str, trace_id: Optional[str] = None, actor: Op
     return await _request("GET", f"/api/documents/{doc_did}/track", trace_id=trace_id, actor=actor)
 
 
+async def select_active_org(org_did: Optional[str], trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+    return await _request(
+        "POST",
+        "/api/setup/select-org",
+        json_body={"orgDid": org_did},
+        trace_id=trace_id,
+        actor=actor,
+    )
+
+
 async def health() -> Dict:
     result = await _request("GET", "/api/health")
     return result or {"status": "error"}
