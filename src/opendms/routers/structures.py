@@ -69,10 +69,19 @@ async def register_org_did(org_id: int, user=Depends(require_role("superadmin", 
         request_payload_summary=summarize_payload({"orgCode": org_data["code"], "orgName": org_data["name"]}),
     )
 
-    result = await sdk_client.setup_org(org_data["code"], org_data["name"], org_data.get("description") or "", trace_id=trace_id, actor=actor)
-    if not result:
+    result = await sdk_client.setup_org(
+        org_data["code"],
+        org_data["name"],
+        org_data.get("description") or "",
+        trace_id=trace_id,
+        actor=actor,
+        include_error_payload=True,
+    )
+    status_code = result.get("_meta", {}).get("status_code", 502) if result else 502
+    if not result or status_code not in (200, 201):
+        error_payload = result or {"error": "SDK setup failed", "detail": "SDK setup failed", "trace_id": trace_id}
         await log_integration_event(
-            trace_id=trace_id,
+            trace_id=error_payload.get("trace_id") or trace_id,
             actor_user_id=user.get("id"),
             actor_email=user.get("email"),
             actor_role=user.get("role"),
@@ -85,12 +94,12 @@ async def register_org_did(org_id: int, user=Depends(require_role("superadmin", 
             target_system="sdk",
             request_method="POST",
             request_path="/api/setup/org",
-            response_status=502,
-            response_summary="SDK setup failed",
+            response_status=status_code,
+            response_summary=summarize_payload(error_payload),
             success=False,
-            error_message="SDK setup failed",
+            error_message=error_payload.get("detail") or error_payload.get("error") or "SDK setup failed",
         )
-        raise HTTPException(502, "SDK setup failed")
+        raise HTTPException(status_code, error_payload)
 
     trace_id = result.get("trace_id") or trace_id
     setup_status = await sdk_client.setup_status(trace_id=trace_id, actor=actor)
