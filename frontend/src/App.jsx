@@ -110,8 +110,12 @@ function LoginPage({ onLogin, brand }) {
 }
 
 function DashboardPage({ notify, user }) {
-  const [stats, setStats] = useState(null); const [health, setHealth] = useState(null);
-  useEffect(() => { api("/stats").then(setStats).catch(e=>notify(e.message,"error")); api("/health").then(setHealth).catch(()=>{}); }, []);
+  const [stats, setStats] = useState(null); const [health, setHealth] = useState(null); const [sdkStatus, setSdkStatus] = useState(null);
+  useEffect(() => {
+    api("/stats").then(setStats).catch(e=>notify(e.message,"error"));
+    api("/health").then(setHealth).catch(()=>{});
+    api("/sdk/setup-status").then(setSdkStatus).catch(()=>{});
+  }, []);
 
   const statusBadge = (ok, text) => (
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{text}</span>
@@ -119,6 +123,9 @@ function DashboardPage({ notify, user }) {
 
   return (<div>
     <h2 className="text-xl font-bold text-gray-900 mb-4">Dashboard</h2>
+    <div className="text-xs text-gray-500 mb-3">
+      Workspace: <strong>{sdkStatus?.default_organization?.name || "No default organization selected"}</strong>
+    </div>
     {health && <div className="bg-white border rounded-lg p-3 mb-4">
       <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
         <span>DB: {statusBadge(health.database === "connected", health.database)}</span>
@@ -144,8 +151,10 @@ function DashboardPage({ notify, user }) {
 function DocumentsPage({ notify, user }) {
   const [docs, setDocs] = useState([]); const [total, setTotal] = useState(0); const [sel, setSel] = useState(null);
   const [statusF, setStatusF] = useState(""); const [search, setSearch] = useState(""); const [showCreate, setShowCreate] = useState(false);
+  const [sdkStatus, setSdkStatus] = useState(null);
   const load = useCallback(async () => { try { const p = new URLSearchParams({page:"1",page_size:"100"}); if(statusF) p.set("status",statusF); if(search) p.set("search",search); const d = await api(`/documents?${p}`); setDocs(d.items); setTotal(d.total); } catch(e){notify(e.message,"error");} }, [statusF,search]);
   useEffect(()=>{load();},[load]);
+  useEffect(()=>{ api("/sdk/setup-status").then(setSdkStatus).catch(()=>{}); },[]);
   const loadDetail = async(id) => { try { setSel(await api(`/documents/${id}`)); } catch(e){notify(e.message,"error");} };
 
   return (<div>
@@ -158,6 +167,9 @@ function DocumentsPage({ notify, user }) {
         </select>
         <button onClick={()=>setShowCreate(!showCreate)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">+ New</button>
       </div>
+    </div>
+    <div className="text-xs text-gray-500 mb-3">
+      Workspace: <strong>{sdkStatus?.default_organization?.name || "No default organization selected"}</strong>
     </div>
     {showCreate && <CreateDocForm onDone={()=>{setShowCreate(false);load();}} notify={notify} />}
     <div className="grid grid-cols-5 gap-4">
@@ -286,7 +298,21 @@ function OrgsPage({ notify, onViewLogs }) {
       setShow(false);
       setNf({name:"",code:"",description:""});
       load();
+      loadSdkStatus();
     } catch(e){notify(e.message,"error");}
+  };
+
+  const makeDefault = async (org) => {
+    if (!window.confirm(`Make "${org.name}" the default organization for this OpenDMS instance?`)) return;
+    try {
+      const r = await api(`/organizations/${org.id}/make-default`, { method: "POST" });
+      notify(r.message || "Default organization changed");
+      await load();
+      await loadSdkStatus();
+      setOrgDidStatus({});
+    } catch (e) {
+      notify(e.message, "error");
+    }
   };
 
   const checkDidStatus = async (id) => {
@@ -327,7 +353,9 @@ function OrgsPage({ notify, onViewLogs }) {
 
     {sdkStatus && <div className="bg-white border rounded-lg p-4 mb-4">
       <h3 className="text-sm font-semibold mb-2">SDK / Registry Status</h3>
-      <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div>Selected organization: <strong>{sdkStatus?.selected_organization?.name || sdkStatus?.default_organization?.name || "none"}</strong></div>
+        <div>Default organization DID: <strong>{sdkStatus?.default_organization?.org_did || "not assigned"}</strong></div>
         <div>SDK service status: <strong>{sdkStatus.status || "unknown"}</strong></div>
         <div>Registry URL: <strong>{sdkStatus.registry_url || "n/a"}</strong></div>
         <div>Registry connected: <strong className={sdkStatus.registry_connected ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_connected ? "Yes" : "No"}</strong></div>
@@ -358,7 +386,14 @@ function OrgsPage({ notify, onViewLogs }) {
         const setup = status?.sdk_setup_status;
         return (<div key={o.id} className="px-4 py-3 flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium">{o.name}</div>
+            <div className="text-sm font-medium flex items-center">
+              {o.name}
+              {o.is_default && (
+                <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                  Default
+                </span>
+              )}
+            </div>
             <div className="text-xs text-gray-400">Code: {o.code}</div>
             {o.org_did && <div className="text-xs text-emerald-600 font-mono mt-0.5">{o.org_did}</div>}
             {setup && <div className="text-xs text-gray-500 mt-1 space-y-0.5">
@@ -382,6 +417,14 @@ function OrgsPage({ notify, onViewLogs }) {
             )}
           </div>
           <div className="flex gap-2">
+            {!o.is_default && (
+              <button
+                onClick={() => makeDefault(o)}
+                className="text-xs px-3 py-1 border rounded text-emerald-700"
+              >
+                Make Default
+              </button>
+            )}
             {!o.org_did && <button disabled={registering[o.id]} onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-60">{registering[o.id] ? "Registering..." : "Register DID"}</button>}
             {o.org_did && <>
               <button disabled={checking[o.id]} onClick={()=>checkDidStatus(o.id)} className="text-xs px-3 py-1 border rounded text-gray-700 disabled:opacity-60">{checking[o.id] ? "Checking..." : "Check status"}</button>
