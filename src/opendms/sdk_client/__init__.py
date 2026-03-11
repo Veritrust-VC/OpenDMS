@@ -144,8 +144,16 @@ async def health() -> Dict:
     return result or {"status": "error"}
 
 
-async def setup_status(trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Dict:
-    result = await _request("GET", "/api/setup/status", trace_id=trace_id, actor=actor)
+async def setup_status(
+    trace_id: Optional[str] = None,
+    actor: Optional[Dict[str, Any]] = None,
+    org_did: Optional[str] = None,
+) -> Dict:
+    path = "/api/setup/status"
+    if org_did:
+        from urllib.parse import quote
+        path += f"?orgDid={quote(org_did, safe='')}"
+    result = await _request("GET", path, trace_id=trace_id, actor=actor)
     return result or {"status": "unavailable"}
 
 

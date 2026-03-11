@@ -143,8 +143,8 @@ async def register_org_did(org_id: int, user=Depends(require_role("superadmin", 
         raise HTTPException(status_code, error_payload)
 
     trace_id = result.get("trace_id") or trace_id
-    setup_status = await sdk_client.setup_status(trace_id=trace_id, actor=actor)
     did = result.get("did")
+    setup_status = await sdk_client.setup_status(trace_id=trace_id, actor=actor, org_did=did)
     did_created = bool(did)
     registry_connected = bool(setup_status.get("registry_connected"))
     registry_authenticated = bool(setup_status.get("registry_authenticated"))
@@ -212,8 +212,12 @@ async def org_did_status(org_id: int, user=Depends(get_current_user)):
     if not org: raise HTTPException(404, "Organization not found")
 
     trace_id = str(uuid.uuid4())
-    setup_status = await sdk_client.setup_status(trace_id=trace_id, actor=user)
     org_data = dict(org)
+    setup_status = await sdk_client.setup_status(
+        trace_id=trace_id,
+        actor=user,
+        org_did=org_data.get("org_did"),
+    )
     local_did = org_data.get("org_did")
     sdk_org_did = setup_status.get("org_did")
     await log_integration_event(
