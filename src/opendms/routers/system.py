@@ -191,7 +191,10 @@ async def health():
         pass
 
     sdk_status = await sdk_client.health() if s.sdk_enabled else {"status": "disabled"}
-    sdk_setup = await sdk_client.setup_status() if s.sdk_enabled else {
+    default_org = await get_default_org()
+    sdk_setup = await sdk_client.setup_status(
+        org_did=default_org.get("org_did") if (s.sdk_enabled and default_org) else None
+    ) if s.sdk_enabled else {
         "status": "disabled",
         "org_did": None,
         "org_did_configured": False,
@@ -224,8 +227,10 @@ async def sdk_setup_status(user=Depends(get_current_user)):
             "registry_authenticated": False,
             "registry_auth_error": None,
         }
-    sdk = await sdk_client.setup_status()
     default_org = await get_default_org()
+    sdk = await sdk_client.setup_status(
+        org_did=default_org.get("org_did") if default_org else None
+    )
     sdk["default_organization"] = default_org
     sdk["selected_organization"] = default_org
     return sdk
