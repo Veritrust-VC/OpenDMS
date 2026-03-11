@@ -39,6 +39,7 @@ async def _request(
     json_body: Optional[Dict[str, Any]] = None,
     trace_id: Optional[str] = None,
     actor: Optional[Dict[str, Any]] = None,
+    include_error_payload: bool = False,
 ) -> Optional[Dict[str, Any]]:
     headers = _build_headers(trace_id, actor)
     try:
@@ -56,9 +57,22 @@ async def _request(
         })
         if r.status_code in (200, 201):
             return payload
+        if include_error_payload:
+            return payload
         return None
     except Exception as e:
         logger.error("SDK request %s %s failed: %s", method, path, e)
+        if include_error_payload:
+            return {
+                "error": "SDK request failed",
+                "detail": str(e),
+                "trace_id": headers["X-Trace-Id"],
+                "_meta": {
+                    "status_code": 502,
+                    "method": method,
+                    "path": path,
+                },
+            }
         return None
 
 
@@ -69,12 +83,19 @@ async def close():
         _client = None
 
 
-async def setup_org(org_code: str, org_name: str, org_description: str = "", trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+async def setup_org(
+    org_code: str,
+    org_name: str,
+    org_description: str = "",
+    trace_id: Optional[str] = None,
+    actor: Optional[Dict[str, Any]] = None,
+    include_error_payload: bool = False,
+) -> Optional[Dict]:
     return await _request("POST", "/api/setup/org", json_body={
         "orgCode": org_code,
         "orgName": org_name,
         "orgDescription": org_description,
-    }, trace_id=trace_id, actor=actor)
+    }, trace_id=trace_id, actor=actor, include_error_payload=include_error_payload)
 
 
 async def create_document(title: str, classification: str = "", reg_number: str = "", metadata: Dict = None, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:

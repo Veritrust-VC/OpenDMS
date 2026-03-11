@@ -8,7 +8,14 @@ async function api(path, opts = {}) {
   if (opts.body instanceof FormData) { delete headers["Content-Type"]; }
   const res = await fetch(`${API}${path}`, { headers, ...opts });
   if (res.status === 401) { authToken = ""; localStorage.removeItem("opendms_token"); window.location.reload(); }
-  if (!res.ok) { const e = await res.json().catch(() => ({ detail: res.statusText })); throw new Error(e.detail || JSON.stringify(e)); }
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({ detail: res.statusText }));
+    const payload = e?.detail && typeof e.detail === "object" ? e.detail : e;
+    const message = typeof payload?.detail === "string" ? payload.detail : (payload?.error || res.statusText);
+    const err = new Error(message || res.statusText);
+    err.payload = payload;
+    throw err;
+  }
   if (res.headers.get("content-type")?.includes("json")) return res.json();
   return res;
 }
@@ -303,7 +310,15 @@ function OrgsPage({ notify, onViewLogs }) {
       await load();
       await loadSdkStatus();
       await checkDidStatus(id);
-    } catch(e){notify(e.message,"error");}
+    } catch(e){
+      const payload = e?.payload;
+      if (payload && (payload.error || payload.detail || payload.trace_id)) {
+        const parts = [payload.error, payload.detail, payload.trace_id && `trace_id: ${payload.trace_id}`].filter(Boolean);
+        notify(parts.join(" | "), "error");
+      } else {
+        notify(e.message,"error");
+      }
+    }
     finally { setRegistering(prev => ({...prev, [id]: false})); }
   };
 
