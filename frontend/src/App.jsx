@@ -363,6 +363,7 @@ function OrgsPage({ notify, onViewLogs }) {
         <div>SDK org DID configured: <strong className={sdkStatus.org_did_configured ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_did_configured ? "Yes" : "No"}</strong></div>
         <div>Org registered in registry: <strong className={sdkStatus.org_registered_in_registry ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_registered_in_registry ? "Yes" : "No"}</strong></div>
         <div>Org verified in registry: <strong className={sdkStatus.org_verified_in_registry ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_verified_in_registry ? "Yes" : "No"}</strong></div>
+        <div>Organization Registration VC: <strong className={sdkStatus.org_registration_vc ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_registration_vc ? "Issued" : "Not issued"}</strong></div>
         <div>Last sync error: <strong>{sdkStatus.last_sync_error || "none"}</strong></div>
         <div>Last trace ID: <strong>{sdkStatus.trace_id || "n/a"}</strong></div>
       </div>
