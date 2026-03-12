@@ -231,6 +231,7 @@ async def sdk_setup_status(user=Depends(get_current_user)):
     sdk = await sdk_client.setup_status(
         org_did=default_org.get("org_did") if default_org else None
     )
+    sdk["org_registration_vc"] = sdk.get("registration_vc_present", False)
     sdk["default_organization"] = default_org
     sdk["selected_organization"] = default_org
     return sdk
