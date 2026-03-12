@@ -1,5 +1,6 @@
 """HTTP client for VeriDocs SDK sidecar."""
 
+import json
 import logging
 import uuid
 from typing import Optional, Dict, Any
@@ -73,6 +74,36 @@ async def _request(
                     "path": path,
                 },
             }
+        return None
+
+
+async def _request_multipart(
+    path: str,
+    *,
+    files: Dict[str, Any],
+    data: Optional[Dict[str, Any]] = None,
+    trace_id: Optional[str] = None,
+    actor: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    headers = _build_headers(trace_id, actor)
+    try:
+        r = await _get_client().post(path, files=files, data=data or {}, headers=headers)
+        payload: Dict[str, Any] = {}
+        if r.headers.get("content-type", "").lower().startswith("application/json"):
+            payload = r.json()
+        elif r.text:
+            payload = {"response_text": r.text}
+        payload.setdefault("trace_id", r.headers.get("X-Trace-Id") or headers["X-Trace-Id"])
+        payload.setdefault("_meta", {
+            "status_code": r.status_code,
+            "method": "POST",
+            "path": path,
+        })
+        if r.status_code in (200, 201):
+            return payload
+        return None
+    except Exception as e:
+        logger.error("SDK multipart request POST %s failed: %s", path, e)
         return None
 
 
@@ -164,3 +195,35 @@ async def get_audit_logs(limit: int = 50, offset: int = 0, trace_id: Optional[st
 
 async def get_audit_log_by_id(log_id: int, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
     return await _request("GET", f"/api/audit/logs/{log_id}", trace_id=trace_id, actor=actor)
+
+
+async def extract_summary(
+    file_bytes: bytes,
+    filename: str,
+    metadata: Optional[Dict[str, Any]] = None,
+    trace_id: Optional[str] = None,
+    actor: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    return await _request_multipart(
+        "/api/ai/extract-summary",
+        files={"file": (filename, file_bytes, "application/octet-stream")},
+        data={"metadata": (json.dumps(metadata or {}))},
+        trace_id=trace_id,
+        actor=actor,
+    )
+
+
+async def get_topic_trends(trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    return await _request("GET", "/api/intelligence/topics", trace_id=trace_id, actor=actor)
+
+
+async def get_similar_documents(doc_did: str, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    return await _request("GET", f"/api/intelligence/similar/{doc_did}", trace_id=trace_id, actor=actor)
+
+
+async def get_warnings(trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    return await _request("GET", "/api/intelligence/warnings", trace_id=trace_id, actor=actor)
+
+
+async def generate_briefing(payload: Optional[Dict[str, Any]] = None, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    return await _request("POST", "/api/intelligence/briefing", json_body=payload or {}, trace_id=trace_id, actor=actor)

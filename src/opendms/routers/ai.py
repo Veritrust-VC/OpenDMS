@@ -1,4 +1,8 @@
-"""AI Intelligence endpoints for OpenDMS."""
+"""AI Intelligence endpoints for OpenDMS.
+
+Legacy/helper module: kept for auxiliary AI operations.
+Document summary creation flow now prefers SDK-driven extract-summary endpoints.
+"""
 
 import json
 from fastapi import APIRouter, Depends, Query

@@ -2,7 +2,7 @@
 
 import json
 import uuid
-from typing import Optional
+from typing import Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel
 from opendms.database import get_pool
@@ -22,6 +22,9 @@ class DocumentCreate(BaseModel):
     classification_id: Optional[int] = None
     content_summary: Optional[str] = None
     metadata: dict = {}
+    semantic_summary: Optional[dict[str, Any]] = None
+    sensitivity_control: Optional[dict[str, Any]] = None
+    ai_summary_status: Optional[str] = None
 
 
 class DocumentSend(BaseModel):
@@ -42,6 +45,27 @@ class DocumentAssign(BaseModel):
 class DocumentDecide(BaseModel):
     decision: str
     resolution: Optional[str] = None
+
+
+class ExtractSummaryPreviewRequest(BaseModel):
+    metadata: dict = {}
+    file_name: Optional[str] = None
+    file_content_base64: Optional[str] = None
+
+
+def _derive_ai_summary_status(req: DocumentCreate, sdk_result: Optional[dict[str, Any]]) -> str:
+    if req.ai_summary_status:
+        return req.ai_summary_status
+    if req.semantic_summary or req.sensitivity_control:
+        source = (req.semantic_summary or {}).get("summarySource")
+        return "VALIDATED" if source in ("HUMAN", "HYBRID") else "GENERATED"
+    if sdk_result and (sdk_result.get("semanticSummary") or sdk_result.get("sensitivityControl")):
+        return "GENERATED"
+    return "SKIPPED"
+
+
+def _decode_jsonb(value: Any) -> Any:
+    return json.loads(value) if isinstance(value, str) else value
 
 
 # ── List / Search ──
@@ -83,7 +107,9 @@ async def list_documents(
     items = []
     for r in rows:
         d = dict(r)
-        d["metadata"] = json.loads(d["metadata"]) if isinstance(d["metadata"], str) else d["metadata"]
+        d["metadata"] = _decode_jsonb(d["metadata"])
+        d["semantic_summary"] = _decode_jsonb(d.get("semantic_summary"))
+        d["sensitivity_control"] = _decode_jsonb(d.get("sensitivity_control"))
         items.append(d)
     return {"items": items, "total": total, "page": page}
 
@@ -124,7 +150,11 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
                 title=req.title,
                 classification=req.metadata.get("classification", ""),
                 reg_number=reg_num,
-                metadata=req.metadata,
+                metadata={
+                    **req.metadata,
+                    "semanticSummary": req.semantic_summary,
+                    "sensitivityControl": req.sensitivity_control,
+                },
                 trace_id=trace_id,
                 actor=actor,
             )
@@ -132,19 +162,26 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
                 trace_id = sdk_result.get("trace_id") or trace_id
                 doc_did = sdk_result.get("docDid")
 
+        semantic_summary = req.semantic_summary or (sdk_result or {}).get("semanticSummary")
+        sensitivity_control = req.sensitivity_control or (sdk_result or {}).get("sensitivityControl")
+        ai_summary_status = _derive_ai_summary_status(req, sdk_result)
+
         row = await conn.fetchrow(
             """INSERT INTO documents (title, registration_number, doc_did, status, org_id,
-                   register_id, classification_id, content_summary, metadata, created_by)
-               VALUES ($1,$2,$3,'registered',$4,$5,$6,$7,$8,$9)
-               RETURNING id, title, registration_number, doc_did, status, org_id, created_at""",
+                   register_id, classification_id, content_summary, metadata, semantic_summary, sensitivity_control, ai_summary_status, created_by)
+               VALUES ($1,$2,$3,'registered',$4,$5,$6,$7,$8,$9,$10,$11,$12)
+               RETURNING id, title, registration_number, doc_did, status, org_id, semantic_summary, sensitivity_control, ai_summary_status, created_at""",
             req.title, reg_num, doc_did, org_id, req.register_id,
             req.classification_id, req.content_summary,
-            json.dumps(req.metadata), user["id"])
+            json.dumps(req.metadata), json.dumps(semantic_summary) if semantic_summary is not None else None,
+            json.dumps(sensitivity_control) if sensitivity_control is not None else None,
+            ai_summary_status,
+            user["id"])
 
         await conn.execute(
             "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,$2,$3,$4,$5)",
             row["id"], "DocumentCreated", user["id"], doc_did is not None,
-            json.dumps({"registration_number": reg_num, "sdk_did": doc_did}))
+            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
 
     await log_integration_event(
         trace_id=trace_id,
@@ -166,6 +203,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
     )
 
     result = dict(row)
+    result["semantic_summary"] = _decode_jsonb(result.get("semantic_summary"))
+    result["sensitivity_control"] = _decode_jsonb(result.get("sensitivity_control"))
     result["sdk_result"] = sdk_result
     result["trace_id"] = trace_id
     return result
@@ -232,9 +271,74 @@ async def get_document(doc_id: int, user=Depends(get_current_user)):
             """SELECT de.*, u.full_name as actor_name FROM document_events de
                LEFT JOIN users u ON de.actor_id = u.id WHERE de.document_id = $1 ORDER BY de.created_at""", doc_id)
     result = dict(doc)
-    result["metadata"] = json.loads(result["metadata"]) if isinstance(result["metadata"], str) else result["metadata"]
+    result["metadata"] = _decode_jsonb(result["metadata"])
+    result["semantic_summary"] = _decode_jsonb(result.get("semantic_summary"))
+    result["sensitivity_control"] = _decode_jsonb(result.get("sensitivity_control"))
     result["events"] = [dict(e) for e in events]
     return result
+
+
+@router.post("/{doc_id}/extract-summary")
+async def extract_summary_for_document(doc_id: int, file: UploadFile = File(...), user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    workspace_org_id = default_org["id"]
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow("SELECT id, org_id FROM documents WHERE id = $1 AND org_id = $2", doc_id, workspace_org_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+
+    content = await file.read()
+    result = await sdk_client.extract_summary(content, file.filename or "document.bin", metadata={"documentId": doc_id}, actor=user)
+    if not result:
+        raise HTTPException(502, "Summary extraction unavailable")
+
+    semantic_summary = result.get("semanticSummary")
+    sensitivity_control = result.get("sensitivityControl")
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE documents SET semantic_summary = $1, sensitivity_control = $2, ai_summary_status = $3 WHERE id = $4",
+            json.dumps(semantic_summary) if semantic_summary is not None else None,
+            json.dumps(sensitivity_control) if sensitivity_control is not None else None,
+            "GENERATED",
+            doc_id,
+        )
+    return {
+        "documentId": doc_id,
+        "semanticSummary": semantic_summary,
+        "sensitivityControl": sensitivity_control,
+        "trace_id": result.get("trace_id"),
+        "route": result.get("route"),
+    }
+
+
+@router.post("/extract-summary-preview")
+async def extract_summary_preview(
+    file: Optional[UploadFile] = File(default=None),
+    metadata: str = Form(default="{}"),
+    user=Depends(get_current_user),
+):
+    parsed_metadata = {}
+    if metadata:
+        try:
+            parsed_metadata = json.loads(metadata)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"Invalid metadata JSON: {exc}")
+
+    if file is None:
+        raise HTTPException(400, "File is required for preview extraction")
+
+    content = await file.read()
+    result = await sdk_client.extract_summary(content, file.filename or "document.bin", metadata=parsed_metadata, actor=user)
+    if not result:
+        raise HTTPException(502, "Summary extraction unavailable")
+
+    return {
+        "semanticSummary": result.get("semanticSummary"),
+        "sensitivityControl": result.get("sensitivityControl"),
+        "route": result.get("route"),
+        "trace_id": result.get("trace_id"),
+    }
 
 
 # ── Lifecycle transitions ──

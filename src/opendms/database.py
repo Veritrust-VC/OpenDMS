@@ -134,6 +134,9 @@ async def _create_schema(conn):
             assigned_to BIGINT REFERENCES users(id),
             content_summary TEXT,
             metadata JSONB DEFAULT '{}',
+            semantic_summary JSONB,
+            sensitivity_control JSONB,
+            ai_summary_status TEXT NOT NULL DEFAULT 'PENDING',
             storage_key TEXT,
             storage_backend TEXT,
             file_name TEXT,
@@ -143,6 +146,11 @@ async def _create_schema(conn):
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         );
+
+        ALTER TABLE documents ADD COLUMN IF NOT EXISTS semantic_summary JSONB;
+        ALTER TABLE documents ADD COLUMN IF NOT EXISTS sensitivity_control JSONB;
+        ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_status TEXT NOT NULL DEFAULT 'PENDING';
+
 
         -- Document events (local log + VC references)
         CREATE TABLE IF NOT EXISTS document_events (

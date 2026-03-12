@@ -200,3 +200,40 @@ A DID should be treated as centrally ready only when all are true:
 - `org_did_configured`
 
 If any of these are false, onboarding is partial (local DID may exist, but central verification is incomplete).
+
+## March 2026 semantic summary review flow (SDK-driven)
+
+OpenDMS now supports an additive SDK-centered AI review workflow:
+
+1. User uploads/selects a file in the **Documents** create form.
+2. User clicks **Generate AI Summary** (OpenDMS calls SDK `extract-summary`).
+3. Frontend displays editable `semanticSummary` + `sensitivityControl` fields.
+4. User reviews/edits and submits document creation.
+5. OpenDMS stores reviewed semantic data locally and includes it in SDK document creation metadata.
+
+### New document fields
+
+`documents` table now includes:
+
+- `semantic_summary` (`JSONB`)
+- `sensitivity_control` (`JSONB`)
+- `ai_summary_status` (`TEXT`, default `PENDING`)
+
+Status behavior:
+
+- `GENERATED`: SDK produced summary and user did not revise it yet.
+- `VALIDATED`: user reviewed/edited and submitted.
+- `SKIPPED`: created without AI summary.
+
+### New API endpoints
+
+- `POST /api/documents/{id}/extract-summary`
+- `POST /api/documents/extract-summary-preview`
+- `GET /api/intelligence/topics`
+- `GET /api/intelligence/similar/{doc_id}`
+- `GET /api/intelligence/warnings`
+- `POST /api/intelligence/briefing`
+
+### Privacy note
+
+OpenDMS keeps raw file content local by default. The SDK-centered intelligence flow is designed so only semantic abstractions (summary/sensitivity metadata) are centralized when policy allows it.

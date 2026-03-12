@@ -23,6 +23,12 @@ async function api(path, opts = {}) {
 function Badge({ s }) { const c = { draft:"bg-gray-100 text-gray-600", registered:"bg-sky-100 text-sky-700", sent:"bg-amber-100 text-amber-700", received:"bg-violet-100 text-violet-700", assigned:"bg-teal-100 text-teal-700", decided:"bg-green-100 text-green-700", archived:"bg-gray-200 text-gray-600" }; return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c[s]||"bg-gray-100"}`}>{s}</span>; }
 const EI = { DocumentCreated:"\u{1F4C4}", DocumentSent:"\u{1F4E4}", DocumentReceived:"\u{1F4E5}", DocumentAssigned:"\u{1F464}", DocumentDecided:"\u{2705}", DocumentArchived:"\u{1F5C4}\uFE0F" };
 
+
+const SUMMARY_FIELDS = ["primaryTopic","subTopics","summary","documentPurpose","requestedAction","involvedPartyTypes","geographicScope","sectorTags","legalDomain","estimatedRiskLevel","urgencyLevel","keywords","summarySource","aiConfidenceScore","aiModelVersion"];
+const SENSITIVITY_FIELDS = ["allowCentralization","redactionLevel","personalDataRisk","accessRestrictionBasis","classifiedInformation"];
+const summaryBadgeClass = { AI: "bg-blue-100 text-blue-700", HUMAN: "bg-green-100 text-green-700", HYBRID: "bg-purple-100 text-purple-700" };
+function normalizeSummaryPayload(payload) { return { semanticSummary: payload?.semanticSummary || null, sensitivityControl: payload?.sensitivityControl || null, route: payload?.route || null }; }
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("dashboard");
@@ -40,6 +46,7 @@ export default function App() {
   const nav = [
     { id:"dashboard", label:"Dashboard", icon:"\u{1F4CA}" },
     { id:"documents", label:"Documents", icon:"\u{1F4C4}" },
+    { id:"intelligence", label:"Intelligence", icon:"\u{1F9E0}" },
     ...(isAdmin ? [
       { id:"users", label:"Users", icon:"\u{1F465}" },
       { id:"audit", label:"Audit Logs", icon:"\u{1F4DD}" },
@@ -75,6 +82,7 @@ export default function App() {
         {toast && <div className={`fixed top-3 right-3 z-50 px-4 py-2 rounded-lg shadow text-sm ${toast.t==="error"?"bg-red-50 text-red-700 border border-red-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{toast.m}</div>}
         {page==="dashboard" && <DashboardPage notify={notify} user={user} />}
         {page==="documents" && <DocumentsPage notify={notify} user={user} />}
+        {page==="intelligence" && <IntelligencePage notify={notify} />}
         {page==="users" && <UsersPage notify={notify} />}
         {page==="organizations" && <OrgsPage notify={notify} onViewLogs={(filters)=>{ setAuditFilters(filters); setPage("audit"); }} />}
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
@@ -193,65 +201,30 @@ function DocumentsPage({ notify, user }) {
 
 function CreateDocForm({ onDone, notify }) {
   const [title, setTitle] = useState(""); const [summary, setSummary] = useState("");
-  const submit = async () => { try { await api("/documents",{method:"POST",body:JSON.stringify({title,content_summary:summary,metadata:{}})}); notify("Document created"); onDone(); } catch(e){notify(e.message,"error");} };
-  return (<div className="bg-white border rounded-lg p-4 mb-4 space-y-2">
-    <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" />
-    <textarea value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Content summary" rows={2} className="w-full text-sm px-3 py-2 border rounded" />
-    <div className="flex gap-2 justify-end">
-      <button onClick={onDone} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button>
-      <button onClick={submit} className="text-sm px-4 py-1.5 bg-emerald-600 text-white rounded">Create</button>
-    </div>
-  </div>);
+  const [file, setFile] = useState(null); const [extracting, setExtracting] = useState(false);
+  const [aiData, setAiData] = useState({ semanticSummary: null, sensitivityControl: null, route: null });
+  const updateSemanticField = (field, value) => setAiData((prev) => { const next = { ...(prev.semanticSummary || {}), [field]: value }; if ((prev.semanticSummary || {}).summarySource === "AI") next.summarySource = "HYBRID"; if (!Object.values(next).some((v) => Array.isArray(v) ? v.length : (v ?? "") !== "")) next.summarySource = "HUMAN"; return { ...prev, semanticSummary: next }; });
+  const updateSensitivityField = (field, value) => setAiData((prev) => ({ ...prev, sensitivityControl: { ...(prev.sensitivityControl || {}), [field]: value } }));
+  const generateSummary = async () => { if (!file) return notify("Please select a file first", "error"); const fd = new FormData(); fd.append("file", file); fd.append("metadata", JSON.stringify({ title })); try { setExtracting(true); const r = await api("/documents/extract-summary-preview", { method: "POST", body: fd }); setAiData(normalizeSummaryPayload(r)); notify("AI summary generated"); } catch (e) { notify(e.message, "error"); } finally { setExtracting(false); } };
+  const submit = async () => { try { const semanticSummary = aiData.semanticSummary; const hasAi = semanticSummary || aiData.sensitivityControl; const aiStatus = hasAi ? (["HUMAN", "HYBRID"].includes(semanticSummary?.summarySource) ? "VALIDATED" : "GENERATED") : "SKIPPED"; await api("/documents",{method:"POST",body:JSON.stringify({title,content_summary:summary,metadata:{},semantic_summary:semanticSummary,sensitivity_control:aiData.sensitivityControl,ai_summary_status:aiStatus})}); notify("Document created"); onDone(); } catch(e){notify(e.message,"error");} };
+  return (<div className="bg-white border rounded-lg p-4 mb-4 space-y-3"><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" /><input type="file" onChange={e=>setFile(e.target.files?.[0] || null)} className="text-xs" /><div className="flex items-center gap-2"><button onClick={generateSummary} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">Generate AI Summary</button>{extracting && <span className="text-xs text-gray-500">Processing with SDK...</span>}{aiData.semanticSummary?.aiConfidenceScore != null && <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">Confidence: {Math.round(aiData.semanticSummary.aiConfidenceScore * 100)}%</span>}</div>{aiData.route && <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">Route: {JSON.stringify(aiData.route)}</div>}<textarea value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Content summary" rows={2} className="w-full text-sm px-3 py-2 border rounded" /><div className="grid grid-cols-2 gap-2">{SUMMARY_FIELDS.map((f)=><input key={f} value={Array.isArray(aiData.semanticSummary?.[f]) ? (aiData.semanticSummary?.[f]||[]).join(",") : (aiData.semanticSummary?.[f] ?? "")} onChange={e=>updateSemanticField(f, ["subTopics","involvedPartyTypes","sectorTags","keywords"].includes(f) ? e.target.value.split(",").map(v=>v.trim()).filter(Boolean) : e.target.value)} placeholder={`AI Summary: ${f}`} className="text-xs px-2 py-1 border rounded" />)}</div><div className="grid grid-cols-2 gap-2">{SENSITIVITY_FIELDS.map((f)=><input key={f} value={typeof aiData.sensitivityControl?.[f] === "boolean" ? String(aiData.sensitivityControl?.[f]) : (aiData.sensitivityControl?.[f] ?? "")} onChange={e=>updateSensitivityField(f, ["allowCentralization","classifiedInformation"].includes(f) ? e.target.value === "true" : e.target.value)} placeholder={`Sensitivity: ${f}`} className="text-xs px-2 py-1 border rounded" />)}</div><div className="text-[11px] text-gray-400">Legacy local AI helper endpoints remain available under /api/ai/*, but this creation flow now uses SDK extract-summary.</div><div className="flex gap-2 justify-end"><button onClick={onDone} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button><button onClick={submit} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">Create</button></div></div>);
 }
 
 function DocumentDetail({ doc, onAction, notify }) {
-  const [sendDid, setSendDid] = useState(""); const [assignId, setAssignId] = useState(""); const [decision, setDecision] = useState("");
+  const [sendDid, setSendDid] = useState(""); const [assignId, setAssignId] = useState(""); const [decision, setDecision] = useState(""); const [similar, setSimilar] = useState([]);
   const act = async (path, body) => { try { await api(`/documents/${doc.id}${path}`,{method:"POST",body:JSON.stringify(body)}); notify("Action completed"); onAction(); } catch(e){notify(e.message,"error");} };
   const upload = async (e) => { const f = e.target.files[0]; if(!f) return; const fd = new FormData(); fd.append("file",f); try { await api(`/documents/${doc.id}/upload`,{method:"POST",body:fd}); notify("File uploaded"); onAction(); } catch(e){notify(e.message,"error");} };
+  useEffect(()=>{ if (!doc.doc_did || !doc.sensitivity_control?.allowCentralization) return; api(`/intelligence/similar/${doc.doc_did}`).then((r)=>setSimilar(r.items || r.documents || [])).catch(()=>setSimilar([])); }, [doc.id, doc.doc_did, doc.sensitivity_control?.allowCentralization]);
+  const source = doc.semantic_summary?.summarySource || "HUMAN";
+  return (<div className="p-4 space-y-3"><div className="flex items-center justify-between"><h3 className="font-bold text-gray-900">{doc.title}</h3><Badge s={doc.status}/></div><div>{doc.ai_summary_status && <span className={`text-xs px-2 py-0.5 rounded ${summaryBadgeClass[source] || "bg-gray-100 text-gray-700"}`}>{source}</span>}</div><div className="grid grid-cols-3 gap-2 text-xs"><div><span className="text-gray-400">Reg#</span><div>{doc.registration_number}</div></div><div><span className="text-gray-400">Org</span><div>{doc.org_name||"—"}</div></div><div><span className="text-gray-400">Assigned</span><div>{doc.assigned_name||"—"}</div></div></div>{doc.doc_did && <div className="text-xs"><span className="text-gray-400">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_did}</code></div>}{doc.content_summary && <div className="text-sm text-gray-700 bg-gray-50 rounded p-2">{doc.content_summary}</div>}{doc.semantic_summary && <pre className="text-xs bg-blue-50 border border-blue-100 rounded p-2 overflow-auto">{JSON.stringify(doc.semantic_summary, null, 2)}</pre>}{doc.sensitivity_control && <pre className="text-xs bg-purple-50 border border-purple-100 rounded p-2 overflow-auto">{JSON.stringify(doc.sensitivity_control, null, 2)}</pre>}{doc.file_name && <div className="text-xs text-gray-500">File: {doc.file_name} ({(doc.file_size/1024).toFixed(1)}KB)</div>}{similar.length > 0 && <div className="border rounded p-2"><div className="text-xs font-medium mb-1">Similar documents</div>{similar.map((s,idx)=><div key={idx} className="text-xs text-gray-600">{s.title || s.docDid || JSON.stringify(s)}</div>)}</div>}<div className="border-t pt-3 space-y-2"><div className="text-xs font-medium text-gray-500">Actions</div><input type="file" onChange={upload} className="text-xs" />{doc.status === "registered" && <div className="flex gap-2"><input value={sendDid} onChange={e=>setSendDid(e.target.value)} placeholder="Recipient org DID" className="flex-1 text-xs px-2 py-1 border rounded" /><button onClick={()=>act("/send",{recipient_org_did:sendDid})} className="text-xs px-3 py-1 bg-amber-500 text-white rounded">Send</button></div>}{doc.status === "received" && <div className="flex gap-2"><input value={assignId} onChange={e=>setAssignId(e.target.value)} placeholder="User ID" className="flex-1 text-xs px-2 py-1 border rounded" /><button onClick={()=>act("/assign",{user_id:parseInt(assignId)})} className="text-xs px-3 py-1 bg-teal-500 text-white rounded">Assign</button></div>}{doc.status === "assigned" && <div className="flex gap-2"><input value={decision} onChange={e=>setDecision(e.target.value)} placeholder="Decision" className="flex-1 text-xs px-2 py-1 border rounded" /><button onClick={()=>act("/decide",{decision})} className="text-xs px-3 py-1 bg-green-600 text-white rounded">Decide</button></div>}{["registered","decided"].includes(doc.status) && <button onClick={()=>act("/archive",{})} className="text-xs px-3 py-1 bg-gray-500 text-white rounded">Archive</button>}</div>{doc.events?.length > 0 && <div className="border-t pt-3"><div className="text-xs font-medium text-gray-500 mb-2">Lifecycle ({doc.events.length} events)</div><div className="space-y-1">{doc.events.map((e,i)=>(<div key={i} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-2 text-xs"><span>{EI[e.event_type]||"\u{1F4CE}"}</span><span className="font-medium">{e.event_type}</span>{e.vc_submitted && <span className="text-emerald-500">\u2713 VC</span>}<span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span></div>))}</div></div>}</div>);
+}
 
-  return (<div className="p-4 space-y-3">
-    <div className="flex items-center justify-between"><h3 className="font-bold text-gray-900">{doc.title}</h3><Badge s={doc.status}/></div>
-    <div className="grid grid-cols-3 gap-2 text-xs">
-      <div><span className="text-gray-400">Reg#</span><div>{doc.registration_number}</div></div>
-      <div><span className="text-gray-400">Org</span><div>{doc.org_name||"—"}</div></div>
-      <div><span className="text-gray-400">Assigned</span><div>{doc.assigned_name||"—"}</div></div>
-    </div>
-    {doc.doc_did && <div className="text-xs"><span className="text-gray-400">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_did}</code></div>}
-    {doc.content_summary && <div className="text-sm text-gray-700 bg-gray-50 rounded p-2">{doc.content_summary}</div>}
-    {doc.file_name && <div className="text-xs text-gray-500">File: {doc.file_name} ({(doc.file_size/1024).toFixed(1)}KB)</div>}
-    
-    {/* Actions */}
-    <div className="border-t pt-3 space-y-2">
-      <div className="text-xs font-medium text-gray-500">Actions</div>
-      <input type="file" onChange={upload} className="text-xs" />
-      {doc.status === "registered" && <div className="flex gap-2">
-        <input value={sendDid} onChange={e=>setSendDid(e.target.value)} placeholder="Recipient org DID" className="flex-1 text-xs px-2 py-1 border rounded" />
-        <button onClick={()=>act("/send",{recipient_org_did:sendDid})} className="text-xs px-3 py-1 bg-amber-500 text-white rounded">Send</button>
-      </div>}
-      {doc.status === "received" && <div className="flex gap-2">
-        <input value={assignId} onChange={e=>setAssignId(e.target.value)} placeholder="User ID" className="flex-1 text-xs px-2 py-1 border rounded" />
-        <button onClick={()=>act("/assign",{user_id:parseInt(assignId)})} className="text-xs px-3 py-1 bg-teal-500 text-white rounded">Assign</button>
-      </div>}
-      {doc.status === "assigned" && <div className="flex gap-2">
-        <input value={decision} onChange={e=>setDecision(e.target.value)} placeholder="Decision" className="flex-1 text-xs px-2 py-1 border rounded" />
-        <button onClick={()=>act("/decide",{decision})} className="text-xs px-3 py-1 bg-green-600 text-white rounded">Decide</button>
-      </div>}
-      {["registered","decided"].includes(doc.status) && <button onClick={()=>act("/archive",{})} className="text-xs px-3 py-1 bg-gray-500 text-white rounded">Archive</button>}
-    </div>
-
-    {/* Events timeline */}
-    {doc.events?.length > 0 && <div className="border-t pt-3">
-      <div className="text-xs font-medium text-gray-500 mb-2">Lifecycle ({doc.events.length} events)</div>
-      <div className="space-y-1">
-        {doc.events.map((e,i)=>(<div key={i} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-2 text-xs">
-          <span>{EI[e.event_type]||"\u{1F4CE}"}</span>
-          <span className="font-medium">{e.event_type}</span>
-          {e.vc_submitted && <span className="text-emerald-500">\u2713 VC</span>}
-          <span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span>
-        </div>))}
-      </div>
-    </div>}
-  </div>);
+function IntelligencePage({ notify }) {
+  const [topics, setTopics] = useState([]); const [warnings, setWarnings] = useState([]); const [briefing, setBriefing] = useState(null);
+  const load = useCallback(async () => { try { const [t, w] = await Promise.all([api("/intelligence/topics"), api("/intelligence/warnings")]); setTopics(t.items || t.topics || []); setWarnings(w.items || w.warnings || []); } catch (e) { notify(e.message, "error"); } }, [notify]);
+  useEffect(() => { load(); }, [load]);
+  const generateBriefing = async () => { try { const r = await api("/intelligence/briefing", { method: "POST", body: JSON.stringify({ context: {} }) }); setBriefing(r); notify("Briefing generated"); } catch (e) { notify(e.message, "error"); } };
+  return (<div><div className="flex items-center justify-between mb-4"><h2 className="text-xl font-bold">Intelligence</h2><button onClick={generateBriefing} className="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded">Generate briefing</button></div><div className="grid grid-cols-3 gap-3"><div className="bg-white border rounded p-3"><div className="text-xs text-gray-500 mb-2">Topic trends</div>{topics.length ? topics.map((t,i)=><div key={i} className="text-xs">{t.topic || JSON.stringify(t)}</div>) : <div className="text-xs text-gray-400">No data</div>}</div><div className="bg-white border rounded p-3"><div className="text-xs text-gray-500 mb-2">Active warnings</div>{warnings.length ? warnings.map((w,i)=><div key={i} className="text-xs">{w.title || JSON.stringify(w)}</div>) : <div className="text-xs text-gray-400">No warnings</div>}</div><div className="bg-white border rounded p-3"><div className="text-xs text-gray-500 mb-2">Recent clusters / briefing</div><pre className="text-xs whitespace-pre-wrap">{briefing ? JSON.stringify(briefing, null, 2) : "No briefing generated"}</pre></div></div></div>);
 }
 
 function UsersPage({ notify }) {
