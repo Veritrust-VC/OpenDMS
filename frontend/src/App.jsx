@@ -29,6 +29,23 @@ const SENSITIVITY_FIELDS = ["allowCentralization","redactionLevel","personalData
 const summaryBadgeClass = { AI: "bg-blue-100 text-blue-700", HUMAN: "bg-green-100 text-green-700", HYBRID: "bg-purple-100 text-purple-700" };
 function normalizeSummaryPayload(payload) { return { semanticSummary: payload?.semanticSummary || null, sensitivityControl: payload?.sensitivityControl || null, route: payload?.route || null }; }
 
+const SUMMARY_FIELD_LABELS = {
+  primaryTopic: "Primary Topic", subTopics: "Sub Topics", summary: "Summary",
+  documentPurpose: "Document Purpose", requestedAction: "Requested Action",
+  involvedPartyTypes: "Involved Party Types", geographicScope: "Geographic Scope",
+  sectorTags: "Sector Tags", legalDomain: "Legal Domain",
+  estimatedRiskLevel: "Estimated Risk Level", urgencyLevel: "Urgency Level",
+  keywords: "Keywords", summarySource: "Summary Source",
+  aiConfidenceScore: "AI Confidence Score", aiModelVersion: "AI Model Version",
+};
+const SENSITIVITY_FIELD_LABELS = {
+  allowCentralization: "Allow Centralization", redactionLevel: "Redaction Level",
+  personalDataRisk: "Personal Data Risk", accessRestrictionBasis: "Access Restriction Basis",
+  classifiedInformation: "Classified Information",
+};
+const PERSONAL_DATA_RISK_LABELS = { NONE: "None", LOW: "Low", MEDIUM: "Medium", HIGH: "High" };
+const BOOL_DISPLAY = (v) => v === true || v === "true" ? "Yes" : v === false || v === "false" ? "No" : "—";
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("dashboard");
@@ -187,7 +204,7 @@ function DocumentsPage({ notify, user }) {
         <div className="divide-y max-h-[550px] overflow-y-auto">
           {docs.map(d=>(
             <div key={d.id} onClick={()=>loadDetail(d.id)} className={`px-4 py-3 cursor-pointer hover:bg-gray-50 ${sel?.id===d.id?"bg-emerald-50":""}`}>
-              <div className="flex items-center justify-between"><span className="text-sm font-medium truncate max-w-[200px]">{d.title}</span><Badge s={d.status}/></div>
+              <div className="flex items-center justify-between"><span className={`text-sm font-medium truncate max-w-[200px] ${!d.title ? "text-gray-400 italic" : ""}`}>{d.title || "Untitled Document"}</span><Badge s={d.status}/></div>
               <div className="text-xs text-gray-400 mt-0.5">{d.registration_number} {d.org_name && `\u00b7 ${d.org_name}`}</div>
             </div>
           ))}
@@ -207,9 +224,138 @@ function CreateDocForm({ onDone, notify }) {
   const [aiData, setAiData] = useState({ semanticSummary: null, sensitivityControl: null, route: null });
   const updateSemanticField = (field, value) => setAiData((prev) => { const next = { ...(prev.semanticSummary || {}), [field]: value }; if ((prev.semanticSummary || {}).summarySource === "AI") next.summarySource = "HYBRID"; if (!Object.values(next).some((v) => Array.isArray(v) ? v.length : (v ?? "") !== "")) next.summarySource = "HUMAN"; return { ...prev, semanticSummary: next }; });
   const updateSensitivityField = (field, value) => setAiData((prev) => ({ ...prev, sensitivityControl: { ...(prev.sensitivityControl || {}), [field]: value } }));
-  const generateSummary = async () => { if (!file) return notify("Please select a file first", "error"); const fd = new FormData(); fd.append("file", file); fd.append("metadata", JSON.stringify({ title })); try { setExtracting(true); const r = await api("/documents/extract-summary-preview", { method: "POST", body: fd }); setAiData(normalizeSummaryPayload(r)); notify("AI summary generated"); } catch (e) { notify(e.message, "error"); } finally { setExtracting(false); } };
-  const submit = async () => { try { const semanticSummary = aiData.semanticSummary; const hasAi = semanticSummary || aiData.sensitivityControl; const aiStatus = hasAi ? (["HUMAN", "HYBRID"].includes(semanticSummary?.summarySource) ? "VALIDATED" : "GENERATED") : "SKIPPED"; await api("/documents",{method:"POST",body:JSON.stringify({title,content_summary:summary,metadata:{},semantic_summary:semanticSummary,sensitivity_control:aiData.sensitivityControl,ai_summary_status:aiStatus})}); notify("Document created"); onDone(); } catch(e){notify(e.message,"error");} };
-  return (<div className="bg-white border rounded-lg p-4 mb-4 space-y-3"><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" /><input type="file" onChange={e=>setFile(e.target.files?.[0] || null)} className="text-xs" /><div className="flex items-center gap-2"><button onClick={generateSummary} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">Generate AI Summary</button>{extracting && <span className="text-xs text-gray-500">Processing with SDK...</span>}{aiData.semanticSummary?.aiConfidenceScore != null && <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">Confidence: {Math.round(aiData.semanticSummary.aiConfidenceScore * 100)}%</span>}</div>{aiData.route && <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">Route: {JSON.stringify(aiData.route)}</div>}<textarea value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Content summary" rows={2} className="w-full text-sm px-3 py-2 border rounded" /><div className="grid grid-cols-2 gap-2">{SUMMARY_FIELDS.map((f)=><input key={f} value={Array.isArray(aiData.semanticSummary?.[f]) ? (aiData.semanticSummary?.[f]||[]).join(",") : (aiData.semanticSummary?.[f] ?? "")} onChange={e=>updateSemanticField(f, ["subTopics","involvedPartyTypes","sectorTags","keywords"].includes(f) ? e.target.value.split(",").map(v=>v.trim()).filter(Boolean) : e.target.value)} placeholder={`AI Summary: ${f}`} className="text-xs px-2 py-1 border rounded" />)}</div><div className="grid grid-cols-2 gap-2">{SENSITIVITY_FIELDS.map((f)=><input key={f} value={typeof aiData.sensitivityControl?.[f] === "boolean" ? String(aiData.sensitivityControl?.[f]) : (aiData.sensitivityControl?.[f] ?? "")} onChange={e=>updateSensitivityField(f, ["allowCentralization","classifiedInformation"].includes(f) ? e.target.value === "true" : e.target.value)} placeholder={`Sensitivity: ${f}`} className="text-xs px-2 py-1 border rounded" />)}</div><div className="text-[11px] text-gray-400">Legacy local AI helper endpoints remain available under /api/ai/*, but this creation flow now uses SDK extract-summary.</div><div className="flex gap-2 justify-end"><button onClick={onDone} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button><button onClick={submit} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">Create</button></div></div>);
+
+  // BUG-013: Auto-populate title from filename
+  const handleFileChange = (e) => {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    if (f && !title.trim()) {
+      setTitle(f.name.replace(/\.[^.]+$/, ""));
+    }
+  };
+
+  // BUG-002: Show explicit error/warning when AI returns empty data
+  const generateSummary = async () => {
+    if (!file) return notify("Please select a file first", "error");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("metadata", JSON.stringify({ title }));
+    try {
+      setExtracting(true);
+      const r = await api("/documents/extract-summary-preview", { method: "POST", body: fd });
+      const normalized = normalizeSummaryPayload(r);
+      setAiData(normalized);
+      if (!normalized.semanticSummary && !normalized.sensitivityControl) {
+        notify("AI summary generation returned no data. Please try again.", "error");
+      } else {
+        notify("AI summary generated");
+      }
+    } catch (e) {
+      notify(e.message || "AI summary generation failed, please try again.", "error");
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  // BUG-009: Upload file to document after creation
+  const submit = async () => {
+    try {
+      const semanticSummary = aiData.semanticSummary;
+      const hasAi = semanticSummary || aiData.sensitivityControl;
+      const aiStatus = hasAi ? (["HUMAN", "HYBRID"].includes(semanticSummary?.summarySource) ? "VALIDATED" : "GENERATED") : "SKIPPED";
+      const doc = await api("/documents", { method: "POST", body: JSON.stringify({ title, content_summary: summary, metadata: {}, semantic_summary: semanticSummary, sensitivity_control: aiData.sensitivityControl, ai_summary_status: aiStatus }) });
+      if (file && doc?.id) {
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          await api(`/documents/${doc.id}/files`, { method: "POST", body: fd });
+        } catch (e) {
+          notify("Document created, but file upload failed: " + e.message, "error");
+          onDone();
+          return;
+        }
+      }
+      notify("Document created");
+      onDone();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  // BUG-007: Render sensitivity field as appropriate input type
+  const renderSensitivityField = (f) => {
+    const label = SENSITIVITY_FIELD_LABELS[f] || f;
+    const val = aiData.sensitivityControl?.[f];
+    if (["allowCentralization", "classifiedInformation"].includes(f)) {
+      return (
+        <div key={f} className="flex flex-col gap-0.5">
+          <label className="text-[10px] text-gray-500">{label}</label>
+          <select value={val === true || val === "true" ? "true" : val === false || val === "false" ? "false" : ""}
+            onChange={e => updateSensitivityField(f, e.target.value === "" ? "" : e.target.value === "true")}
+            className="text-xs px-2 py-1 border rounded">
+            <option value="">— Select —</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      );
+    }
+    if (f === "personalDataRisk") {
+      return (
+        <div key={f} className="flex flex-col gap-0.5">
+          <label className="text-[10px] text-gray-500">{label}</label>
+          <select value={val ?? ""} onChange={e => updateSensitivityField(f, e.target.value)} className="text-xs px-2 py-1 border rounded">
+            <option value="">— Select —</option>
+            {Object.entries(PERSONAL_DATA_RISK_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      );
+    }
+    return (
+      <div key={f} className="flex flex-col gap-0.5">
+        <label className="text-[10px] text-gray-500">{label}</label>
+        <input value={val ?? ""} onChange={e => updateSensitivityField(f, e.target.value)} className="text-xs px-2 py-1 border rounded" />
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-white border rounded-lg p-4 mb-4 space-y-3">
+      <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" />
+      {/* BUG-013: handleFileChange auto-populates title */}
+      <input type="file" onChange={handleFileChange} className="text-xs" />
+      <div className="flex items-center gap-2">
+        <button onClick={generateSummary} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">
+          {extracting ? "Processing with SDK..." : "Generate AI Summary"}
+        </button>
+        {aiData.semanticSummary?.aiConfidenceScore != null && (
+          <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">Confidence: {Math.round(aiData.semanticSummary.aiConfidenceScore * 100)}%</span>
+        )}
+      </div>
+      {aiData.route && <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">Route: {JSON.stringify(aiData.route)}</div>}
+      <textarea value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Content summary" rows={2} className="w-full text-sm px-3 py-2 border rounded" />
+      {/* BUG-007: Human-readable labels for AI Summary fields */}
+      <div className="grid grid-cols-2 gap-2">
+        {SUMMARY_FIELDS.map((f) => (
+          <div key={f} className="flex flex-col gap-0.5">
+            <label className="text-[10px] text-gray-500">{SUMMARY_FIELD_LABELS[f] || f}</label>
+            <input
+              value={Array.isArray(aiData.semanticSummary?.[f]) ? (aiData.semanticSummary?.[f]||[]).join(",") : (aiData.semanticSummary?.[f] ?? "")}
+              onChange={e=>updateSemanticField(f, ["subTopics","involvedPartyTypes","sectorTags","keywords"].includes(f) ? e.target.value.split(",").map(v=>v.trim()).filter(Boolean) : e.target.value)}
+              className="text-xs px-2 py-1 border rounded"
+            />
+          </div>
+        ))}
+      </div>
+      {/* BUG-003/004: Proper select inputs for boolean/enum sensitivity fields */}
+      <div className="grid grid-cols-2 gap-2">
+        {SENSITIVITY_FIELDS.map(renderSensitivityField)}
+      </div>
+      {/* BUG-008: Developer message removed */}
+      <div className="flex gap-2 justify-end">
+        <button onClick={onDone} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button>
+        <button onClick={submit} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">Create</button>
+      </div>
+    </div>
+  );
 }
 
 function DocumentDetail({ doc, onAction, notify }) {
@@ -474,9 +620,9 @@ function DocumentDetail({ doc, onAction, notify }) {
             {metaTab === "sensitivity" && doc.sensitivity_control && (
               <div className="space-y-2 text-xs">
                 <div className={`p-2 rounded ${doc.sensitivity_control.personalDataRisk === "HIGH" ? "bg-red-50 text-red-700" : doc.sensitivity_control.personalDataRisk === "MEDIUM" ? "bg-amber-50 text-amber-700" : "bg-green-50 text-green-700"}`}>
-                  Personal Data Risk: <strong>{doc.sensitivity_control.personalDataRisk}</strong>
+                  Personal Data Risk: <strong>{PERSONAL_DATA_RISK_LABELS[doc.sensitivity_control.personalDataRisk] || doc.sensitivity_control.personalDataRisk || "None"}</strong>
                 </div>
-                <div>Allow Centralization: <strong>{String(doc.sensitivity_control.allowCentralization)}</strong></div>
+                <div>Allow Centralization: <strong>{BOOL_DISPLAY(doc.sensitivity_control.allowCentralization)}</strong></div>
                 {doc.sensitivity_control.redactionLevel && <div>Redaction Level: <strong>{doc.sensitivity_control.redactionLevel}</strong></div>}
                 {doc.sensitivity_control.classifiedInformation && <div className="bg-red-100 text-red-800 p-2 rounded font-medium">⚠ Contains classified information</div>}
                 {doc.sensitivity_control.detectedEntityTypes?.length > 0 && (
