@@ -251,6 +251,391 @@ async def download_file(doc_id: int, user=Depends(get_current_user)):
                     headers={"Content-Disposition": f'attachment; filename="{doc["file_name"]}"'})
 
 
+# ── Multi-file management ──
+
+@router.get("/{doc_id}/files")
+async def list_files(doc_id: int, user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            "SELECT id FROM documents WHERE id = $1 AND org_id = $2",
+            doc_id, default_org["id"])
+        if not doc:
+            raise HTTPException(404, "Document not found")
+        rows = await conn.fetch(
+            """SELECT id, file_uid, file_name, mime_type, file_size, checksum_sha256,
+                      is_primary, created_at
+               FROM document_files WHERE document_id = $1 ORDER BY created_at""",
+            doc_id)
+    return {"items": [dict(r) for r in rows], "total": len(rows)}
+
+
+@router.post("/{doc_id}/files")
+async def add_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            "SELECT id, org_id FROM documents WHERE id = $1 AND org_id = $2",
+            doc_id, default_org["id"])
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+    content = await file.read()
+    key = generate_storage_key(doc["org_id"], file.filename)
+    storage = get_storage()
+    await storage.put(key, content, file.content_type or "")
+
+    import hashlib as _hl
+    checksum = _hl.sha256(content).hexdigest()
+
+    async with pool.acquire() as conn:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM document_files WHERE document_id = $1", doc_id)
+        is_primary = count == 0
+
+        row = await conn.fetchrow(
+            """INSERT INTO document_files
+               (document_id, file_name, mime_type, file_size, storage_key,
+                storage_backend, checksum_sha256, is_primary, uploaded_by)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+               RETURNING id, file_uid, file_name, mime_type, file_size, is_primary, created_at""",
+            doc_id, file.filename, file.content_type, len(content),
+            key, get_settings().storage_backend, checksum, is_primary, user["id"])
+
+    return dict(row)
+
+
+@router.delete("/{doc_id}/files/{file_id}")
+async def remove_file(doc_id: int, file_id: int, user=Depends(get_current_user)):
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            "SELECT id FROM documents WHERE id = $1 AND org_id = $2",
+            doc_id, default_org["id"])
+        if not doc:
+            raise HTTPException(404, "Document not found")
+        deleted = await conn.fetchval(
+            "DELETE FROM document_files WHERE id = $1 AND document_id = $2 RETURNING id",
+            file_id, doc_id)
+        if not deleted:
+            raise HTTPException(404, "File not found")
+    return {"status": "deleted", "file_id": file_id}
+
+
+def _extract_text(file_data: bytes, mime_type: str, filename: str) -> str:
+    """Extract text from file bytes. Simple extraction for common formats."""
+    try:
+        if mime_type in ("text/plain", "text/csv", "text/html"):
+            return file_data.decode("utf-8", errors="replace")[:20000]
+        if "pdf" in mime_type or filename.lower().endswith(".pdf"):
+            try:
+                import subprocess
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                    f.write(file_data)
+                    tmp = f.name
+                result = subprocess.run(
+                    ["pdftotext", "-enc", "UTF-8", tmp, "-"],
+                    capture_output=True, text=True, timeout=30)
+                os.unlink(tmp)
+                if result.returncode == 0:
+                    return result.stdout[:20000]
+            except Exception:
+                pass
+        if "wordprocessingml" in mime_type or filename.lower().endswith(".docx"):
+            try:
+                import subprocess
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+                    f.write(file_data)
+                    tmp = f.name
+                result = subprocess.run(
+                    ["pandoc", "--to=plain", tmp],
+                    capture_output=True, text=True, timeout=30)
+                os.unlink(tmp)
+                if result.returncode == 0:
+                    return result.stdout[:20000]
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return ""
+
+
+@router.post("/{doc_id}/generate-metadata")
+async def generate_metadata(doc_id: int, user=Depends(get_current_user)):
+    """AI-powered VDVC v1.1 semantic metadata generation."""
+    from opendms.ai import generate_semantic_metadata
+    import hashlib as _hl
+
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            """SELECT d.id, d.title, d.registration_number, d.org_id,
+                      d.sensitivity_control, o.name as org_name
+               FROM documents d
+               LEFT JOIN organizations o ON d.org_id = o.id
+               WHERE d.id = $1 AND d.org_id = $2""",
+            doc_id, default_org["id"])
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        file_row = await conn.fetchrow(
+            """SELECT storage_key, file_name, mime_type, checksum_sha256
+               FROM document_files
+               WHERE document_id = $1 ORDER BY is_primary DESC, created_at LIMIT 1""",
+            doc_id)
+        if not file_row:
+            file_row = await conn.fetchrow(
+                "SELECT storage_key, file_name, mime_type FROM documents WHERE id = $1",
+                doc_id)
+        if not file_row or not file_row["storage_key"]:
+            raise HTTPException(400, "No files attached to this document")
+
+    storage = get_storage()
+    file_data = await storage.get(file_row["storage_key"])
+    if not file_data:
+        raise HTTPException(404, "File not found in storage")
+
+    document_text = _extract_text(file_data, file_row["mime_type"] or "", file_row["file_name"] or "")
+    if not document_text:
+        raise HTTPException(400, "Could not extract text from file")
+
+    sc = _decode_jsonb(doc.get("sensitivity_control")) or {}
+    allow_cent = sc.get("allowCentralization", True)
+    pdr = sc.get("personalDataRisk", "LOW")
+
+    trace_id = str(uuid.uuid4())
+    file_hash = file_row.get("checksum_sha256") or _hl.sha256(file_data).hexdigest()
+
+    result = await generate_semantic_metadata(
+        document_text=document_text,
+        title=doc["title"],
+        doc_type="",
+        reg_number=doc["registration_number"] or "",
+        org_name=doc.get("org_name") or "",
+        allow_centralization=allow_cent if isinstance(allow_cent, bool) else str(allow_cent).lower() == "true",
+        personal_data_risk=pdr,
+    )
+
+    if not result:
+        raise HTTPException(502, "AI metadata generation unavailable")
+
+    semantic_summary = result.get("semanticSummary")
+    sensitivity_control = result.get("sensitivityControl")
+    processing = result.get("_processing", {})
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """UPDATE documents
+               SET semantic_summary = $1, sensitivity_control = $2, ai_summary_status = $3
+               WHERE id = $4""",
+            json.dumps(semantic_summary) if semantic_summary else None,
+            json.dumps(sensitivity_control) if sensitivity_control else None,
+            "GENERATED",
+            doc_id,
+        )
+        await conn.execute(
+            """INSERT INTO ai_processing_log
+               (document_id, action_type, route_used, model_id, processing_ms,
+                input_file_hash, anonymized, confidence_score, trace_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)""",
+            doc_id, "SEMANTIC_SUMMARY",
+            processing.get("route", "CENTRAL"),
+            processing.get("model", ""),
+            processing.get("elapsed_ms"),
+            file_hash,
+            processing.get("anonymized", False),
+            semantic_summary.get("aiConfidenceScore") if semantic_summary else None,
+            trace_id,
+        )
+
+    return {
+        "documentId": doc_id,
+        "semanticSummary": semantic_summary,
+        "sensitivityControl": sensitivity_control,
+        "route": processing.get("route"),
+        "trace_id": trace_id,
+        "processingMs": processing.get("elapsed_ms"),
+        "aiModelVersion": processing.get("model"),
+        "validationErrors": result.get("_pii_errors", []),
+    }
+
+
+@router.get("/{doc_id}/export-metadata")
+async def export_metadata_xml(doc_id: int, user=Depends(get_current_user)):
+    """Export full VDVC v1.1 XML metadata for a document."""
+    from fastapi.responses import Response
+    import xml.etree.ElementTree as ET
+    from datetime import datetime
+
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            """SELECT d.*, o.name as org_name, o.code as org_code, o.org_did
+               FROM documents d
+               LEFT JOIN organizations o ON d.org_id = o.id
+               WHERE d.id = $1 AND d.org_id = $2""",
+            doc_id, default_org["id"])
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        files = await conn.fetch(
+            "SELECT * FROM document_files WHERE document_id = $1 ORDER BY is_primary DESC, created_at",
+            doc_id)
+
+        ai_logs = await conn.fetch(
+            "SELECT * FROM ai_processing_log WHERE document_id = $1 ORDER BY created_at",
+            doc_id)
+
+    NS = "https://vdvc.gov.lv/schema/dvs/document-metadata/v1"
+    ET.register_namespace("vdvc", NS)
+    root = ET.Element(f"{{{NS}}}DokumentaPakotne")
+    root.set("versija", "1.1")
+    root.set("izveidotsUz", datetime.utcnow().isoformat() + "Z")
+
+    ctx = ET.SubElement(root, f"{{{NS}}}SistemasKonteksts")
+    ET.SubElement(ctx, f"{{{NS}}}SistemasNosaukums").text = "OpenDMS"
+    ET.SubElement(ctx, f"{{{NS}}}Vide").text = "PROD"
+
+    org = ET.SubElement(root, f"{{{NS}}}IpasniekaOrganizacija")
+    ET.SubElement(org, f"{{{NS}}}OrgId").text = f"urn:uuid:00000000-0000-0000-0000-{doc['org_id']:012d}"
+    ET.SubElement(org, f"{{{NS}}}OrgKods").text = doc.get("org_code") or "LV.0000.0000"
+    ET.SubElement(org, f"{{{NS}}}OrgNosaukums").text = doc.get("org_name") or ""
+    if doc.get("org_did"):
+        ET.SubElement(org, f"{{{NS}}}OrgDID").text = doc["org_did"]
+
+    dok = ET.SubElement(root, f"{{{NS}}}Dokuments")
+    ET.SubElement(dok, f"{{{NS}}}DokumentaUID").text = f"urn:uuid:{doc['id']:032x}" if isinstance(doc['id'], int) else str(doc['id'])
+    if doc.get("doc_did"):
+        ET.SubElement(dok, f"{{{NS}}}DokumentaDID").text = doc["doc_did"]
+    ET.SubElement(dok, f"{{{NS}}}Virsraksts").text = doc["title"]
+    ET.SubElement(dok, f"{{{NS}}}DokumentaDatums").text = str(doc["created_at"].date()) if doc.get("created_at") else datetime.utcnow().strftime("%Y-%m-%d")
+    ET.SubElement(dok, f"{{{NS}}}Valoda").text = "lv"
+
+    if files:
+        datnes = ET.SubElement(dok, f"{{{NS}}}Datnes")
+        for f in files:
+            d = ET.SubElement(datnes, f"{{{NS}}}Datne")
+            ET.SubElement(d, f"{{{NS}}}Nosaukums").text = f.get("file_name")
+            ET.SubElement(d, f"{{{NS}}}Izmers").text = str(f.get("file_size") or 0)
+            if f.get("mime_type"):
+                ET.SubElement(d, f"{{{NS}}}MimeTips").text = f["mime_type"]
+            ET.SubElement(d, f"{{{NS}}}Primara").text = str(f.get("is_primary", False)).lower()
+
+    ss = _decode_jsonb(doc.get("semantic_summary"))
+    sc = _decode_jsonb(doc.get("sensitivity_control"))
+    if ss:
+        sem = ET.SubElement(dok, f"{{{NS}}}SemantikaApstradesMetadati")
+        kops = ET.SubElement(sem, f"{{{NS}}}SemantikaKopsavilkums")
+        ET.SubElement(kops, f"{{{NS}}}GalvenaTema").text = ss.get("primaryTopic", "")
+        if ss.get("subTopics"):
+            at = ET.SubElement(kops, f"{{{NS}}}ApaksTemas")
+            for t in ss["subTopics"]:
+                ET.SubElement(at, f"{{{NS}}}Tema").text = t
+        ET.SubElement(kops, f"{{{NS}}}Kopsavilkums").text = ss.get("summary", "")
+        if ss.get("documentPurpose"):
+            ET.SubElement(kops, f"{{{NS}}}DokumentaMerkis").text = ss["documentPurpose"]
+        if ss.get("requestedAction"):
+            ET.SubElement(kops, f"{{{NS}}}PieprasitaDarbiba").text = ss["requestedAction"]
+        if ss.get("keywords"):
+            av = ET.SubElement(kops, f"{{{NS}}}AtsleguVardi")
+            for k in ss["keywords"][:50]:
+                ET.SubElement(av, f"{{{NS}}}Vards").text = k
+        ET.SubElement(kops, f"{{{NS}}}KopsavilkumaAvots").text = ss.get("summarySource", "AI")
+        if ss.get("aiConfidenceScore") is not None:
+            ET.SubElement(kops, f"{{{NS}}}AITicamibasScore").text = str(ss["aiConfidenceScore"])
+        if ss.get("aiModelVersion"):
+            ET.SubElement(kops, f"{{{NS}}}AIModelaVersija").text = ss["aiModelVersion"]
+
+        if sc:
+            sensi = ET.SubElement(sem, f"{{{NS}}}SensitivitatesKontrole")
+            ET.SubElement(sensi, f"{{{NS}}}PersonasDatuRisks").text = sc.get("personalDataRisk", "LOW")
+            ET.SubElement(sensi, f"{{{NS}}}AtlautCentralizaciju").text = str(sc.get("allowCentralization", False)).lower()
+            if sc.get("classifiedInformation"):
+                ET.SubElement(sensi, f"{{{NS}}}KlasificetaInformacija").text = "true"
+
+        if ai_logs:
+            zurn = ET.SubElement(sem, f"{{{NS}}}ApstradesZurnals")
+            for log in ai_logs:
+                ie = ET.SubElement(zurn, f"{{{NS}}}ApstradesIeraksts")
+                ET.SubElement(ie, f"{{{NS}}}DarbibasVeids").text = log.get("action_type", "SEMANTIC_SUMMARY")
+                ET.SubElement(ie, f"{{{NS}}}IzmantotaisMarshrutsips").text = log.get("route_used", "CENTRAL")
+                if log.get("model_id"):
+                    ET.SubElement(ie, f"{{{NS}}}ModelaIdentifikators").text = log["model_id"]
+                ET.SubElement(ie, f"{{{NS}}}ApstradesLaiks").text = log["created_at"].isoformat() + "Z" if log.get("created_at") else ""
+                if log.get("processing_ms"):
+                    ET.SubElement(ie, f"{{{NS}}}ApstradesMilisekundes").text = str(log["processing_ms"])
+                if log.get("input_file_hash"):
+                    ET.SubElement(ie, f"{{{NS}}}IesutijaDatnesHash").text = log["input_file_hash"]
+                ET.SubElement(ie, f"{{{NS}}}Anonimizeta").text = str(log.get("anonymized", False)).lower()
+                if log.get("trace_id"):
+                    ET.SubElement(ie, f"{{{NS}}}TraceId").text = log["trace_id"]
+
+    xml_str = ET.tostring(root, encoding="unicode", xml_declaration=True)
+    filename = f"{doc['registration_number'] or doc['id']}_metadata.xml"
+    return Response(
+        content=xml_str,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class ValidateMetadataRequest(BaseModel):
+    action: str
+    semantic_summary: Optional[dict[str, Any]] = None
+    sensitivity_control: Optional[dict[str, Any]] = None
+
+
+@router.post("/{doc_id}/validate-metadata")
+async def validate_metadata(doc_id: int, req: ValidateMetadataRequest, user=Depends(require_role("admin", "superadmin", "operator"))):
+    """Human validation of AI-generated metadata."""
+    action = (req.action or "").upper()
+    if action not in ("VALIDATED", "REJECTED"):
+        raise HTTPException(400, "action must be VALIDATED or REJECTED")
+
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow("SELECT id, semantic_summary, sensitivity_control FROM documents WHERE id = $1 AND org_id = $2", doc_id, default_org["id"])
+        if not doc:
+            raise HTTPException(404, "Document not found")
+
+        semantic_summary = req.semantic_summary or _decode_jsonb(doc.get("semantic_summary")) or {}
+        sensitivity_control = req.sensitivity_control or _decode_jsonb(doc.get("sensitivity_control")) or {}
+        semantic_summary["humanValidationStatus"] = action
+
+        await conn.execute(
+            "UPDATE documents SET semantic_summary = $1, sensitivity_control = $2, ai_summary_status = $3 WHERE id = $4",
+            json.dumps(semantic_summary),
+            json.dumps(sensitivity_control) if sensitivity_control else None,
+            action,
+            doc_id,
+        )
+        await conn.execute(
+            """UPDATE ai_processing_log
+               SET validation_status = $1, validated_by = $2, validated_at = NOW()
+               WHERE id = (
+                 SELECT id FROM ai_processing_log WHERE document_id = $3 ORDER BY created_at DESC LIMIT 1
+               )""",
+            action,
+            user["id"],
+            doc_id,
+        )
+
+    return {"status": action, "documentId": doc_id}
+
+
 # ── Get detail ──
 
 @router.get("/{doc_id}")
@@ -270,11 +655,18 @@ async def get_document(doc_id: int, user=Depends(get_current_user)):
         events = await conn.fetch(
             """SELECT de.*, u.full_name as actor_name FROM document_events de
                LEFT JOIN users u ON de.actor_id = u.id WHERE de.document_id = $1 ORDER BY de.created_at""", doc_id)
+        files = await conn.fetch(
+            """SELECT id, file_uid, file_name, mime_type, file_size,
+                      checksum_sha256, is_primary, created_at
+               FROM document_files WHERE document_id = $1
+               ORDER BY is_primary DESC, created_at""",
+            doc_id)
     result = dict(doc)
     result["metadata"] = _decode_jsonb(result["metadata"])
     result["semantic_summary"] = _decode_jsonb(result.get("semantic_summary"))
     result["sensitivity_control"] = _decode_jsonb(result.get("sensitivity_control"))
     result["events"] = [dict(e) for e in events]
+    result["files"] = [dict(f) for f in files]
     return result
 
 
