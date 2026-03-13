@@ -211,14 +211,297 @@ function CreateDocForm({ onDone, notify }) {
 }
 
 function DocumentDetail({ doc, onAction, notify }) {
-  const [sendDid, setSendDid] = useState(""); const [assignId, setAssignId] = useState(""); const [decision, setDecision] = useState(""); const [similar, setSimilar] = useState([]);
-  const act = async (path, body) => { try { await api(`/documents/${doc.id}${path}`,{method:"POST",body:JSON.stringify(body)}); notify("Action completed"); onAction(); } catch(e){notify(e.message,"error");} };
-  const upload = async (e) => { const f = e.target.files[0]; if(!f) return; const fd = new FormData(); fd.append("file",f); try { await api(`/documents/${doc.id}/upload`,{method:"POST",body:fd}); notify("File uploaded"); onAction(); } catch(e){notify(e.message,"error");} };
-  useEffect(()=>{ if (!doc.doc_did || !doc.sensitivity_control?.allowCentralization) return; api(`/intelligence/similar/${doc.doc_did}`).then((r)=>setSimilar(r.items || r.documents || [])).catch(()=>setSimilar([])); }, [doc.id, doc.doc_did, doc.sensitivity_control?.allowCentralization]);
-  const source = doc.semantic_summary?.summarySource || "HUMAN";
-  return (<div className="p-4 space-y-3"><div className="flex items-center justify-between"><h3 className="font-bold text-gray-900">{doc.title}</h3><Badge s={doc.status}/></div><div>{doc.ai_summary_status && <span className={`text-xs px-2 py-0.5 rounded ${summaryBadgeClass[source] || "bg-gray-100 text-gray-700"}`}>{source}</span>}</div><div className="grid grid-cols-3 gap-2 text-xs"><div><span className="text-gray-400">Reg#</span><div>{doc.registration_number}</div></div><div><span className="text-gray-400">Org</span><div>{doc.org_name||"—"}</div></div><div><span className="text-gray-400">Assigned</span><div>{doc.assigned_name||"—"}</div></div></div>{doc.doc_did && <div className="text-xs"><span className="text-gray-400">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_did}</code></div>}{doc.content_summary && <div className="text-sm text-gray-700 bg-gray-50 rounded p-2">{doc.content_summary}</div>}{doc.semantic_summary && <pre className="text-xs bg-blue-50 border border-blue-100 rounded p-2 overflow-auto">{JSON.stringify(doc.semantic_summary, null, 2)}</pre>}{doc.sensitivity_control && <pre className="text-xs bg-purple-50 border border-purple-100 rounded p-2 overflow-auto">{JSON.stringify(doc.sensitivity_control, null, 2)}</pre>}{doc.file_name && <div className="text-xs text-gray-500">File: {doc.file_name} ({(doc.file_size/1024).toFixed(1)}KB)</div>}{similar.length > 0 && <div className="border rounded p-2"><div className="text-xs font-medium mb-1">Similar documents</div>{similar.map((s,idx)=><div key={idx} className="text-xs text-gray-600">{s.title || s.docDid || JSON.stringify(s)}</div>)}</div>}<div className="border-t pt-3 space-y-2"><div className="text-xs font-medium text-gray-500">Actions</div><input type="file" onChange={upload} className="text-xs" />{doc.status === "registered" && <div className="flex gap-2"><input value={sendDid} onChange={e=>setSendDid(e.target.value)} placeholder="Recipient org DID" className="flex-1 text-xs px-2 py-1 border rounded" /><button onClick={()=>act("/send",{recipient_org_did:sendDid})} className="text-xs px-3 py-1 bg-amber-500 text-white rounded">Send</button></div>}{doc.status === "received" && <div className="flex gap-2"><input value={assignId} onChange={e=>setAssignId(e.target.value)} placeholder="User ID" className="flex-1 text-xs px-2 py-1 border rounded" /><button onClick={()=>act("/assign",{user_id:parseInt(assignId)})} className="text-xs px-3 py-1 bg-teal-500 text-white rounded">Assign</button></div>}{doc.status === "assigned" && <div className="flex gap-2"><input value={decision} onChange={e=>setDecision(e.target.value)} placeholder="Decision" className="flex-1 text-xs px-2 py-1 border rounded" /><button onClick={()=>act("/decide",{decision})} className="text-xs px-3 py-1 bg-green-600 text-white rounded">Decide</button></div>}{["registered","decided"].includes(doc.status) && <button onClick={()=>act("/archive",{})} className="text-xs px-3 py-1 bg-gray-500 text-white rounded">Archive</button>}</div>{doc.events?.length > 0 && <div className="border-t pt-3"><div className="text-xs font-medium text-gray-500 mb-2">Lifecycle ({doc.events.length} events)</div><div className="space-y-1">{doc.events.map((e,i)=>(<div key={i} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-2 text-xs"><span>{EI[e.event_type]||"\u{1F4CE}"}</span><span className="font-medium">{e.event_type}</span>{e.vc_submitted && <span className="text-emerald-500">\u2713 VC</span>}<span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span></div>))}</div></div>}</div>);
-}
+  const [sendDid, setSendDid] = useState("");
+  const [assignId, setAssignId] = useState("");
+  const [decision, setDecision] = useState("");
+  const [similar, setSimilar] = useState([]);
+  const [files, setFiles] = useState(doc.files || []);
+  const [generating, setGenerating] = useState(false);
+  const [showMetadata, setShowMetadata] = useState(false);
+  const [metaTab, setMetaTab] = useState("summary");
 
+  const act = async (path, body) => {
+    try {
+      await api(`/documents/${doc.id}${path}`, { method: "POST", body: JSON.stringify(body) });
+      notify("Action completed");
+      onAction();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const uploadFile = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append("file", f);
+    try {
+      await api(`/documents/${doc.id}/files`, { method: "POST", body: fd });
+      notify("File added");
+      onAction();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const removeFile = async (fileId) => {
+    if (!window.confirm("Remove this file?")) return;
+    try {
+      await api(`/documents/${doc.id}/files/${fileId}`, { method: "DELETE" });
+      notify("File removed");
+      onAction();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const generateMetadata = async () => {
+    try {
+      setGenerating(true);
+      const r = await api(`/documents/${doc.id}/generate-metadata`, { method: "POST" });
+      const conf = r.semanticSummary?.aiConfidenceScore;
+      const route = r.route || "unknown";
+      notify(`Metadati ģenerēti (maršruts: ${route}, ticamība: ${conf ? Math.round(conf * 100) + '%' : 'N/A'})`);
+      onAction();
+    } catch (e) { notify(e.message, "error"); }
+    finally { setGenerating(false); }
+  };
+
+  const exportMetadataXml = async () => {
+    try {
+      const res = await fetch(`/api/documents/${doc.id}/export-metadata`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${doc.registration_number || doc.id}_metadata.xml`;
+      a.click();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  useEffect(() => {
+    if (doc.files) setFiles(doc.files);
+  }, [doc.id, doc.files]);
+
+  useEffect(() => {
+    if (!doc.doc_did || !doc.sensitivity_control?.allowCentralization) return;
+    api(`/intelligence/similar/${doc.doc_did}`)
+      .then((r) => setSimilar(r.items || r.documents || []))
+      .catch(() => setSimilar([]));
+  }, [doc.id, doc.doc_did, doc.sensitivity_control?.allowCentralization]);
+
+  const source = doc.semantic_summary?.summarySource || "HUMAN";
+  const hasFiles = files.length > 0 || doc.file_name;
+  const hasMeta = !!doc.semantic_summary;
+
+  return (
+    <div className="p-4 space-y-3 overflow-auto max-h-[80vh]">
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-gray-900">{doc.title}</h3>
+        <Badge s={doc.status} />
+      </div>
+      {doc.ai_summary_status && (
+        <span className={`text-xs px-2 py-0.5 rounded ${summaryBadgeClass[source] || "bg-gray-100 text-gray-700"}`}>
+          {source}
+        </span>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div><span className="text-gray-400">Reg#</span><div>{doc.registration_number}</div></div>
+        <div><span className="text-gray-400">Org</span><div>{doc.org_name || "—"}</div></div>
+        <div><span className="text-gray-400">Assigned</span><div>{doc.assigned_name || "—"}</div></div>
+      </div>
+
+      {doc.doc_did && (
+        <div className="text-xs">
+          <span className="text-gray-400">DID:</span>{" "}
+          <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_did}</code>
+        </div>
+      )}
+
+      <div className="border rounded-lg p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-medium text-gray-500">
+            Files ({files.length || (doc.file_name ? 1 : 0)})
+          </div>
+          <label className="text-xs px-2 py-1 bg-emerald-600 text-white rounded cursor-pointer">
+            + Add File
+            <input type="file" onChange={uploadFile} className="hidden" />
+          </label>
+        </div>
+
+        {files.length > 0 ? (
+          <div className="space-y-1">
+            {files.map((f) => (
+              <div key={f.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  {f.is_primary && (
+                    <span className="text-[10px] px-1 py-0.5 bg-blue-100 text-blue-700 rounded">Primary</span>
+                  )}
+                  <span className="font-medium">{f.file_name}</span>
+                  <span className="text-gray-400">
+                    {f.file_size ? `${(f.file_size / 1024).toFixed(1)}KB` : ""}
+                  </span>
+                  <span className="text-gray-400">{f.mime_type}</span>
+                </div>
+                <button onClick={() => removeFile(f.id)} className="text-red-400 hover:text-red-600">✕</button>
+              </div>
+            ))}
+          </div>
+        ) : doc.file_name ? (
+          <div className="text-xs text-gray-500">
+            {doc.file_name} ({(doc.file_size / 1024).toFixed(1)}KB)
+          </div>
+        ) : (
+          <div className="text-xs text-gray-400">No files attached</div>
+        )}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={generateMetadata}
+          disabled={generating || !hasFiles}
+          className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50 flex items-center gap-1"
+        >
+          {generating ? (<><span className="animate-spin">⟳</span> Ģenerē...</>) : ("🧠 Generate Metadata")}
+        </button>
+        {hasMeta && (
+          <>
+            <button onClick={() => setShowMetadata(true)} className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded">👁 View Metadata</button>
+            <button onClick={exportMetadataXml} className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded">📥 Export XML</button>
+          </>
+        )}
+      </div>
+
+      {doc.semantic_summary?.aiConfidenceScore != null && (
+        <div className="text-xs flex items-center gap-2">
+          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700">AI Confidence: {Math.round(doc.semantic_summary.aiConfidenceScore * 100)}%</span>
+          <span className="text-gray-400">Model: {doc.semantic_summary.aiModelVersion || "—"}</span>
+          {doc.semantic_summary.humanValidationStatus === "PENDING" && (
+            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700">Awaiting validation</span>
+          )}
+        </div>
+      )}
+
+      {doc.content_summary && <div className="text-sm text-gray-700 bg-gray-50 rounded p-2">{doc.content_summary}</div>}
+
+      {similar.length > 0 && (
+        <div className="border rounded p-2">
+          <div className="text-xs font-medium mb-1">Similar documents</div>
+          {similar.map((s, idx) => (<div key={idx} className="text-xs text-gray-600">{s.title || s.docDid || JSON.stringify(s)}</div>))}
+        </div>
+      )}
+
+      <div className="border-t pt-3 space-y-2">
+        <div className="text-xs font-medium text-gray-500">Actions</div>
+        {doc.status === "registered" && (
+          <div className="flex gap-2">
+            <input value={sendDid} onChange={(e) => setSendDid(e.target.value)} placeholder="Recipient org DID" className="flex-1 text-xs px-2 py-1 border rounded" />
+            <button onClick={() => act("/send", { recipient_org_did: sendDid })} className="text-xs px-3 py-1 bg-amber-500 text-white rounded">Send</button>
+          </div>
+        )}
+        {doc.status === "received" && (
+          <div className="flex gap-2">
+            <input value={assignId} onChange={(e) => setAssignId(e.target.value)} placeholder="User ID" className="flex-1 text-xs px-2 py-1 border rounded" />
+            <button onClick={() => act("/assign", { user_id: parseInt(assignId) })} className="text-xs px-3 py-1 bg-teal-500 text-white rounded">Assign</button>
+          </div>
+        )}
+        {doc.status === "assigned" && (
+          <div className="flex gap-2">
+            <input value={decision} onChange={(e) => setDecision(e.target.value)} placeholder="Decision" className="flex-1 text-xs px-2 py-1 border rounded" />
+            <button onClick={() => act("/decide", { decision })} className="text-xs px-3 py-1 bg-green-600 text-white rounded">Decide</button>
+          </div>
+        )}
+        {["registered", "decided"].includes(doc.status) && (
+          <button onClick={() => act("/archive", {})} className="text-xs px-3 py-1 bg-gray-500 text-white rounded">Archive</button>
+        )}
+      </div>
+
+      {doc.events?.length > 0 && (
+        <div className="border-t pt-3">
+          <div className="text-xs font-medium text-gray-500 mb-2">Lifecycle ({doc.events.length} events)</div>
+          <div className="space-y-1">
+            {doc.events.map((e, i) => (
+              <div key={i} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-2 text-xs">
+                <span>{EI[e.event_type] || "📎"}</span>
+                <span className="font-medium">{e.event_type}</span>
+                {e.vc_submitted && <span className="text-emerald-500">✓ VC</span>}
+                <span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showMetadata && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowMetadata(false)}>
+          <div className="bg-white rounded-lg p-5 w-[720px] max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Document Metadata</h3>
+              <button onClick={() => setShowMetadata(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <div className="flex gap-1 mb-3 border-b">
+              {["summary", "sensitivity", "raw"].map((t) => (
+                <button key={t} onClick={() => setMetaTab(t)} className={`text-xs px-3 py-1.5 ${metaTab === t ? "border-b-2 border-blue-600 text-blue-700 font-medium" : "text-gray-500"}`}>
+                  {t === "summary" ? "Summary" : t === "sensitivity" ? "Sensitivity" : "Raw JSON"}
+                </button>
+              ))}
+            </div>
+
+            {metaTab === "summary" && doc.semantic_summary && (
+              <div className="space-y-2 text-xs">
+                <div><span className="font-medium text-gray-500">Primary Topic:</span> {doc.semantic_summary.primaryTopic}</div>
+                {doc.semantic_summary.subTopics?.length > 0 && <div><span className="font-medium text-gray-500">Sub-topics:</span> {doc.semantic_summary.subTopics.join(", ")}</div>}
+                <div className="bg-blue-50 rounded p-2"><span className="font-medium text-blue-700">Summary:</span><div className="mt-1">{doc.semantic_summary.summary}</div></div>
+                {doc.semantic_summary.documentPurpose && <div><span className="font-medium text-gray-500">Purpose:</span> {doc.semantic_summary.documentPurpose}</div>}
+                {doc.semantic_summary.requestedAction && <div><span className="font-medium text-gray-500">Requested Action:</span> {doc.semantic_summary.requestedAction}</div>}
+                {doc.semantic_summary.keywords?.length > 0 && (
+                  <div className="flex flex-wrap gap-1">{doc.semantic_summary.keywords.map((k, i) => (<span key={i} className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px]">{k}</span>))}</div>
+                )}
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t">
+                  <div><span className="text-gray-400">Risk:</span> {doc.semantic_summary.estimatedRiskLevel || "—"}</div>
+                  <div><span className="text-gray-400">Urgency:</span> {doc.semantic_summary.urgencyLevel || "—"}</div>
+                  <div><span className="text-gray-400">Language:</span> {doc.semantic_summary.detectedLanguage || "—"}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-400 pt-2 border-t">
+                  <div>Source: {doc.semantic_summary.summarySource}</div>
+                  <div>Confidence: {doc.semantic_summary.aiConfidenceScore != null ? Math.round(doc.semantic_summary.aiConfidenceScore * 100) + "%" : "—"}</div>
+                  <div>Model: {doc.semantic_summary.aiModelVersion || "—"}</div>
+                  <div>Validation: {doc.semantic_summary.humanValidationStatus || "—"}</div>
+                </div>
+              </div>
+            )}
+
+            {metaTab === "sensitivity" && doc.sensitivity_control && (
+              <div className="space-y-2 text-xs">
+                <div className={`p-2 rounded ${doc.sensitivity_control.personalDataRisk === "HIGH" ? "bg-red-50 text-red-700" : doc.sensitivity_control.personalDataRisk === "MEDIUM" ? "bg-amber-50 text-amber-700" : "bg-green-50 text-green-700"}`}>
+                  Personal Data Risk: <strong>{doc.sensitivity_control.personalDataRisk}</strong>
+                </div>
+                <div>Allow Centralization: <strong>{String(doc.sensitivity_control.allowCentralization)}</strong></div>
+                {doc.sensitivity_control.redactionLevel && <div>Redaction Level: <strong>{doc.sensitivity_control.redactionLevel}</strong></div>}
+                {doc.sensitivity_control.classifiedInformation && <div className="bg-red-100 text-red-800 p-2 rounded font-medium">⚠ Contains classified information</div>}
+                {doc.sensitivity_control.detectedEntityTypes?.length > 0 && (
+                  <div>
+                    <span className="text-gray-500">Detected entity types:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">{doc.sensitivity_control.detectedEntityTypes.map((t, i) => (<span key={i} className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px]">{t}</span>))}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {metaTab === "raw" && (
+              <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96 whitespace-pre-wrap">
+                {JSON.stringify({ semanticSummary: doc.semantic_summary, sensitivityControl: doc.sensitivity_control }, null, 2)}
+              </pre>
+            )}
+
+            <div className="flex gap-2 mt-4 justify-end">
+              <button onClick={exportMetadataXml} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded">Export XML</button>
+              <button onClick={() => setShowMetadata(false)} className="text-xs px-3 py-1.5 border rounded text-gray-600">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 function IntelligencePage({ notify }) {
   const [topics, setTopics] = useState([]); const [warnings, setWarnings] = useState([]); const [briefing, setBriefing] = useState(null);
   const load = useCallback(async () => { try { const [t, w] = await Promise.all([api("/intelligence/topics"), api("/intelligence/warnings")]); setTopics(t.items || t.topics || []); setWarnings(w.items || w.warnings || []); } catch (e) { notify(e.message, "error"); } }, [notify]);

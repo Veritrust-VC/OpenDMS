@@ -1,6 +1,7 @@
 FROM python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
+RUN apt-get update && apt-get install -y poppler-utils pandoc && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 COPY pyproject.toml .

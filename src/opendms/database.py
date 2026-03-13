@@ -164,6 +164,46 @@ async def _create_schema(conn):
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+        -- Document files (multi-file support per document)
+        CREATE TABLE IF NOT EXISTS document_files (
+            id BIGSERIAL PRIMARY KEY,
+            document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            file_uid TEXT NOT NULL DEFAULT ('urn:uuid:' || gen_random_uuid()::text),
+            file_name TEXT NOT NULL,
+            mime_type TEXT,
+            file_size BIGINT,
+            storage_key TEXT NOT NULL,
+            storage_backend TEXT,
+            checksum_sha256 TEXT,
+            is_primary BOOLEAN DEFAULT FALSE,
+            uploaded_by BIGINT REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_docfiles_doc ON document_files(document_id);
+
+        -- AI processing audit log
+        CREATE TABLE IF NOT EXISTS ai_processing_log (
+            id BIGSERIAL PRIMARY KEY,
+            document_id BIGINT NOT NULL REFERENCES documents(id),
+            action_type TEXT NOT NULL,
+            route_used TEXT NOT NULL,
+            model_id TEXT,
+            processing_ms INTEGER,
+            input_file_hash TEXT,
+            anonymized BOOLEAN DEFAULT FALSE,
+            confidence_score NUMERIC(3,2),
+            validation_status TEXT DEFAULT 'PENDING',
+            validated_by BIGINT REFERENCES users(id),
+            validated_at TIMESTAMPTZ,
+            trace_id TEXT,
+            error_message TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ailog_doc ON ai_processing_log(document_id);
+        CREATE INDEX IF NOT EXISTS idx_ailog_trace ON ai_processing_log(trace_id);
+
         -- Archive batches
         CREATE TABLE IF NOT EXISTS archive_batches (
             id BIGSERIAL PRIMARY KEY,
