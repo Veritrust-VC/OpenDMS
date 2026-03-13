@@ -255,24 +255,26 @@ function CreateDocForm({ onDone, notify }) {
     }
   };
 
-  // BUG-002: Show explicit error/warning when AI returns empty data
-  const generateSummary = async () => {
+  // Generate metadata using direct LLM path (same AI pipeline as per-document Generate Metadata)
+  const generateMetadata = async () => {
     if (!file) return notify("Please select a file first", "error");
     const fd = new FormData();
     fd.append("file", file);
     fd.append("metadata", JSON.stringify({ title }));
     try {
       setExtracting(true);
-      const r = await api("/documents/extract-summary-preview", { method: "POST", body: fd });
+      const r = await api("/documents/generate-metadata-preview", { method: "POST", body: fd });
       const normalized = normalizeSummaryPayload(r);
       setAiData(normalized);
       if (!normalized.semanticSummary && !normalized.sensitivityControl) {
-        notify("AI summary generation returned no data. Please try again.", "error");
+        notify("Metadata generation returned no data. Please try again.", "error");
       } else {
-        notify("AI summary generated");
+        const conf = normalized.semanticSummary?.aiConfidenceScore;
+        const route = r.route || "direct";
+        notify(`Metadata generated (route: ${route}, confidence: ${conf ? Math.round(conf * 100) + '%' : 'N/A'})`);
       }
     } catch (e) {
-      notify(e.message || "AI summary generation failed, please try again.", "error");
+      notify(e.message || "Metadata generation failed, please try again.", "error");
     } finally {
       setExtracting(false);
     }
@@ -344,8 +346,8 @@ function CreateDocForm({ onDone, notify }) {
       {/* BUG-013: handleFileChange auto-populates title */}
       <input type="file" onChange={handleFileChange} className="text-xs" />
       <div className="flex items-center gap-2">
-        <button onClick={generateSummary} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">
-          {extracting ? "Processing with SDK..." : "Generate AI Summary"}
+        <button onClick={generateMetadata} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">
+          {extracting ? "Generating metadata..." : "🧠 Generate Metadata"}
         </button>
         {aiData.semanticSummary?.aiConfidenceScore != null && (
           <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">Confidence: {Math.round(aiData.semanticSummary.aiConfidenceScore * 100)}%</span>

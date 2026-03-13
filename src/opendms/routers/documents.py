@@ -68,6 +68,48 @@ def _decode_jsonb(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
+def _extract_text(file_data: bytes, mime_type: str, filename: str) -> str:
+    """Extract text from file bytes. Simple extraction for common formats."""
+    try:
+        if mime_type in ("text/plain", "text/csv", "text/html"):
+            return file_data.decode("utf-8", errors="replace")[:20000]
+        if "pdf" in mime_type or filename.lower().endswith(".pdf"):
+            try:
+                import subprocess
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                    f.write(file_data)
+                    tmp = f.name
+                result = subprocess.run(
+                    ["pdftotext", "-enc", "UTF-8", tmp, "-"],
+                    capture_output=True, text=True, timeout=30)
+                os.unlink(tmp)
+                if result.returncode == 0:
+                    return result.stdout[:20000]
+            except Exception:
+                pass
+        if "wordprocessingml" in mime_type or filename.lower().endswith(".docx"):
+            try:
+                import subprocess
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
+                    f.write(file_data)
+                    tmp = f.name
+                result = subprocess.run(
+                    ["pandoc", "--to=plain", tmp],
+                    capture_output=True, text=True, timeout=30)
+                os.unlink(tmp)
+                if result.returncode == 0:
+                    return result.stdout[:20000]
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return ""
+
+
 # ── List / Search ──
 
 @router.get("")
@@ -325,46 +367,84 @@ async def remove_file(doc_id: int, file_id: int, user=Depends(get_current_user))
     return {"status": "deleted", "file_id": file_id}
 
 
-def _extract_text(file_data: bytes, mime_type: str, filename: str) -> str:
-    """Extract text from file bytes. Simple extraction for common formats."""
-    try:
-        if mime_type in ("text/plain", "text/csv", "text/html"):
-            return file_data.decode("utf-8", errors="replace")[:20000]
-        if "pdf" in mime_type or filename.lower().endswith(".pdf"):
-            try:
-                import subprocess
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-                    f.write(file_data)
-                    tmp = f.name
-                result = subprocess.run(
-                    ["pdftotext", "-enc", "UTF-8", tmp, "-"],
-                    capture_output=True, text=True, timeout=30)
-                os.unlink(tmp)
-                if result.returncode == 0:
-                    return result.stdout[:20000]
-            except Exception:
-                pass
-        if "wordprocessingml" in mime_type or filename.lower().endswith(".docx"):
-            try:
-                import subprocess
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
-                    f.write(file_data)
-                    tmp = f.name
-                result = subprocess.run(
-                    ["pandoc", "--to=plain", tmp],
-                    capture_output=True, text=True, timeout=30)
-                os.unlink(tmp)
-                if result.returncode == 0:
-                    return result.stdout[:20000]
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return ""
+# ═══════════════════════════════════════════════════════
+# Metadata generation — preview (no doc ID) and per-doc
+# ═══════════════════════════════════════════════════════
+
+@router.post("/generate-metadata-preview")
+async def generate_metadata_preview(
+    file: Optional[UploadFile] = File(default=None),
+    metadata: str = Form(default="{}"),
+    user=Depends(get_current_user),
+):
+    """
+    Generate VDVC semantic metadata from an uploaded file WITHOUT requiring
+    an existing document.  Uses the direct-LLM path (Anthropic / OpenAI /
+    Ollama configured via OPENDMS_LLM_*) — the same pipeline as the
+    per-document /generate-metadata endpoint.
+
+    Called by the Create Document form's "Generate Metadata" button.
+    """
+    from opendms.ai import generate_semantic_metadata, is_configured
+
+    if not is_configured():
+        raise HTTPException(
+            503,
+            "AI not configured — set OPENDMS_LLM_API_KEY in environment",
+        )
+
+    if file is None:
+        raise HTTPException(400, "File is required for metadata generation")
+
+    parsed_metadata = {}
+    if metadata:
+        try:
+            parsed_metadata = json.loads(metadata)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(400, f"Invalid metadata JSON: {exc}")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Uploaded file is empty")
+
+    document_text = _extract_text(
+        content,
+        file.content_type or "",
+        file.filename or "document.bin",
+    )
+    if not document_text:
+        raise HTTPException(
+            400,
+            "Could not extract text from file. Supported formats: PDF, DOCX, TXT, CSV, HTML.",
+        )
+
+    title = parsed_metadata.get("title", file.filename or "")
+    trace_id = str(uuid.uuid4())
+
+    result = await generate_semantic_metadata(
+        document_text=document_text,
+        title=title,
+        doc_type=parsed_metadata.get("docType", ""),
+        reg_number="",
+        org_name="",
+        allow_centralization=True,
+        personal_data_risk="LOW",
+    )
+
+    if not result:
+        raise HTTPException(502, "AI metadata generation failed — try again")
+
+    processing = result.get("_processing", {})
+
+    return {
+        "semanticSummary": result.get("semanticSummary"),
+        "sensitivityControl": result.get("sensitivityControl"),
+        "route": processing.get("route"),
+        "trace_id": trace_id,
+        "processingMs": processing.get("elapsed_ms"),
+        "aiModelVersion": processing.get("model"),
+        "validationErrors": result.get("_pii_errors", []),
+    }
 
 
 @router.post("/{doc_id}/generate-metadata")
@@ -672,6 +752,8 @@ async def get_document(doc_id: int, user=Depends(get_current_user)):
     result["files"] = [dict(f) for f in files]
     return result
 
+
+# ── Legacy SDK-based extract-summary endpoints (kept for backward compat) ──
 
 @router.post("/{doc_id}/extract-summary")
 async def extract_summary_for_document(doc_id: int, file: UploadFile = File(...), user=Depends(get_current_user)):
