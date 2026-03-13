@@ -185,7 +185,7 @@ function DashboardPage({ notify, user }) {
         <span>Org registered in registry: {statusBadge(Boolean(health.sdk_setup?.org_registered_in_registry), health.sdk_setup?.org_registered_in_registry ? "Yes" : "No")}</span>
         <span>Org verified in registry: {statusBadge(Boolean(health.sdk_setup?.org_verified_in_registry), health.sdk_setup?.org_verified_in_registry ? "Yes" : "No")}</span>
         <span>Last sync error: <strong>{health.sdk_setup?.last_sync_error || "none"}</strong></span>
-        <span>Last trace ID: <code>{health.sdk_setup?.trace_id || "n/a"}</code></span>
+        <span>Last trace ID: <code>{health.sdk_setup?.last_trace_id || health.sdk_setup?.trace_id || "n/a"}</code></span>
       </div>
     </div>}
     {stats && <div className="grid grid-cols-4 gap-3 mb-6">
@@ -781,7 +781,10 @@ function OrgsPage({ notify, onViewLogs }) {
         <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
         <div>Selected organization: <strong>{sdkStatus?.selected_organization?.name || sdkStatus?.default_organization?.name || "none"}</strong></div>
         <div>Default organization DID: <strong>{sdkStatus?.default_organization?.org_did || "not assigned"}</strong></div>
-        <div>SDK service status: <strong>{sdkStatus.status || "unknown"}</strong></div>
+        <div>SDK service status: <strong className={
+          (sdkStatus.status === "ok" || sdkStatus.sdk_service_status === "ok" || (sdkStatus.registry_connected && sdkStatus.org_did_configured))
+            ? "text-emerald-600" : "text-amber-600"
+        }>{sdkStatus.status || sdkStatus.sdk_service_status || (sdkStatus.registry_connected ? "connected" : "degraded")}</strong></div>
         <div>Registry URL: <strong>{sdkStatus.registry_url || "n/a"}</strong></div>
         <div>Registry connected: <strong className={sdkStatus.registry_connected ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_connected ? "Yes" : "No"}</strong></div>
         <div>Registry authenticated: <strong className={sdkStatus.registry_authenticated ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.registry_authenticated ? "Yes" : "No"}</strong></div>
@@ -790,7 +793,7 @@ function OrgsPage({ notify, onViewLogs }) {
         <div>Org verified in registry: <strong className={sdkStatus.org_verified_in_registry ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_verified_in_registry ? "Yes" : "No"}</strong></div>
         <div>Organization Registration VC: <strong className={sdkStatus.org_registration_vc ? "text-emerald-600" : "text-amber-600"}>{sdkStatus.org_registration_vc ? "Issued" : "Not issued"}</strong></div>
         <div>Last sync error: <strong>{sdkStatus.last_sync_error || "none"}</strong></div>
-        <div>Last trace ID: <strong>{sdkStatus.trace_id || "n/a"}</strong></div>
+        <div>Last trace ID: <strong>{sdkStatus.last_trace_id || sdkStatus.trace_id || "n/a"}</strong></div>
       </div>
       {!sdkStatus.registry_auth_configured && (
         <div className="text-xs text-amber-700 mt-2">Set REGISTRY_EMAIL and REGISTRY_PASSWORD in OpenDMS docker-compose for the SDK service.</div>
@@ -830,9 +833,15 @@ function OrgsPage({ notify, onViewLogs }) {
               {setup.registry_auth_error && <div>Registry auth error: <strong>{setup.registry_auth_error}</strong></div>}
               <div>Local DID matches SDK: <strong>{status.matches_local_org_did ? "Yes" : "No"}</strong></div>
             </div>}
-            {o.org_did && (!setup || !setup.org_did_configured || !setup.registry_connected || !setup.registry_auth_configured || !setup.registry_authenticated) && (
+            {o.org_did && !setup && sdkStatus && !sdkStatus.registry_connected && (
+              <div className="text-xs text-amber-600 mt-1">Registry unreachable</div>
+            )}
+            {o.org_did && !setup && sdkStatus && sdkStatus.registry_connected && (
+              <div className="text-xs text-gray-400 mt-1">Click "Check status" for details</div>
+            )}
+            {o.org_did && setup && (!setup.org_did_configured || !setup.registry_connected || !setup.registry_auth_configured || !setup.registry_authenticated) && (
               <div className="text-xs text-amber-600 mt-1">
-                {!setup || !setup.registry_connected
+                {!setup.registry_connected
                   ? "Registry unreachable"
                   : !setup.registry_auth_configured
                   ? "Registry credentials not configured"

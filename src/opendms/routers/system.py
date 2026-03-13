@@ -223,6 +223,7 @@ async def sdk_setup_status(user=Depends(get_current_user)):
     if not s.sdk_enabled:
         return {
             "status": "disabled",
+            "sdk_service_status": "disabled",
             "org_did": None,
             "org_did_configured": False,
             "registry_connected": False,
@@ -231,9 +232,20 @@ async def sdk_setup_status(user=Depends(get_current_user)):
             "registry_auth_error": None,
         }
     default_org = await get_default_org()
+
+    # FIX: Fetch both SDK health (for service status) and setup-status (for
+    # registry/org details) in parallel.  The SDK /api/setup/status response
+    # does NOT include a top-level "status" field — only /api/health does.
+    # Without this, the frontend always shows "SDK service status: unknown".
+    sdk_health = await sdk_client.health()
     sdk = await sdk_client.setup_status(
         org_did=default_org.get("org_did") if default_org else None
     )
+
+    # Merge service-level status from /api/health into the setup payload
+    sdk["status"] = sdk_health.get("status", "unknown")
+    sdk["sdk_service_status"] = sdk_health.get("status", "unknown")
+
     sdk["org_registration_vc"] = sdk.get("registration_vc_present", False)
     sdk["default_organization"] = default_org
     sdk["selected_organization"] = default_org
