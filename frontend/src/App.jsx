@@ -3,11 +3,25 @@ import { useState, useEffect, useCallback } from "react";
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
 
+// ── FIX: React-driven logout instead of window.location.reload() ──
+let _logoutHandler = null;
+let _isLoggingOut = false;
+function setLogoutHandler(handler) { _logoutHandler = handler; }
+
 async function api(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}) };
   if (opts.body instanceof FormData) { delete headers["Content-Type"]; }
   const res = await fetch(`${API}${path}`, { headers, ...opts });
-  if (res.status === 401) { authToken = ""; localStorage.removeItem("opendms_token"); window.location.reload(); }
+  if (res.status === 401) {
+    // FIX: guard against multiple concurrent 401s; use React state instead of reload
+    if (!_isLoggingOut) {
+      _isLoggingOut = true;
+      authToken = "";
+      localStorage.removeItem("opendms_token");
+      if (_logoutHandler) _logoutHandler();
+    }
+    throw new Error("Session expired");
+  }
   if (!res.ok) {
     const e = await res.json().catch(() => ({ detail: res.statusText }));
     const payload = e?.detail && typeof e.detail === "object" ? e.detail : e;
@@ -54,10 +68,17 @@ export default function App() {
   const [auditFilters, setAuditFilters] = useState(null);
   const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
 
+  // FIX: Register the React-driven logout handler so api() can clear user
+  // without reloading the page. This preserves `page` state across re-login.
+  useEffect(() => {
+    setLogoutHandler(() => setUser(null));
+    return () => setLogoutHandler(null);
+  }, []);
+
   useEffect(() => { api("/settings/branding").then(setBrand).catch(()=>{}); }, []);
   useEffect(() => { if (authToken) { api("/users/me/profile").then(setUser).catch(()=>{ authToken=""; localStorage.removeItem("opendms_token"); }); } }, []);
 
-  if (!user) return <LoginPage onLogin={(u,t)=>{ authToken=t; localStorage.setItem("opendms_token",t); setUser(u); }} brand={brand} />;
+  if (!user) return <LoginPage onLogin={(u,t)=>{ authToken=t; localStorage.setItem("opendms_token",t); _isLoggingOut = false; setUser(u); }} brand={brand} />;
 
   const isAdmin = ["superadmin","admin"].includes(user.role);
   const nav = [
