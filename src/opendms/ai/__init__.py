@@ -445,3 +445,30 @@ async def generate_semantic_metadata(
     }
 
     return result
+
+
+async def generate_local_briefing(recent_docs: list) -> Optional[dict]:
+    """Generate an intelligence briefing from recent document activity using the local LLM."""
+    if not is_configured() or not recent_docs:
+        return None
+
+    doc_lines = "\n".join(
+        f"- {d.get('title', 'Untitled')} | status: {d.get('status', '?')} | topic: {d.get('topic') or 'N/A'}"
+        for d in recent_docs[:20]
+    )
+
+    system = """You are an intelligence briefing generator for a government document management system.
+Analyze the provided list of recent documents and generate a concise briefing summary.
+Respond ONLY with a JSON object — no markdown, no commentary:
+{
+  "summary": "2-3 sentence overview of current document activity",
+  "key_topics": ["topic1", "topic2"],
+  "document_count": <integer>,
+  "notable_items": ["brief item 1", "brief item 2"],
+  "source": "local-ai"
+}"""
+
+    result = await _complete_json(system, f"Recent documents:\n{doc_lines}")
+    if result:
+        result["source"] = "local-ai"
+    return result

@@ -68,6 +68,10 @@ services:
       OPENDMS_SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@opendms.local}
       OPENDMS_SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-admin}
       OPENDMS_DEBUG: "true"
+      OPENDMS_LLM_PROVIDER: ${OPENDMS_LLM_PROVIDER:-anthropic}
+      OPENDMS_LLM_API_KEY: ${OPENDMS_LLM_API_KEY:-}
+      OPENDMS_LLM_BASE_URL: ${OPENDMS_LLM_BASE_URL:-}
+      OPENDMS_LLM_MODEL: ${OPENDMS_LLM_MODEL:-}
     depends_on:
       db:
         condition: service_healthy

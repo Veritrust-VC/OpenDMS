@@ -370,8 +370,11 @@ def _extract_text(file_data: bytes, mime_type: str, filename: str) -> str:
 @router.post("/{doc_id}/generate-metadata")
 async def generate_metadata(doc_id: int, user=Depends(get_current_user)):
     """AI-powered VDVC v1.1 semantic metadata generation."""
-    from opendms.ai import generate_semantic_metadata
+    from opendms.ai import generate_semantic_metadata, is_configured
     import hashlib as _hl
+
+    if not is_configured():
+        raise HTTPException(503, "AI not configured — set OPENDMS_LLM_API_KEY in environment")
 
     default_org = await get_default_org_required()
     pool = await get_pool()
