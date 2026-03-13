@@ -54,6 +54,7 @@ export default function App() {
       { id:"registers", label:"Registers", icon:"\u{1F4C1}" },
       { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F" },
       { id:"archive", label:"Archive", icon:"\u{1F5C3}\uFE0F" },
+      { id:"ai-instructions", label:"AI Prompts", icon:"\u{1F4DD}" },
     ] : []),
     ...(user.role === "superadmin" ? [{ id:"settings", label:"Settings", icon:"\u{2699}\uFE0F" }] : []),
   ];
@@ -88,6 +89,7 @@ export default function App() {
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
         {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
         {page==="archive" && <ArchivePage notify={notify} />}
+        {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="audit" && <AuditLogsPage notify={notify} initialFilters={auditFilters} />}
         {page==="settings" && <SettingsPage notify={notify} brand={brand} setBrand={setBrand} />}
       </main>
@@ -811,6 +813,138 @@ function ArchivePage({ notify }) {
         <button onClick={()=>exp(b.id)} className="text-xs px-3 py-1 bg-blue-600 text-white rounded">Export ZIP</button>
       </div>))}
       {!batches.length && <div className="p-6 text-center text-gray-400 text-sm">No archive batches</div>}
+    </div>
+  </div>);
+}
+
+
+function AIInstructionsPage({ notify }) {
+  const [instructions, setInstructions] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [reason, setReason] = useState("");
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const load = async () => {
+    try {
+      const d = await api("/ai-instructions");
+      setInstructions(d.items || []);
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const selectInstruction = async (key) => {
+    try {
+      const d = await api(`/ai-instructions/${encodeURIComponent(key)}`);
+      setSelected(d);
+      setDraft(d.content || "");
+      setEditing(false);
+      setShowHistory(false);
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const saveInstruction = async () => {
+    if (!selected) return;
+    try {
+      await api(`/ai-instructions/${encodeURIComponent(selected.instruction_key)}`, {
+        method: "PUT",
+        body: JSON.stringify({ content: draft, change_reason: reason || null }),
+      });
+      notify(`Saved v${selected.version + 1}`);
+      setReason("");
+      setEditing(false);
+      await selectInstruction(selected.instruction_key);
+      await load();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const loadHistory = async () => {
+    if (!selected) return;
+    try {
+      const d = await api(`/ai-instructions/${encodeURIComponent(selected.instruction_key)}/history`);
+      setHistory(d.items || []);
+      setShowHistory(true);
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const restoreVersion = async (version) => {
+    if (!selected || !window.confirm(`Restore version ${version}?`)) return;
+    try {
+      await api(`/ai-instructions/${encodeURIComponent(selected.instruction_key)}/restore/${version}`, { method: "POST" });
+      notify(`Restored version ${version}`);
+      await selectInstruction(selected.instruction_key);
+      await load();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const categories = [...new Set(instructions.map((i) => i.category))];
+
+  return (<div>
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="text-xl font-bold">AI Instructions</h2>
+      <div className="text-xs text-gray-400">System prompts, guardrails, and AI configuration — stored in database.</div>
+    </div>
+    <div className="grid grid-cols-4 gap-4">
+      <div className="col-span-1 bg-white border rounded-lg">
+        <div className="divide-y max-h-[600px] overflow-y-auto">
+          {categories.map((cat) => (
+            <div key={cat}>
+              <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-semibold text-gray-500 uppercase">{cat}</div>
+              {instructions.filter((i) => i.category === cat).map((i) => (
+                <div key={i.instruction_key} onClick={() => selectInstruction(i.instruction_key)}
+                  className={`px-3 py-2 cursor-pointer hover:bg-gray-50 text-xs ${selected?.instruction_key === i.instruction_key ? "bg-blue-50" : ""}`}>
+                  <div className="font-medium">{i.display_name}</div>
+                  <div className="text-gray-400 text-[10px]">v{i.version} · {new Date(i.updated_at).toLocaleDateString()}</div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="col-span-3 bg-white border rounded-lg p-4">
+        {selected ? (<div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold">{selected.display_name}</h3>
+              <div className="text-xs text-gray-400">{selected.instruction_key} · v{selected.version} · {selected.content_type}</div>
+              {selected.description && <div className="text-xs text-gray-500 mt-1">{selected.description}</div>}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={loadHistory} className="text-xs px-2 py-1 border rounded text-gray-600">History</button>
+              {!editing ? <button onClick={() => setEditing(true)} className="text-xs px-3 py-1 bg-blue-600 text-white rounded">Edit</button> : (
+                <>
+                  <button onClick={() => { setEditing(false); setDraft(selected.content || ""); }} className="text-xs px-2 py-1 border rounded text-gray-600">Cancel</button>
+                  <button onClick={saveInstruction} className="text-xs px-3 py-1 bg-emerald-600 text-white rounded">Save</button>
+                </>
+              )}
+            </div>
+          </div>
+          {editing && <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Change reason (optional, for audit trail)" className="w-full text-xs px-3 py-1.5 border rounded" />}
+          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} readOnly={!editing} rows={20}
+            className={`w-full text-xs px-3 py-2 border rounded font-mono ${editing ? "bg-white" : "bg-gray-50"}`} />
+          {showHistory && (
+            <div className="border rounded p-3">
+              <div className="text-xs font-medium mb-2">Version History</div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {history.map((h) => (
+                  <div key={h.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1.5 text-xs">
+                    <div>
+                      <span className="font-medium">v{h.version}</span>
+                      <span className="text-gray-400 ml-2">{h.changed_by_name || "Unknown"} · {new Date(h.created_at).toLocaleString()}</span>
+                      {h.change_reason && <span className="text-gray-500 ml-2">— {h.change_reason}</span>}
+                    </div>
+                    <button onClick={() => restoreVersion(h.version)} className="text-xs px-2 py-0.5 border rounded text-blue-600">Restore</button>
+                  </div>
+                ))}
+                {!history.length && <div className="text-gray-400 text-xs">No previous versions</div>}
+              </div>
+            </div>
+          )}
+        </div>) : <div className="text-center text-gray-400 text-sm py-12">Select an instruction to view or edit</div>}
+      </div>
     </div>
   </div>);
 }

@@ -257,6 +257,170 @@ async def _create_schema(conn):
             updated_at TIMESTAMPTZ DEFAULT NOW()
         );
 
+
+        -- AI instruction templates
+        CREATE TABLE IF NOT EXISTS ai_instructions (
+            id BIGSERIAL PRIMARY KEY,
+            instruction_key TEXT UNIQUE NOT NULL,
+            display_name TEXT NOT NULL,
+            description TEXT,
+            category TEXT NOT NULL DEFAULT 'prompt',
+            content TEXT NOT NULL,
+            content_type TEXT DEFAULT 'text',
+            is_active BOOLEAN DEFAULT TRUE,
+            version INTEGER NOT NULL DEFAULT 1,
+            created_by BIGINT REFERENCES users(id),
+            updated_by BIGINT REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS ai_instructions_history (
+            id BIGSERIAL PRIMARY KEY,
+            instruction_id BIGINT NOT NULL REFERENCES ai_instructions(id),
+            instruction_key TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            changed_by BIGINT REFERENCES users(id),
+            change_reason TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        INSERT INTO ai_instructions (instruction_key, display_name, description, category, content, content_type)
+        VALUES
+        ('semantic_summary.system_prompt',
+         'Semantic Summary — System Prompt',
+         'Main system prompt sent to AI when generating document semantic summaries. Contains role definition, output format, and guardrails.',
+         'prompt',
+         'You are a government document metadata extraction agent operating within a standardized document management ecosystem.
+
+Your task: analyze the provided document text and generate a structured semantic summary conforming to the document metadata schema v2.0, section 13 (SemanticProcessingMetadata).
+
+## OUTPUT FORMAT
+Respond ONLY with a JSON object. No markdown, no explanations, no preamble.
+
+## MANDATORY GUARDRAILS
+
+### Personal Data Protection (GDPR)
+1. NEVER include personal names in any output field.
+2. NEVER include personal identification codes.
+3. NEVER include addresses, phone numbers, email addresses, or bank account numbers.
+4. NEVER include health data, biometric data, or special category data (GDPR Art. 9).
+5. If the document contains personal data, set personalDataRisk to MEDIUM or HIGH, and list detected entity TYPES (not values) in detectedEntityTypes.
+6. In the summary field, refer to individuals by their ROLE only.
+
+### AI Transparency (EU AI Act)
+7. Always set summarySource to "AI".
+8. Always include aiConfidenceScore (0.0–1.0).
+9. Always include aiModelVersion with your exact model identifier.
+
+### Content Accuracy
+10. Do NOT fabricate information not present in the document.
+11. If document text is too short or unclear, set aiConfidenceScore below 0.3.
+12. Respond in the SAME LANGUAGE as the document.',
+         'text'),
+        ('semantic_summary.output_schema',
+         'Semantic Summary — Output JSON Schema',
+         'Expected JSON structure for AI response. Edit field names or add new fields here.',
+         'schema',
+         '{
+  "semanticSummary": {
+    "primaryTopic": "string — main topic in 1-2 sentences",
+    "subTopics": ["string array — related sub-topics"],
+    "summary": "string — semantic summary, max 500 words, NO personal data",
+    "documentPurpose": "string — why this document exists",
+    "requestedAction": "string — what action is requested, if any",
+    "involvedPartyTypes": ["string array — party TYPES not names"],
+    "geographicScope": "string — geographic scope",
+    "sectorTags": ["string array — sector/domain tags"],
+    "legalDomain": "string — applicable legal domain",
+    "estimatedRiskLevel": "LOW | MEDIUM | HIGH | CRITICAL",
+    "urgencyLevel": "LOW | NORMAL | HIGH | URGENT",
+    "keywords": ["string array — max 20, NO personal data"],
+    "detectedLanguage": "ISO 639-1 code",
+    "summarySource": "AI",
+    "aiConfidenceScore": 0.0,
+    "aiModelVersion": "string",
+    "humanValidationStatus": "PENDING"
+  },
+  "sensitivityControl": {
+    "personalDataRisk": "NONE | LOW | MEDIUM | HIGH",
+    "allowCentralization": true,
+    "redactionLevel": "NONE | PARTIAL | FULL",
+    "accessRestrictionBasis": "string",
+    "classifiedInformation": false,
+    "detectedEntityTypes": ["string array — entity TYPE names only"]
+  }
+}',
+         'json'),
+        ('semantic_summary.user_message_template',
+         'Semantic Summary — User Message Template',
+         'Template for constructing the user message sent to AI. Use {title}, {docType}, {regNumber}, {orgName}, {documentText} as placeholders.',
+         'prompt',
+         'Document Title: {title}
+Document Type: {docType}
+Registration Number: {regNumber}
+Organization: {orgName}
+
+--- DOCUMENT TEXT ---
+{documentText}
+--- END ---
+
+Generate the semantic summary JSON for this document.',
+         'text'),
+        ('security.pii_patterns',
+         'PII Detection Patterns',
+         'Regular expression patterns for detecting personal data in AI responses. One pattern per line, format: LABEL|REGEX',
+         'config',
+         'PERSONAL_ID|\\b\\d{6}-\\d{5}\\b
+EMAIL|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}
+PHONE|(?:\\+\\d{1,3}|00\\d{1,3})?\\s?\\d{7,10}
+IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
+         'text'),
+        ('ai.routing_rules',
+         'AI Routing Decision Rules',
+         'Rules for deciding which AI route to use based on sensitivity. JSON format.',
+         'config',
+         '{
+  "rules": [
+    {"condition": "classifiedInformation == true", "route": "NONE", "description": "Classified documents — no AI processing"},
+    {"condition": "personalDataRisk in [HIGH, MEDIUM] AND allowCentralization == false", "route": "LOCAL", "description": "Sensitive + no centralization — local model only"},
+    {"condition": "allowCentralization == false", "route": "LOCAL", "description": "Centralization blocked — local model"},
+    {"condition": "personalDataRisk in [HIGH, MEDIUM] AND allowCentralization == true", "route": "CENTRAL", "anonymize": true, "description": "Sensitive but centralization allowed — anonymize first"},
+    {"condition": "default", "route": "CENTRAL", "anonymize": false, "description": "Default — central API"}
+  ],
+  "maxTextLength": 15000,
+  "maxRetries": 1,
+  "timeoutSeconds": 90
+}',
+         'json'),
+        ('ai.model_config',
+         'AI Model Configuration',
+         'Available AI models and their parameters. Editable without restart.',
+         'config',
+         '{
+  "providers": {
+    "anthropic": {
+      "displayName": "Anthropic Claude",
+      "defaultModel": "claude-sonnet-4-20250514",
+      "maxTokens": 2000,
+      "temperature": 0.1,
+      "apiEndpoint": "https://api.anthropic.com/v1/messages"
+    },
+    "ollama": {
+      "displayName": "Ollama (Local)",
+      "defaultModel": "llama3.1",
+      "maxTokens": 2000,
+      "temperature": 0.1,
+      "apiEndpoint": "http://localhost:11434/api/chat"
+    }
+  },
+  "activeProvider": "anthropic",
+  "fallbackProvider": "ollama"
+}',
+         'json')
+        ON CONFLICT (instruction_key) DO NOTHING;
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
         CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
@@ -268,6 +432,8 @@ async def _create_schema(conn):
         CREATE INDEX IF NOT EXISTS idx_registers_parent ON registers(parent_id);
         CREATE INDEX IF NOT EXISTS idx_classifications_parent ON classifications(parent_id);
         CREATE INDEX IF NOT EXISTS idx_users_org ON users(org_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_inst_key ON ai_instructions(instruction_key);
+        CREATE INDEX IF NOT EXISTS idx_ai_inst_hist ON ai_instructions_history(instruction_id, version DESC);
 
 
         CREATE INDEX IF NOT EXISTS idx_audit_created_at ON integration_audit_log(created_at DESC);
