@@ -980,6 +980,12 @@ function SettingsPage({ notify, brand, setBrand }) {
         <div className="text-sm text-gray-600">Status: <strong>{settings.sdk_enabled === "true" || settings.sdk_enabled === undefined ? "Enabled" : "Disabled"}</strong></div>
         <div className="text-sm text-gray-600">URL: <strong>{settings.sdk_url || "(default)"}</strong></div>
       </div>
+      <div className="bg-white rounded-lg border p-4">
+        <h3 className="font-semibold text-sm mb-3">AI</h3>
+        <div className="text-sm text-gray-600">Provider: <strong>{settings.ai_provider || "anthropic"}</strong></div>
+        <div className="text-sm text-gray-600">API Key: <strong>{settings.ai_key_configured ? "✓ Configured" : "✗ Not set"}</strong></div>
+        <div className="text-xs text-gray-400 mt-1">Set OPENDMS_LLM_API_KEY in .env file</div>
+      </div>
     </div>
   </div>);
 }

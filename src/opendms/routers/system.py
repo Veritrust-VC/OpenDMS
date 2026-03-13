@@ -126,6 +126,7 @@ settings_router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
 @settings_router.get("")
 async def get_settings_all(user=Depends(require_role("superadmin"))):
+    import os
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM system_settings")
@@ -138,6 +139,8 @@ async def get_settings_all(user=Depends(require_role("superadmin"))):
     result.setdefault("storage_backend", s.storage_backend)
     result.setdefault("sdk_enabled", str(s.sdk_enabled))
     result.setdefault("sdk_url", s.sdk_url)
+    result["ai_provider"] = os.getenv("OPENDMS_LLM_PROVIDER", "anthropic")
+    result["ai_key_configured"] = bool(os.getenv("OPENDMS_LLM_API_KEY", ""))
     return result
 
 
