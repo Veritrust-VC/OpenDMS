@@ -289,6 +289,53 @@ Respond ONLY with a JSON object. No markdown, no explanations, no preamble.
 }"""
 
 
+async def _get_semantic_prompt() -> str:
+    """Load semantic system prompt from DB with hardcoded fallback."""
+    try:
+        from opendms.routers.ai_instructions import load_instruction
+
+        prompt = await load_instruction("semantic_summary.system_prompt")
+        if not prompt:
+            return _SEMANTIC_SYSTEM_PROMPT
+
+        schema = await load_instruction("semantic_summary.output_schema")
+        if schema:
+            return f"{prompt}\n\n## JSON SCHEMA\n{schema}"
+        return prompt
+    except Exception:
+        return _SEMANTIC_SYSTEM_PROMPT
+
+
+async def _get_user_message(title: str, doc_type: str, reg_number: str, org_name: str, text: str) -> str:
+    """Build semantic user message from DB template with fallback."""
+    try:
+        from opendms.routers.ai_instructions import load_instruction
+
+        template = await load_instruction("semantic_summary.user_message_template")
+        if template:
+            return (
+                template
+                .replace("{title}", title)
+                .replace("{docType}", doc_type or "unknown")
+                .replace("{regNumber}", reg_number or "")
+                .replace("{orgName}", org_name or "")
+                .replace("{documentText}", text)
+            )
+    except Exception:
+        pass
+
+    return f"""Document Title: {title}
+Document Type: {doc_type or 'unknown'}
+Registration Number: {reg_number}
+Organization: {org_name}
+
+--- DOCUMENT TEXT ---
+{text}
+--- END ---
+
+Generate the semantic summary JSON for this document."""
+
+
 def anonymize_text(text: str) -> tuple[str, bool]:
     """Replace PII with placeholders. Returns (anonymized_text, was_anonymized)."""
     original = text
@@ -363,19 +410,11 @@ async def generate_semantic_metadata(
         text, anonymized = anonymize_text(text)
 
     content_hash = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
-    user_msg = f"""Document Title: {title}
-Document Type: {doc_type or 'unknown'}
-Registration Number: {reg_number}
-Organization: {org_name}
-Content Hash: {content_hash}
+    user_msg = await _get_user_message(title, doc_type, reg_number, org_name, text)
+    user_msg = f"{user_msg}\n\nContent Hash: {content_hash}"
+    system_prompt = await _get_semantic_prompt()
 
---- DOCUMENT TEXT ---
-{text}
---- END ---
-
-Generate the semantic summary JSON for this document."""
-
-    result = await _complete_json(_SEMANTIC_SYSTEM_PROMPT, user_msg)
+    result = await _complete_json(system_prompt, user_msg)
 
     if not result:
         if route == "CENTRAL":
