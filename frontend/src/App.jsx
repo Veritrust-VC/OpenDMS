@@ -13,7 +13,6 @@ async function api(path, opts = {}) {
   if (opts.body instanceof FormData) { delete headers["Content-Type"]; }
   const res = await fetch(`${API}${path}`, { headers, ...opts });
   if (res.status === 401) {
-    // FIX: guard against multiple concurrent 401s; use React state instead of reload
     if (!_isLoggingOut) {
       _isLoggingOut = true;
       authToken = "";
@@ -69,8 +68,6 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
 
-  // FIX: Register the React-driven logout handler so api() can clear user
-  // without reloading the page. This preserves `page` state across re-login.
   useEffect(() => {
     setLogoutHandler(() => setUser(null));
     return () => setLogoutHandler(null);
@@ -250,7 +247,6 @@ function CreateDocForm({ onDone, notify }) {
   const updateSemanticField = (field, value) => setAiData((prev) => { const next = { ...(prev.semanticSummary || {}), [field]: value }; if ((prev.semanticSummary || {}).summarySource === "AI") next.summarySource = "HYBRID"; if (!Object.values(next).some((v) => Array.isArray(v) ? v.length : (v ?? "") !== "")) next.summarySource = "HUMAN"; return { ...prev, semanticSummary: next }; });
   const updateSensitivityField = (field, value) => setAiData((prev) => ({ ...prev, sensitivityControl: { ...(prev.sensitivityControl || {}), [field]: value } }));
 
-  // BUG-013: Auto-populate title from filename
   const handleFileChange = (e) => {
     const f = e.target.files?.[0] || null;
     setFile(f);
@@ -259,7 +255,6 @@ function CreateDocForm({ onDone, notify }) {
     }
   };
 
-  // Generate metadata using direct LLM path (same AI pipeline as per-document Generate Metadata)
   const generateMetadata = async () => {
     if (!file) return notify("Please select a file first", "error");
     const fd = new FormData();
@@ -284,7 +279,6 @@ function CreateDocForm({ onDone, notify }) {
     }
   };
 
-  // BUG-009: Upload file to document after creation
   const submit = async () => {
     try {
       const semanticSummary = aiData.semanticSummary;
@@ -302,7 +296,6 @@ function CreateDocForm({ onDone, notify }) {
           return;
         }
       }
-      // Show SDK status — did the VC get submitted to Register?
       if (doc?.vc_submitted) {
         notify(`Document created with DID ${doc.doc_did?.slice(-20) || ''} — VC submitted to Register`);
       } else if (doc?.sdk_error) {
@@ -316,7 +309,6 @@ function CreateDocForm({ onDone, notify }) {
     } catch (e) { notify(e.message, "error"); }
   };
 
-  // BUG-007: Render sensitivity field as appropriate input type
   const renderSensitivityField = (f) => {
     const label = SENSITIVITY_FIELD_LABELS[f] || f;
     const val = aiData.sensitivityControl?.[f];
@@ -356,7 +348,6 @@ function CreateDocForm({ onDone, notify }) {
   return (
     <div className="bg-white border rounded-lg p-4 mb-4 space-y-3">
       <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" />
-      {/* BUG-013: handleFileChange auto-populates title */}
       <input type="file" onChange={handleFileChange} className="text-xs" />
       <div className="flex items-center gap-2">
         <button onClick={generateMetadata} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">
@@ -368,7 +359,6 @@ function CreateDocForm({ onDone, notify }) {
       </div>
       {aiData.route && <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">Route: {JSON.stringify(aiData.route)}</div>}
       <textarea value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Content summary" rows={2} className="w-full text-sm px-3 py-2 border rounded" />
-      {/* BUG-007: Human-readable labels for AI Summary fields */}
       <div className="grid grid-cols-2 gap-2">
         {SUMMARY_FIELDS.map((f) => (
           <div key={f} className="flex flex-col gap-0.5">
@@ -381,11 +371,9 @@ function CreateDocForm({ onDone, notify }) {
           </div>
         ))}
       </div>
-      {/* BUG-003/004: Proper select inputs for boolean/enum sensitivity fields */}
       <div className="grid grid-cols-2 gap-2">
         {SENSITIVITY_FIELDS.map(renderSensitivityField)}
       </div>
-      {/* BUG-008: Developer message removed */}
       <div className="flex gap-2 justify-end">
         <button onClick={onDone} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button>
         <button onClick={submit} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">Create</button>
@@ -631,7 +619,6 @@ function DocumentDetail({ doc, onAction, notify }) {
                 </div>
               );
             })}
-            ))}
           </div>
         </div>
       )}
@@ -709,12 +696,168 @@ function DocumentDetail({ doc, onAction, notify }) {
     </div>
   );
 }
+
+// ── Intelligence Page — FIXED ──
+// Bug 1: notify was a dep of useCallback → recreated every render → infinite polling loop
+// Bug 2: topics/warnings returned 502 when SDK unavailable → now backend returns empty lists
+// Bug 3: briefing was rendered as raw JSON stringify → now uses BriefingDisplay component
 function IntelligencePage({ notify }) {
-  const [topics, setTopics] = useState([]); const [warnings, setWarnings] = useState([]); const [briefing, setBriefing] = useState(null);
-  const load = useCallback(async () => { try { const [t, w] = await Promise.all([api("/intelligence/topics"), api("/intelligence/warnings")]); setTopics(t.items || t.topics || []); setWarnings(w.items || w.warnings || []); } catch (e) { notify(e.message, "error"); } }, [notify]);
-  useEffect(() => { load(); }, [load]);
-  const generateBriefing = async () => { try { const r = await api("/intelligence/briefing", { method: "POST", body: JSON.stringify({ context: {} }) }); setBriefing(r); notify("Briefing generated"); } catch (e) { notify(e.message, "error"); } };
-  return (<div><div className="flex items-center justify-between mb-4"><h2 className="text-xl font-bold">Intelligence</h2><button onClick={generateBriefing} className="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded">Generate briefing</button></div><div className="grid grid-cols-3 gap-3"><div className="bg-white border rounded p-3"><div className="text-xs text-gray-500 mb-2">Topic trends</div>{topics.length ? topics.map((t,i)=><div key={i} className="text-xs">{t.topic || JSON.stringify(t)}</div>) : <div className="text-xs text-gray-400">No data</div>}</div><div className="bg-white border rounded p-3"><div className="text-xs text-gray-500 mb-2">Active warnings</div>{warnings.length ? warnings.map((w,i)=><div key={i} className="text-xs">{w.title || JSON.stringify(w)}</div>) : <div className="text-xs text-gray-400">No warnings</div>}</div><div className="bg-white border rounded p-3"><div className="text-xs text-gray-500 mb-2">Recent clusters / briefing</div><pre className="text-xs whitespace-pre-wrap">{briefing ? JSON.stringify(briefing, null, 2) : "No briefing generated"}</pre></div></div></div>);
+  const [topics, setTopics] = useState([]);
+  const [warnings, setWarnings] = useState([]);
+  const [briefing, setBriefing] = useState(null);
+  const [loadingBriefing, setLoadingBriefing] = useState(false);
+
+  // Load once on mount — NO notify in deps (was causing infinite re-render loop)
+  useEffect(() => {
+    let cancelled = false;
+    api("/intelligence/topics")
+      .then(t => { if (!cancelled) setTopics(t.items || t.topics || []); })
+      .catch(() => { if (!cancelled) setTopics([]); });
+    api("/intelligence/warnings")
+      .then(w => { if (!cancelled) setWarnings(w.items || w.warnings || []); })
+      .catch(() => { if (!cancelled) setWarnings([]); });
+    return () => { cancelled = true; };
+  }, []); // empty deps — fire once only
+
+  const generateBriefing = async () => {
+    setLoadingBriefing(true);
+    try {
+      const r = await api("/intelligence/briefing", {
+        method: "POST",
+        body: JSON.stringify({ context: {} }),
+      });
+      setBriefing(r);
+      notify("Briefing generated");
+    } catch (e) {
+      notify(e.message, "error");
+    } finally {
+      setLoadingBriefing(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">Intelligence</h2>
+        <button
+          onClick={generateBriefing}
+          disabled={loadingBriefing}
+          className="text-sm px-3 py-1.5 bg-indigo-600 text-white rounded disabled:opacity-50"
+        >
+          {loadingBriefing ? "Generating…" : "Generate briefing"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {/* Topic trends */}
+        <div className="bg-white border rounded p-3">
+          <div className="text-xs font-medium text-gray-500 mb-2">Topic trends</div>
+          {topics.length ? (
+            topics.map((t, i) => (
+              <div key={i} className="text-xs py-1 border-b border-gray-50 last:border-0">
+                <span className="font-medium">{t.topic || t.primary_topic || "—"}</span>
+                {t.documents != null && (
+                  <span className="text-gray-400 ml-2">{t.documents} docs</span>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="text-xs text-gray-400">No data</div>
+          )}
+        </div>
+
+        {/* Active warnings */}
+        <div className="bg-white border rounded p-3">
+          <div className="text-xs font-medium text-gray-500 mb-2">Active warnings</div>
+          {warnings.length ? (
+            warnings.map((w, i) => (
+              <div key={i} className="text-xs py-1 border-b border-gray-50 last:border-0">
+                <span className="font-medium text-amber-700">{w.title || w.topic || "Warning"}</span>
+                {w.description && (
+                  <div className="text-gray-500 mt-0.5">{w.description}</div>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="text-xs text-gray-400">No warnings</div>
+          )}
+        </div>
+
+        {/* Briefing — now rendered as structured UI */}
+        <div className="bg-white border rounded p-3">
+          <div className="text-xs font-medium text-gray-500 mb-2">Recent clusters / briefing</div>
+          {briefing ? (
+            <BriefingDisplay briefing={briefing} />
+          ) : (
+            <div className="text-xs text-gray-400">No briefing generated</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Render briefing as structured UI — handles both markdown and structured JSON formats
+function BriefingDisplay({ briefing }) {
+  const [showRaw, setShowRaw] = useState(false);
+  if (!briefing) return null;
+
+  // Markdown briefing (from VeriDocs Register AI sidecar)
+  if (briefing.markdown) {
+    return (
+      <div className="text-xs space-y-1">
+        <pre className="whitespace-pre-wrap text-gray-700 text-[10px] leading-relaxed overflow-auto max-h-64">
+          {briefing.markdown}
+        </pre>
+      </div>
+    );
+  }
+
+  // Structured briefing (from local AI fallback)
+  return (
+    <div className="text-xs space-y-2">
+      {briefing.summary && (
+        <p className="text-gray-700 leading-relaxed">{briefing.summary}</p>
+      )}
+      {briefing.key_topics?.length > 0 && (
+        <div>
+          <div className="text-[10px] text-gray-400 uppercase font-medium mb-1">Key topics</div>
+          <div className="flex flex-wrap gap-1">
+            {briefing.key_topics.map((t, i) => (
+              <span key={i} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px]">{t}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      {briefing.notable_items?.length > 0 && (
+        <div>
+          <div className="text-[10px] text-gray-400 uppercase font-medium mb-1">Notable</div>
+          <ul className="space-y-0.5">
+            {briefing.notable_items.map((item, i) => (
+              <li key={i} className="text-gray-600">• {item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {briefing.document_count != null && (
+        <div className="text-[10px] text-gray-400">
+          {briefing.document_count} documents analysed
+          {briefing.source && ` · ${briefing.source}`}
+        </div>
+      )}
+      <button
+        onClick={() => setShowRaw(!showRaw)}
+        className="text-[10px] text-gray-400 hover:text-gray-600 underline"
+      >
+        {showRaw ? "Hide raw JSON" : "Show raw JSON"}
+      </button>
+      {showRaw && (
+        <pre className="text-[10px] bg-gray-50 rounded p-2 overflow-auto max-h-48 whitespace-pre-wrap">
+          {JSON.stringify(briefing, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 function UsersPage({ notify }) {
@@ -865,9 +1008,7 @@ function OrgsPage({ notify, onViewLogs }) {
             <div className="text-sm font-medium flex items-center">
               {o.name}
               {o.is_default && (
-                <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                  Default
-                </span>
+                <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">Default</span>
               )}
             </div>
             <div className="text-xs text-gray-400">Code: {o.code}</div>
@@ -880,32 +1021,10 @@ function OrgsPage({ notify, onViewLogs }) {
               {setup.registry_auth_error && <div>Registry auth error: <strong>{setup.registry_auth_error}</strong></div>}
               <div>Local DID matches SDK: <strong>{status.matches_local_org_did ? "Yes" : "No"}</strong></div>
             </div>}
-            {o.org_did && !setup && sdkStatus && !sdkStatus.registry_connected && (
-              <div className="text-xs text-amber-600 mt-1">Registry unreachable</div>
-            )}
-            {o.org_did && !setup && sdkStatus && sdkStatus.registry_connected && (
-              <div className="text-xs text-gray-400 mt-1">Click "Check status" for details</div>
-            )}
-            {o.org_did && setup && (!setup.org_did_configured || !setup.registry_connected || !setup.registry_auth_configured || !setup.registry_authenticated) && (
-              <div className="text-xs text-amber-600 mt-1">
-                {!setup.registry_connected
-                  ? "Registry unreachable"
-                  : !setup.registry_auth_configured
-                  ? "Registry credentials not configured"
-                  : !setup.registry_authenticated
-                  ? "Registry authentication failed"
-                  : "SDK org DID not fully configured"}
-              </div>
-            )}
           </div>
           <div className="flex gap-2">
             {!o.is_default && (
-              <button
-                onClick={() => makeDefault(o)}
-                className="text-xs px-3 py-1 border rounded text-emerald-700"
-              >
-                Make Default
-              </button>
+              <button onClick={() => makeDefault(o)} className="text-xs px-3 py-1 border rounded text-emerald-700">Make Default</button>
             )}
             {!o.org_did && <button disabled={registering[o.id]} onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-60">{registering[o.id] ? "Registering..." : "Register DID"}</button>}
             {o.org_did && <>
@@ -920,7 +1039,6 @@ function OrgsPage({ notify, onViewLogs }) {
       })}
     </div>
 
-    {/* DID Document Viewer Modal */}
     {didViewer && (
       <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setDidViewer(null)}>
         <div className="bg-white rounded-lg p-5 w-[720px] max-h-[85vh] overflow-auto" onClick={e=>e.stopPropagation()}>
@@ -928,12 +1046,8 @@ function OrgsPage({ notify, onViewLogs }) {
             <h3 className="font-semibold">DID Document</h3>
             <button onClick={()=>setDidViewer(null)} className="text-gray-400 hover:text-gray-600">✕</button>
           </div>
-          <div className="text-xs mb-2">
-            <span className="text-gray-500">Organization:</span> <strong>{didViewer.organization?.name}</strong>
-          </div>
-          <div className="text-xs mb-3">
-            <span className="text-gray-500">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{didViewer.organization?.org_did}</code>
-          </div>
+          <div className="text-xs mb-2"><span className="text-gray-500">Organization:</span> <strong>{didViewer.organization?.name}</strong></div>
+          <div className="text-xs mb-3"><span className="text-gray-500">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{didViewer.organization?.org_did}</code></div>
           {didViewer.didDocument ? (
             <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96 whitespace-pre-wrap">{JSON.stringify(didViewer.didDocument, null, 2)}</pre>
           ) : (
@@ -947,7 +1061,6 @@ function OrgsPage({ notify, onViewLogs }) {
       </div>
     )}
 
-    {/* Registration VC Viewer Modal */}
     {vcViewer && (
       <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setVcViewer(null)}>
         <div className="bg-white rounded-lg p-5 w-[720px] max-h-[85vh] overflow-auto" onClick={e=>e.stopPropagation()}>
@@ -955,12 +1068,8 @@ function OrgsPage({ notify, onViewLogs }) {
             <h3 className="font-semibold">Organization Registration VC</h3>
             <button onClick={()=>setVcViewer(null)} className="text-gray-400 hover:text-gray-600">✕</button>
           </div>
-          <div className="text-xs mb-2">
-            <span className="text-gray-500">Organization:</span> <strong>{vcViewer.organization?.name}</strong>
-          </div>
-          <div className="text-xs mb-2">
-            <span className="text-gray-500">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{vcViewer.organization?.org_did}</code>
-          </div>
+          <div className="text-xs mb-2"><span className="text-gray-500">Organization:</span> <strong>{vcViewer.organization?.name}</strong></div>
+          <div className="text-xs mb-2"><span className="text-gray-500">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{vcViewer.organization?.org_did}</code></div>
           <div className="text-xs mb-3 flex gap-3">
             <span>VC present: <strong className={vcViewer.registration_vc_present ? "text-emerald-600" : "text-red-500"}>{vcViewer.registration_vc_present ? "Yes" : "No"}</strong></span>
             {vcViewer.last_setup && <span>Lifecycle ready: <strong className={vcViewer.last_setup.lifecycle_ready ? "text-emerald-600" : "text-amber-600"}>{vcViewer.last_setup.lifecycle_ready ? "Yes" : "No"}</strong></span>}

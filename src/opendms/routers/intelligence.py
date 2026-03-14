@@ -16,10 +16,12 @@ class BriefingRequest(BaseModel):
 
 @router.get("/topics")
 async def topics(user=Depends(get_current_user)):
+    """Topic trends — proxied from SDK, falls back to empty list when SDK unavailable."""
     result = await sdk_client.get_topic_trends(actor=user)
-    if not result:
-        raise HTTPException(502, "Topic trends unavailable")
-    return result
+    if result:
+        return result
+    # SDK does not implement this endpoint — return empty gracefully instead of 502
+    return {"items": [], "topics": []}
 
 
 @router.get("/similar/{doc_id}")
@@ -32,10 +34,12 @@ async def similar(doc_id: str, user=Depends(get_current_user)):
 
 @router.get("/warnings")
 async def warnings(user=Depends(get_current_user)):
+    """Active warnings — proxied from SDK, falls back to empty list when SDK unavailable."""
     result = await sdk_client.get_warnings(actor=user)
-    if not result:
-        raise HTTPException(502, "Warnings unavailable")
-    return result
+    if result:
+        return result
+    # SDK does not implement this endpoint — return empty gracefully instead of 502
+    return {"items": [], "warnings": []}
 
 
 @router.post("/briefing")
