@@ -134,7 +134,7 @@ def _sanitize_for_registry(semantic_summary: Optional[dict], sensitivity_control
         # Array limits
         kws = ss.get("keywords")
         if isinstance(kws, list):
-            ss["keywords"] = [str(k)[:50] for k in kws[:20]]
+        ss["keywords"] = [str(k)[:50] for k in kws[:10]]
         subs = ss.get("subTopics")
         if isinstance(subs, list):
             ss["subTopics"] = [str(s)[:100] for s in subs[:10]]
@@ -144,6 +144,12 @@ def _sanitize_for_registry(semantic_summary: Optional[dict], sensitivity_control
         sectors = ss.get("sectorTags")
         if isinstance(sectors, list):
             ss["sectorTags"] = [str(s)[:50] for s in sectors[:10]]
+
+    if sc:
+        rl = sc.get("redactionLevel")
+        if isinstance(rl, str):
+            rl_map = {"NONE": "MINIMAL", "FULL": "FULL", "PARTIAL": "PARTIAL", "MINIMAL": "MINIMAL"}
+            sc["redactionLevel"] = rl_map.get(rl.upper(), "PARTIAL")
 
     return ss, sc
 
