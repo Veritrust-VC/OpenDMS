@@ -40,6 +40,7 @@ services:
       CONTEXT_ORIGIN: ${CONTEXT_ORIGIN:-https://sdk.opendms.dev}
     volumes:
       - sdk-data:/app/status-data
+      - sdk-state:/app/data 
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -96,6 +97,7 @@ services:
 volumes:
   pgdata:
   sdk-data:
+  sdk-state:
   doc-storage:
 
 networks:
