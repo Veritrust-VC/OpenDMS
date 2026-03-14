@@ -237,3 +237,26 @@ async def get_warnings(trace_id: Optional[str] = None, actor: Optional[Dict[str,
 
 async def generate_briefing(payload: Optional[Dict[str, Any]] = None, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     return await _request("POST", "/api/intelligence/briefing", json_body=payload or {}, trace_id=trace_id, actor=actor)
+
+
+async def resolve_did(did: str, trace_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Resolve a DID document via the SDK's Veramo agent. No API key needed."""
+    return await _request("POST", "/api/did/resolve", json_body={"did": did}, trace_id=trace_id)
+
+
+async def verify_vc(credential: Dict[str, Any], trace_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Verify a Verifiable Credential via SDK. No API key needed."""
+    return await _request("POST", "/api/vc/verify", json_body={"credential": credential}, trace_id=trace_id)
+
+
+async def check_sdk_auth() -> Dict[str, Any]:
+    """Check if the SDK API key is valid by trying an authenticated endpoint."""
+    result = await _request("GET", "/api/identifiers", include_error_payload=True)
+    if not result:
+        return {"sdk_auth_ok": False, "error": "SDK unreachable"}
+    status = result.get("_meta", {}).get("status_code", 0)
+    if status == 401:
+        return {"sdk_auth_ok": False, "error": "VERAMO_API_KEY is empty or invalid — set it in .env and rebuild"}
+    if status in (200, 201):
+        return {"sdk_auth_ok": True, "managed_dids": len(result) if isinstance(result, list) else 0}
+    return {"sdk_auth_ok": False, "error": f"SDK returned HTTP {status}"}

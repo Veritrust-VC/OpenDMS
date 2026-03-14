@@ -754,6 +754,8 @@ function OrgsPage({ notify, onViewLogs }) {
   useEffect(()=>{load(); loadSdkStatus();},[]);
 
   const [nf, setNf] = useState({name:"",code:"",description:""});
+  const [didViewer, setDidViewer] = useState(null);
+  const [vcViewer, setVcViewer] = useState(null);
   const create = async () => {
     try {
       await api("/organizations",{method:"POST",body:JSON.stringify(nf)});
@@ -839,6 +841,13 @@ function OrgsPage({ notify, onViewLogs }) {
       {sdkStatus.registry_auth_error && (
         <div className="text-xs text-amber-700 mt-2">Registry auth error: {sdkStatus.registry_auth_error}</div>
       )}
+      {sdkStatus.sdk_auth_ok === false && (
+        <div className="text-xs bg-red-50 border border-red-200 text-red-700 rounded p-2 mt-2">
+          ⚠ <strong>SDK API key not configured</strong> — all write operations (document create, DID register, lifecycle events) will fail.
+          Set <code className="bg-red-100 px-1 rounded">VERAMO_API_KEY</code> in <code className="bg-red-100 px-1 rounded">.env</code> and rebuild.
+          {sdkStatus.sdk_auth_error && <span className="block mt-1 text-red-500">{sdkStatus.sdk_auth_error}</span>}
+        </div>
+      )}
     </div>}
 
     {show && <div className="bg-white border rounded-lg p-4 mb-4 flex gap-2">
@@ -902,12 +911,86 @@ function OrgsPage({ notify, onViewLogs }) {
             {o.org_did && <>
               <button disabled={checking[o.id]} onClick={()=>checkDidStatus(o.id)} className="text-xs px-3 py-1 border rounded text-gray-700 disabled:opacity-60">{checking[o.id] ? "Checking..." : "Check status"}</button>
               <button disabled={registering[o.id]} onClick={()=>regDid(o.id)} className="text-xs px-3 py-1 bg-violet-600 text-white rounded disabled:opacity-60">{registering[o.id] ? "Registering..." : "Re-check setup"}</button>
+              <button onClick={async()=>{ try { const r = await api(`/organizations/${o.id}/did-document`); setDidViewer(r); } catch(e){ notify(e.message,"error"); }}} className="text-xs px-3 py-1 border rounded text-indigo-700">View DID</button>
+              <button onClick={async()=>{ try { const r = await api(`/organizations/${o.id}/registration-vc`); setVcViewer(r); } catch(e){ notify(e.message,"error"); }}} className="text-xs px-3 py-1 border rounded text-purple-700">View VC</button>
               <button onClick={()=>onViewLogs?.({organization_id:o.id, trace_id:orgDidStatus[o.id]?.trace_id || ""})} className="text-xs px-3 py-1 border rounded text-blue-700">View sync logs</button>
             </>}
           </div>
         </div>);
       })}
     </div>
+
+    {/* DID Document Viewer Modal */}
+    {didViewer && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setDidViewer(null)}>
+        <div className="bg-white rounded-lg p-5 w-[720px] max-h-[85vh] overflow-auto" onClick={e=>e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">DID Document</h3>
+            <button onClick={()=>setDidViewer(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div className="text-xs mb-2">
+            <span className="text-gray-500">Organization:</span> <strong>{didViewer.organization?.name}</strong>
+          </div>
+          <div className="text-xs mb-3">
+            <span className="text-gray-500">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{didViewer.organization?.org_did}</code>
+          </div>
+          {didViewer.didDocument ? (
+            <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96 whitespace-pre-wrap">{JSON.stringify(didViewer.didDocument, null, 2)}</pre>
+          ) : (
+            <div className="text-xs text-amber-600 bg-amber-50 rounded p-3">DID document could not be resolved. The DID may not be published or the SDK agent is unreachable.</div>
+          )}
+          <div className="flex gap-2 mt-3 justify-end">
+            <button onClick={()=>{ navigator.clipboard.writeText(JSON.stringify(didViewer.didDocument, null, 2)); notify("Copied to clipboard"); }} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded">Copy JSON</button>
+            <button onClick={()=>setDidViewer(null)} className="text-xs px-3 py-1.5 border rounded text-gray-600">Close</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Registration VC Viewer Modal */}
+    {vcViewer && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setVcViewer(null)}>
+        <div className="bg-white rounded-lg p-5 w-[720px] max-h-[85vh] overflow-auto" onClick={e=>e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Organization Registration VC</h3>
+            <button onClick={()=>setVcViewer(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div className="text-xs mb-2">
+            <span className="text-gray-500">Organization:</span> <strong>{vcViewer.organization?.name}</strong>
+          </div>
+          <div className="text-xs mb-2">
+            <span className="text-gray-500">DID:</span> <code className="bg-gray-50 px-1 rounded break-all">{vcViewer.organization?.org_did}</code>
+          </div>
+          <div className="text-xs mb-3 flex gap-3">
+            <span>VC present: <strong className={vcViewer.registration_vc_present ? "text-emerald-600" : "text-red-500"}>{vcViewer.registration_vc_present ? "Yes" : "No"}</strong></span>
+            {vcViewer.last_setup && <span>Lifecycle ready: <strong className={vcViewer.last_setup.lifecycle_ready ? "text-emerald-600" : "text-amber-600"}>{vcViewer.last_setup.lifecycle_ready ? "Yes" : "No"}</strong></span>}
+            {vcViewer.last_setup?.timestamp && <span className="text-gray-400">Setup: {new Date(vcViewer.last_setup.timestamp).toLocaleString()}</span>}
+          </div>
+          {vcViewer.last_setup?.registry && (
+            <div className="text-xs grid grid-cols-2 gap-1 mb-3 bg-gray-50 rounded p-2">
+              <div>Connected: <strong>{vcViewer.last_setup.registry.connected ? "Yes" : "No"}</strong></div>
+              <div>Authenticated: <strong>{vcViewer.last_setup.registry.authenticated ? "Yes" : "No"}</strong></div>
+              <div>Registered: <strong>{vcViewer.last_setup.registry.registered ? "Yes" : "No"}</strong></div>
+              <div>Verified: <strong>{vcViewer.last_setup.registry.verified ? "Yes" : "No"}</strong></div>
+              {vcViewer.last_setup.registry.error && <div className="col-span-2 text-red-500">Error: {vcViewer.last_setup.registry.error}</div>}
+            </div>
+          )}
+          {vcViewer.registration_vc ? (
+            <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96 whitespace-pre-wrap">{JSON.stringify(vcViewer.registration_vc, null, 2)}</pre>
+          ) : (
+            <div className="text-xs text-amber-600 bg-amber-50 rounded p-3">
+              {!vcViewer.registration_vc_present
+                ? "No registration VC has been issued for this organization. Run 'Re-check setup' to trigger org registration in the central Registry. If the Registry is connected and authenticated, a registration VC should be issued."
+                : "VC is flagged as present in SDK but the content could not be retrieved from the last setup response."}
+            </div>
+          )}
+          <div className="flex gap-2 mt-3 justify-end">
+            {vcViewer.registration_vc && <button onClick={()=>{ navigator.clipboard.writeText(JSON.stringify(vcViewer.registration_vc, null, 2)); notify("Copied to clipboard"); }} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded">Copy VC JSON</button>}
+            <button onClick={()=>setVcViewer(null)} className="text-xs px-3 py-1.5 border rounded text-gray-600">Close</button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>);
 }
 

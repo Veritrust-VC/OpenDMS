@@ -238,6 +238,7 @@ async def sdk_setup_status(user=Depends(get_current_user)):
     # does NOT include a top-level "status" field — only /api/health does.
     # Without this, the frontend always shows "SDK service status: unknown".
     sdk_health = await sdk_client.health()
+    sdk_auth = await sdk_client.check_sdk_auth()
     sdk = await sdk_client.setup_status(
         org_did=default_org.get("org_did") if default_org else None
     )
@@ -245,6 +246,8 @@ async def sdk_setup_status(user=Depends(get_current_user)):
     # Merge service-level status from /api/health into the setup payload
     sdk["status"] = sdk_health.get("status", "unknown")
     sdk["sdk_service_status"] = sdk_health.get("status", "unknown")
+    sdk["sdk_auth_ok"] = sdk_auth.get("sdk_auth_ok", False)
+    sdk["sdk_auth_error"] = sdk_auth.get("error") if not sdk_auth.get("sdk_auth_ok") else None
 
     sdk["org_registration_vc"] = sdk.get("registration_vc_present", False)
     sdk["default_organization"] = default_org
