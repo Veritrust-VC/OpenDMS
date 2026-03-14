@@ -66,6 +66,7 @@ export default function App() {
   const [brand, setBrand] = useState({ brand_name: "OpenDMS", brand_primary_color: "#0d7c66", brand_logo_url: "" });
   const [toast, setToast] = useState(null);
   const [auditFilters, setAuditFilters] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
 
   // FIX: Register the React-driven logout handler so api() can clear user
@@ -96,8 +97,6 @@ export default function App() {
     ] : []),
     ...(user.role === "superadmin" ? [{ id:"settings", label:"Settings", icon:"\u{2699}\uFE0F" }] : []),
   ];
-
-  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
