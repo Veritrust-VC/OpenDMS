@@ -300,6 +300,12 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         sensitivity_control = req.sensitivity_control or (sdk_result or {}).get("sensitivityControl")
         ai_summary_status = _derive_ai_summary_status(req, sdk_result)
 
+        # Store SDK error in metadata so document detail can show the actual error
+        stored_metadata = dict(req.metadata)
+        if sdk_error:
+            stored_metadata["_sdk_error"] = sdk_error
+            stored_metadata["_sdk_error_trace_id"] = trace_id
+
         row = await conn.fetchrow(
             """INSERT INTO documents (title, registration_number, doc_did, status, org_id,
                    register_id, classification_id, content_summary, metadata, semantic_summary, sensitivity_control, ai_summary_status, created_by)
@@ -307,7 +313,7 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
                RETURNING id, title, registration_number, doc_did, status, org_id, semantic_summary, sensitivity_control, ai_summary_status, created_at""",
             req.title, reg_num, doc_did, org_id, req.register_id,
             req.classification_id, req.content_summary,
-            json.dumps(req.metadata), json.dumps(semantic_summary) if semantic_summary is not None else None,
+            json.dumps(stored_metadata), json.dumps(semantic_summary) if semantic_summary is not None else None,
             json.dumps(sensitivity_control) if sensitivity_control is not None else None,
             ai_summary_status,
             user["id"])
@@ -315,7 +321,7 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         await conn.execute(
             "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,$2,$3,$4,$5)",
             row["id"], "DocumentCreated", user["id"], doc_did is not None,
-            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
+            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "sdk_error": sdk_error, "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
 
     await log_integration_event(
         trace_id=trace_id,

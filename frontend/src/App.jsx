@@ -97,27 +97,32 @@ export default function App() {
     ...(user.role === "superadmin" ? [{ id:"settings", label:"Settings", icon:"\u{2699}\uFE0F" }] : []),
   ];
 
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <aside className="w-52 bg-white border-r border-gray-200 fixed h-full flex flex-col">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-          {brand.brand_logo_url ? <img src={brand.brand_logo_url} className="h-7 w-7 rounded" alt="" /> :
-           <div className="w-7 h-7 rounded text-white font-bold text-xs flex items-center justify-center" style={{background:brand.brand_primary_color}}>D</div>}
-          <span className="font-semibold text-sm text-gray-900">{brand.brand_name}</span>
+      <aside className={`${sidebarOpen ? "w-52" : "w-14"} bg-white border-r border-gray-200 fixed h-full flex flex-col transition-all duration-200 z-30`}>
+        <div className="px-3 py-3 border-b border-gray-100 flex items-center gap-2">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-7 h-7 rounded flex items-center justify-center hover:bg-gray-100 flex-shrink-0" title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}>
+            {brand.brand_logo_url ? <img src={brand.brand_logo_url} className="h-7 w-7 rounded" alt="" /> :
+             <div className="w-7 h-7 rounded text-white font-bold text-xs flex items-center justify-center" style={{background:brand.brand_primary_color}}>D</div>}
+          </button>
+          {sidebarOpen && <span className="font-semibold text-sm text-gray-900 truncate">{brand.brand_name}</span>}
         </div>
-        <nav className="flex-1 py-2 px-2 space-y-0.5">
+        <nav className="flex-1 py-2 px-1.5 space-y-0.5 overflow-y-auto overflow-x-hidden">
           {nav.map(n=>(
-            <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id!=="audit") setAuditFilters(null); }} className={`w-full flex items-center gap-2 px-3 py-1.5 rounded text-sm ${page===n.id?"bg-emerald-50 text-emerald-700 font-medium":"text-gray-600 hover:bg-gray-50"}`}>
-              <span>{n.icon}</span>{n.label}
+            <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id!=="audit") setAuditFilters(null); }} title={sidebarOpen ? undefined : n.label}
+              className={`w-full flex items-center gap-2 ${sidebarOpen ? "px-3" : "px-0 justify-center"} py-1.5 rounded text-sm ${page===n.id?"bg-emerald-50 text-emerald-700 font-medium":"text-gray-600 hover:bg-gray-50"}`}>
+              <span className="flex-shrink-0 text-base">{n.icon}</span>{sidebarOpen && <span className="truncate">{n.label}</span>}
             </button>
           ))}
         </nav>
-        <div className="px-3 py-2 border-t border-gray-100 text-xs text-gray-400">
-          {user.full_name} ({user.role})
-          <button onClick={()=>{authToken="";localStorage.removeItem("opendms_token");setUser(null);}} className="block mt-1 text-red-400 hover:text-red-600">Logout</button>
+        <div className={`${sidebarOpen ? "px-3" : "px-1 text-center"} py-2 border-t border-gray-100 text-xs text-gray-400`}>
+          {sidebarOpen ? <>{user.full_name} ({user.role})</> : <span title={`${user.full_name} (${user.role})`}>👤</span>}
+          <button onClick={()=>{authToken="";localStorage.removeItem("opendms_token");setUser(null);}} className={`${sidebarOpen ? "block" : "block mx-auto"} mt-1 text-red-400 hover:text-red-600`}>{sidebarOpen ? "Logout" : "⏻"}</button>
         </div>
       </aside>
-      <main className="flex-1 ml-52 p-5 max-w-6xl">
+      <main className={`flex-1 ${sidebarOpen ? "ml-52" : "ml-14"} p-5 transition-all duration-200`}>
         {toast && <div className={`fixed top-3 right-3 z-50 px-4 py-2 rounded-lg shadow text-sm ${toast.t==="error"?"bg-red-50 text-red-700 border border-red-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{toast.m}</div>}
         {page==="dashboard" && <DashboardPage notify={notify} user={user} />}
         {page==="documents" && <DocumentsPage notify={notify} user={user} />}
@@ -496,7 +501,16 @@ function DocumentDetail({ doc, onAction, notify }) {
       )}
       {!doc.doc_did && doc.status !== "draft" && (
         <div className="text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded px-3 py-2">
-          ⚠ No DID assigned — document was not registered in VeriDocs Registry. Check SDK connectivity in Organizations page, then re-register via Audit Logs.
+          <div className="font-medium">⚠ No DID assigned — document was not registered in VeriDocs Registry</div>
+          {doc.metadata?._sdk_error && (
+            <div className="mt-1 text-amber-600">SDK error: {doc.metadata._sdk_error}</div>
+          )}
+          {doc.metadata?._sdk_error_trace_id && (
+            <div className="mt-0.5 text-amber-500 text-[10px]">Trace: {doc.metadata._sdk_error_trace_id}</div>
+          )}
+          {!doc.metadata?._sdk_error && (
+            <div className="mt-1 text-amber-600">Check SDK connectivity in Organizations page.</div>
+          )}
         </div>
       )}
 
@@ -602,13 +616,22 @@ function DocumentDetail({ doc, onAction, notify }) {
         <div className="border-t pt-3">
           <div className="text-xs font-medium text-gray-500 mb-2">Lifecycle ({doc.events.length} events)</div>
           <div className="space-y-1">
-            {doc.events.map((e, i) => (
-              <div key={i} className="flex items-center gap-2 bg-gray-50 rounded px-3 py-2 text-xs">
-                <span>{EI[e.event_type] || "📎"}</span>
-                <span className="font-medium">{e.event_type}</span>
-                {e.vc_submitted && <span className="text-emerald-500">✓ VC</span>}
-                <span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span>
-              </div>
+            {doc.events.map((e, i) => {
+              const details = typeof e.details === "string" ? JSON.parse(e.details || "{}") : (e.details || {});
+              return (
+                <div key={i} className="bg-gray-50 rounded px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span>{EI[e.event_type] || "📎"}</span>
+                    <span className="font-medium">{e.event_type}</span>
+                    {e.vc_submitted ? <span className="text-emerald-500">✓ VC</span> : <span className="text-red-400">✗ no VC</span>}
+                    <span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span>
+                  </div>
+                  {details.sdk_error && (
+                    <div className="mt-1 text-red-500 text-[10px]">SDK error: {details.sdk_error}</div>
+                  )}
+                </div>
+              );
+            })}
             ))}
           </div>
         </div>
@@ -935,9 +958,9 @@ function AuditLogsPage({ notify, initialFilters }) {
       <select value={filters.success} onChange={e=>setFilters({...filters,success:e.target.value})} className="text-xs border rounded px-2 py-1"><option value="">all</option><option value="true">success</option><option value="false">failed</option></select>
       <button onClick={load} className="text-xs px-3 py-1 bg-blue-600 text-white rounded">Apply</button>
     </div>
-    <div className="bg-white border rounded overflow-auto">
-      <table className="w-full text-xs"><thead className="bg-gray-50"><tr><th className="p-2 text-left">timestamp</th><th className="p-2 text-left">trace ID</th><th className="p-2 text-left">action</th><th className="p-2 text-left">actor</th><th className="p-2 text-left">organization</th><th className="p-2 text-left">entity</th><th className="p-2 text-left">target</th><th className="p-2 text-left">status</th><th className="p-2 text-left">success</th><th className="p-2 text-left">error</th></tr></thead>
-      <tbody>{rows.map((r,idx)=><tr key={r.id || idx} onClick={()=>setSelected(r)} className="border-t hover:bg-gray-50 cursor-pointer"><td className="p-2">{new Date(r.created_at || r.timestamp || Date.now()).toLocaleString()}</td><td className="p-2 font-mono">{r.trace_id || "-"}</td><td className="p-2">{r.action}</td><td className="p-2">{r.actor_email || r.actor || "-"}</td><td className="p-2">{r.organization_code || r.organization_id || "-"}</td><td className="p-2">{r.entity_type} / {r.entity_did || r.entity_id || "-"}</td><td className="p-2">{r.target_system}</td><td className="p-2">{r.response_status || "-"}</td><td className={`p-2 ${statusClass(r)}`}>{String(r.success)}</td><td className="p-2">{r.error_message || "-"}</td></tr>)}</tbody></table>
+    <div className="bg-white border rounded overflow-x-auto">
+      <table className="w-full text-xs" style={{minWidth:"1100px"}}><thead className="bg-gray-50"><tr><th className="p-2 text-left whitespace-nowrap">timestamp</th><th className="p-2 text-left" style={{minWidth:"120px"}}>trace ID</th><th className="p-2 text-left whitespace-nowrap">action</th><th className="p-2 text-left whitespace-nowrap">actor</th><th className="p-2 text-left whitespace-nowrap">organization</th><th className="p-2 text-left" style={{minWidth:"160px"}}>entity</th><th className="p-2 text-left whitespace-nowrap">target</th><th className="p-2 text-left whitespace-nowrap">status</th><th className="p-2 text-left whitespace-nowrap">success</th><th className="p-2 text-left" style={{minWidth:"200px"}}>error</th></tr></thead>
+      <tbody>{rows.map((r,idx)=><tr key={r.id || idx} onClick={()=>setSelected(r)} className="border-t hover:bg-gray-50 cursor-pointer"><td className="p-2 whitespace-nowrap">{new Date(r.created_at || r.timestamp || Date.now()).toLocaleString()}</td><td className="p-2 font-mono text-[10px] break-all">{(r.trace_id || "-").slice(0,13)}</td><td className="p-2 whitespace-nowrap">{r.action}</td><td className="p-2 whitespace-nowrap">{r.actor_email || r.actor || "-"}</td><td className="p-2 whitespace-nowrap">{r.organization_code || r.organization_id || "-"}</td><td className="p-2 break-all">{r.entity_type} / {r.entity_did || r.entity_id || "-"}</td><td className="p-2">{r.target_system}</td><td className="p-2">{r.response_status || "-"}</td><td className={`p-2 ${statusClass(r)}`}>{String(r.success)}</td><td className="p-2 break-words max-w-xs">{r.error_message || "-"}</td></tr>)}</tbody></table>
     </div>
     {selected && <div className="fixed inset-0 bg-black/30 flex items-center justify-center" onClick={()=>setSelected(null)}><div className="bg-white rounded p-4 w-[680px] max-h-[80vh] overflow-auto" onClick={e=>e.stopPropagation()}>
       <h3 className="font-semibold mb-2">Audit details</h3>
