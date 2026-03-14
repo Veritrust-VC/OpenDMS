@@ -47,7 +47,9 @@ async def _request(
         r = await _get_client().request(method, path, json=json_body, headers=headers)
         payload: Dict[str, Any] = {}
         if r.headers.get("content-type", "").lower().startswith("application/json"):
-            payload = r.json()
+            raw = r.json()
+            # SDK endpoints like /api/identifiers return arrays — wrap in dict
+            payload = {"items": raw} if isinstance(raw, list) else raw
         elif r.text:
             payload = {"response_text": r.text}
         payload.setdefault("trace_id", r.headers.get("X-Trace-Id") or headers["X-Trace-Id"])
@@ -90,7 +92,8 @@ async def _request_multipart(
         r = await _get_client().post(path, files=files, data=data or {}, headers=headers)
         payload: Dict[str, Any] = {}
         if r.headers.get("content-type", "").lower().startswith("application/json"):
-            payload = r.json()
+            raw = r.json()
+            payload = {"items": raw} if isinstance(raw, list) else raw
         elif r.text:
             payload = {"response_text": r.text}
         payload.setdefault("trace_id", r.headers.get("X-Trace-Id") or headers["X-Trace-Id"])
@@ -258,5 +261,6 @@ async def check_sdk_auth() -> Dict[str, Any]:
     if status == 401:
         return {"sdk_auth_ok": False, "error": "VERAMO_API_KEY is empty or invalid — set it in .env and rebuild"}
     if status in (200, 201):
-        return {"sdk_auth_ok": True, "managed_dids": len(result) if isinstance(result, list) else 0}
+        items = result.get("items", [])
+        return {"sdk_auth_ok": True, "managed_dids": len(items) if isinstance(items, list) else 0}
     return {"sdk_auth_ok": False, "error": f"SDK returned HTTP {status}"}
