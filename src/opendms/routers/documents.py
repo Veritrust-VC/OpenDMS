@@ -68,6 +68,86 @@ def _decode_jsonb(value: Any) -> Any:
     return json.loads(value) if isinstance(value, str) else value
 
 
+# ── Register-compatible field sanitization ──
+# The VeriDocs Register API enforces strict validation on metadata fields.
+# AI-generated values may exceed these limits or use wrong enum values.
+# This function normalizes before sending to SDK → Register.
+
+_URGENCY_MAP = {
+    "LOW": "STANDARD",
+    "NORMAL": "STANDARD",
+    "HIGH": "ELEVATED",
+    "URGENT": "URGENT",
+    "CRITICAL": "EMERGENCY",
+    "EMERGENCY": "EMERGENCY",
+    # Pass through if already correct
+    "STANDARD": "STANDARD",
+    "ELEVATED": "ELEVATED",
+}
+
+_RISK_MAP = {
+    "LOW": "LOW",
+    "MEDIUM": "MEDIUM",
+    "HIGH": "HIGH",
+    "CRITICAL": "HIGH",
+    "NONE": "LOW",
+}
+
+
+def _sanitize_for_registry(semantic_summary: Optional[dict], sensitivity_control: Optional[dict]) -> tuple:
+    """Sanitize AI-generated metadata to match VeriDocs Register validation.
+
+    Applies:
+      - summary: truncate to 300 chars
+      - requestedAction: truncate to 100 chars
+      - primaryTopic: truncate to 200 chars
+      - documentPurpose: truncate to 200 chars
+      - urgencyLevel: map LOW/NORMAL/HIGH → STANDARD/ELEVATED/URGENT/EMERGENCY
+      - estimatedRiskLevel: map CRITICAL → HIGH, NONE → LOW
+      - keywords: max 20 items, each max 50 chars
+      - subTopics: max 10 items, each max 100 chars
+
+    Returns (sanitized_summary, sanitized_sensitivity).
+    """
+    ss = dict(semantic_summary) if semantic_summary else None
+    sc = dict(sensitivity_control) if sensitivity_control else None
+
+    if ss:
+        # String length limits
+        for field, limit in [("summary", 300), ("requestedAction", 100),
+                             ("primaryTopic", 200), ("documentPurpose", 200),
+                             ("legalDomain", 200), ("geographicScope", 100)]:
+            val = ss.get(field)
+            if isinstance(val, str) and len(val) > limit:
+                ss[field] = val[:limit - 3] + "..."
+
+        # Enum mapping: urgencyLevel
+        ul = ss.get("urgencyLevel")
+        if isinstance(ul, str):
+            ss["urgencyLevel"] = _URGENCY_MAP.get(ul.upper(), "STANDARD")
+
+        # Enum mapping: estimatedRiskLevel
+        rl = ss.get("estimatedRiskLevel")
+        if isinstance(rl, str):
+            ss["estimatedRiskLevel"] = _RISK_MAP.get(rl.upper(), rl)
+
+        # Array limits
+        kws = ss.get("keywords")
+        if isinstance(kws, list):
+            ss["keywords"] = [str(k)[:50] for k in kws[:20]]
+        subs = ss.get("subTopics")
+        if isinstance(subs, list):
+            ss["subTopics"] = [str(s)[:100] for s in subs[:10]]
+        parties = ss.get("involvedPartyTypes")
+        if isinstance(parties, list):
+            ss["involvedPartyTypes"] = [str(p)[:100] for p in parties[:10]]
+        sectors = ss.get("sectorTags")
+        if isinstance(sectors, list):
+            ss["sectorTags"] = [str(s)[:50] for s in sectors[:10]]
+
+    return ss, sc
+
+
 def _extract_text(file_data: bytes, mime_type: str, filename: str) -> str:
     """Extract text from file bytes. Simple extraction for common formats."""
     try:
@@ -188,6 +268,10 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         doc_did = None
         sdk_result = None
         sdk_error = None
+        # Sanitize metadata to match Register validation before SDK call
+        reg_summary, reg_sensitivity = _sanitize_for_registry(
+            req.semantic_summary, req.sensitivity_control
+        )
         if s.sdk_enabled:
             sdk_result = await sdk_client.create_document(
                 title=req.title,
@@ -195,8 +279,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
                 reg_number=reg_num,
                 metadata={
                     **req.metadata,
-                    "semanticSummary": req.semantic_summary,
-                    "sensitivityControl": req.sensitivity_control,
+                    "semanticSummary": reg_summary,
+                    "sensitivityControl": reg_sensitivity,
                 },
                 trace_id=trace_id,
                 actor=actor,
@@ -446,9 +530,14 @@ async def generate_metadata_preview(
 
     processing = result.get("_processing", {})
 
+    # Sanitize AI output to match Register validation constraints
+    san_summary, san_sensitivity = _sanitize_for_registry(
+        result.get("semanticSummary"), result.get("sensitivityControl")
+    )
+
     return {
-        "semanticSummary": result.get("semanticSummary"),
-        "sensitivityControl": result.get("sensitivityControl"),
+        "semanticSummary": san_summary,
+        "sensitivityControl": san_sensitivity,
         "route": processing.get("route"),
         "trace_id": trace_id,
         "processingMs": processing.get("elapsed_ms"),
@@ -521,8 +610,10 @@ async def generate_metadata(doc_id: int, user=Depends(get_current_user)):
     if not result:
         raise HTTPException(502, "AI metadata generation unavailable")
 
-    semantic_summary = result.get("semanticSummary")
-    sensitivity_control = result.get("sensitivityControl")
+    # Sanitize AI output to match Register validation constraints
+    semantic_summary, sensitivity_control = _sanitize_for_registry(
+        result.get("semanticSummary"), result.get("sensitivityControl")
+    )
     processing = result.get("_processing", {})
 
     async with pool.acquire() as conn:
