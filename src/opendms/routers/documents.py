@@ -187,6 +187,7 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
 
         doc_did = None
         sdk_result = None
+        sdk_error = None
         if s.sdk_enabled:
             sdk_result = await sdk_client.create_document(
                 title=req.title,
@@ -199,10 +200,17 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
                 },
                 trace_id=trace_id,
                 actor=actor,
+                include_error_payload=True,
             )
             if sdk_result:
-                trace_id = sdk_result.get("trace_id") or trace_id
-                doc_did = sdk_result.get("docDid")
+                status_code = sdk_result.get("_meta", {}).get("status_code", 502)
+                if status_code in (200, 201):
+                    trace_id = sdk_result.get("trace_id") or trace_id
+                    doc_did = sdk_result.get("docDid")
+                else:
+                    # SDK call returned an error — capture it but still create locally
+                    sdk_error = sdk_result.get("detail") or sdk_result.get("error") or f"SDK returned HTTP {status_code}"
+                    sdk_result = None  # treat as failed for downstream logic
 
         semantic_summary = req.semantic_summary or (sdk_result or {}).get("semanticSummary")
         sensitivity_control = req.sensitivity_control or (sdk_result or {}).get("sensitivityControl")
@@ -248,6 +256,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
     result["semantic_summary"] = _decode_jsonb(result.get("semantic_summary"))
     result["sensitivity_control"] = _decode_jsonb(result.get("sensitivity_control"))
     result["sdk_result"] = sdk_result
+    result["sdk_error"] = sdk_error
+    result["vc_submitted"] = doc_did is not None
     result["trace_id"] = trace_id
     return result
 

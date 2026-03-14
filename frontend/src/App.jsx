@@ -298,7 +298,16 @@ function CreateDocForm({ onDone, notify }) {
           return;
         }
       }
-      notify("Document created");
+      // Show SDK status — did the VC get submitted to Register?
+      if (doc?.vc_submitted) {
+        notify(`Document created with DID ${doc.doc_did?.slice(-20) || ''} — VC submitted to Register`);
+      } else if (doc?.sdk_error) {
+        notify(`Document created locally, but SDK failed: ${doc.sdk_error}`, "error");
+      } else if (!doc?.doc_did) {
+        notify("Document created locally — no DID assigned (SDK unavailable)", "error");
+      } else {
+        notify("Document created");
+      }
       onDone();
     } catch (e) { notify(e.message, "error"); }
   };
@@ -483,6 +492,11 @@ function DocumentDetail({ doc, onAction, notify }) {
         <div className="text-xs">
           <span className="text-gray-400">DID:</span>{" "}
           <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_did}</code>
+        </div>
+      )}
+      {!doc.doc_did && doc.status !== "draft" && (
+        <div className="text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded px-3 py-2">
+          ⚠ No DID assigned — document was not registered in VeriDocs Registry. Check SDK connectivity in Organizations page, then re-register via Audit Logs.
         </div>
       )}
 

@@ -129,11 +129,21 @@ async def setup_org(
     }, trace_id=trace_id, actor=actor, include_error_payload=include_error_payload)
 
 
-async def create_document(title: str, classification: str = "", reg_number: str = "", metadata: Dict = None, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+# FIX: Added include_error_payload so create_document surfaces SDK errors
+# instead of silently returning None
+async def create_document(
+    title: str,
+    classification: str = "",
+    reg_number: str = "",
+    metadata: Dict = None,
+    trace_id: Optional[str] = None,
+    actor: Optional[Dict[str, Any]] = None,
+    include_error_payload: bool = False,
+) -> Optional[Dict]:
     return await _request("POST", "/api/documents/create", json_body={
         "title": title, "classification": classification,
         "registrationNumber": reg_number, "metadata": metadata or {},
-    }, trace_id=trace_id, actor=actor)
+    }, trace_id=trace_id, actor=actor, include_error_payload=include_error_payload)
 
 
 async def send_document(doc_did: str, recipient_did: str, method: str = "", trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
