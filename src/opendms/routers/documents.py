@@ -134,7 +134,7 @@ def _sanitize_for_registry(semantic_summary: Optional[dict], sensitivity_control
         # Array limits
         kws = ss.get("keywords")
         if isinstance(kws, list):
-        ss["keywords"] = [str(k)[:50] for k in kws[:10]]
+            ss["keywords"] = [str(k)[:50] for k in kws[:10]]
         subs = ss.get("subTopics")
         if isinstance(subs, list):
             ss["subTopics"] = [str(s)[:100] for s in subs[:10]]
