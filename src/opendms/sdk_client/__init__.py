@@ -247,6 +247,20 @@ async def resolve_did(did: str, trace_id: Optional[str] = None) -> Optional[Dict
     return await _request("POST", "/api/did/resolve", json_body={"did": did}, trace_id=trace_id)
 
 
+async def resolve_org_from_registry(did: str, trace_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Resolve org DID through the Registry API (bypasses Veramo did:web).
+    Works inside Docker where public HTTPS may be unreachable."""
+    from urllib.parse import quote
+    return await _request("GET", f"/api/registry/org/{quote(did, safe='')}", trace_id=trace_id, include_error_payload=True)
+
+
+async def re_register_org(did: str, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """Try to recover the registration VC for an already-registered org."""
+    from urllib.parse import quote
+    return await _request("POST", f"/api/registry/org/{quote(did, safe='')}/re-register",
+                          trace_id=trace_id, actor=actor, include_error_payload=True)
+
+
 async def verify_vc(credential: Dict[str, Any], trace_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Verify a Verifiable Credential via SDK. No API key needed."""
     return await _request("POST", "/api/vc/verify", json_body={"credential": credential}, trace_id=trace_id)

@@ -976,15 +976,38 @@ function OrgsPage({ notify, onViewLogs }) {
             </div>
           )}
           {vcViewer.registration_vc ? (
-            <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-96 whitespace-pre-wrap">{JSON.stringify(vcViewer.registration_vc, null, 2)}</pre>
+            <>
+              <div className="text-xs font-medium text-gray-500 mb-1">Registration VC</div>
+              <pre className="text-xs bg-gray-50 border rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap">{JSON.stringify(vcViewer.registration_vc, null, 2)}</pre>
+            </>
           ) : (
-            <div className="text-xs text-amber-600 bg-amber-50 rounded p-3">
-              {!vcViewer.registration_vc_present
-                ? "No registration VC has been issued for this organization. Run 'Re-check setup' to trigger org registration in the central Registry. If the Registry is connected and authenticated, a registration VC should be issued."
-                : "VC is flagged as present in SDK but the content could not be retrieved from the last setup response."}
+            <div className="text-xs text-amber-600 bg-amber-50 rounded p-3 mb-3">
+              No registration VC cached. The VC was not captured during initial registration (org was already in Registry with HTTP 409).
+              Click "Recover VC" to attempt re-registration.
             </div>
           )}
-          <div className="flex gap-2 mt-3 justify-end">
+          {vcViewer.registry_org_data?.did_document && (
+            <>
+              <div className="text-xs font-medium text-gray-500 mt-3 mb-1">Registry DID Document (proof of registration)</div>
+              <pre className="text-xs bg-blue-50 border border-blue-200 rounded p-3 overflow-auto max-h-64 whitespace-pre-wrap">{JSON.stringify(vcViewer.registry_org_data.did_document, null, 2)}</pre>
+            </>
+          )}
+          <div className="flex gap-2 mt-4 justify-end">
+            {!vcViewer.registration_vc && vcViewer.organization?.org_did && (
+              <button onClick={async()=>{
+                try {
+                  const orgId = vcViewer.organization?.id || vcViewer.organization?.org_id;
+                  if (!orgId) { notify("Missing org ID", "error"); return; }
+                  const r = await api(`/organizations/${orgId}/recover-vc`, { method: "POST" });
+                  if (r.registration_vc) {
+                    setVcViewer(prev => ({...prev, registration_vc: r.registration_vc, registration_vc_present: true}));
+                    notify("Registration VC recovered");
+                  } else {
+                    notify(r.message || "VC recovery attempted but no VC returned", "error");
+                  }
+                } catch(e) { notify(e.message, "error"); }
+              }} className="text-xs px-3 py-1.5 bg-violet-600 text-white rounded">Recover VC</button>
+            )}
             {vcViewer.registration_vc && <button onClick={()=>{ navigator.clipboard.writeText(JSON.stringify(vcViewer.registration_vc, null, 2)); notify("Copied to clipboard"); }} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded">Copy VC JSON</button>}
             <button onClick={()=>setVcViewer(null)} className="text-xs px-3 py-1.5 border rounded text-gray-600">Close</button>
           </div>
