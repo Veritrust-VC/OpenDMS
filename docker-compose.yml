@@ -73,6 +73,11 @@ services:
       OPENDMS_LLM_API_KEY: ${OPENDMS_LLM_API_KEY:-}
       OPENDMS_LLM_BASE_URL: ${OPENDMS_LLM_BASE_URL:-}
       OPENDMS_LLM_MODEL: ${OPENDMS_LLM_MODEL:-}
+      OPENDMS_UAPF_ENABLED: ${UAPF_ENABLED:-true}
+      OPENDMS_UAPF_ENGINE_URL: ${UAPF_ENGINE_URL:-http://uapf-engine:4000}
+      OPENDMS_UAPF_ENGINE_AUTH_TOKEN: ${UAPF_ENGINE_AUTH_TOKEN:-}
+      OPENDMS_OPENDMS_HOST_DID: ${OPENDMS_HOST_DID:-did:web:opendms.local}
+      OPENDMS_OPENDMS_HOST_BASE_URL: ${OPENDMS_HOST_BASE_URL:-http://api:8002}
     depends_on:
       db:
         condition: service_healthy
@@ -80,6 +85,8 @@ services:
         condition: service_started
       sdk:
         condition: service_started
+      uapf-engine:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - doc-storage:/data/documents
@@ -92,6 +99,22 @@ services:
       - "127.0.0.1:${FRONTEND_PORT:-28080}:80"
     depends_on:
       - api
+    restart: unless-stopped
+
+
+  uapf-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.uapf-engine
+      args:
+        UAPF_ENGINE_REF: ${UAPF_ENGINE_REF:-main}
+    ports:
+      - "127.0.0.1:${UAPF_ENGINE_PORT:-14000}:4000"
+    environment:
+      PORT: "4000"
+      PACKAGES_DIR: /packages
+    volumes:
+      - ./uapf-packages:/packages:ro
     restart: unless-stopped
 
 volumes:

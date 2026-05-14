@@ -348,6 +348,16 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         error_message=None if sdk_result else "SDK document creation unavailable",
     )
 
+
+    # UAPF Integration Protocol hook: fire any process_triggers that match
+    # DocumentCreated. Non-blocking; failure must not break create.
+    try:
+        from opendms.uapf import on_document_event
+        await on_document_event("document.created", row["id"])
+    except Exception as _uapf_err:
+        import logging
+        logging.getLogger(__name__).warning("UAPF bridge error on create: %s", _uapf_err)
+
     result = dict(row)
     result["semantic_summary"] = _decode_jsonb(result.get("semantic_summary"))
     result["sensitivity_control"] = _decode_jsonb(result.get("sensitivity_control"))
@@ -998,6 +1008,26 @@ async def _transition(doc_id: int, event_type: str, new_status: str, user: dict,
         success=vc_submitted,
         error_message=None if vc_submitted else "SDK lifecycle call failed or disabled",
     )
+    # ─── UAPF Integration Protocol hook ───────────────────────
+    # Map OpenDMS event_type → UAPF trigger event (lowercase, namespaced).
+    # Fires matching process_triggers in background; non-blocking.
+    try:
+        from opendms.uapf import on_document_event
+        _event_map = {
+            "DocumentCreated":  "document.created",
+            "DocumentReceived": "document.received",
+            "DocumentSent":     None,         # no UAPF trigger by default
+            "DocumentAssigned": "document.assigned",
+            "DocumentDecided":  "document.decided",
+        }
+        _uapf_event = _event_map.get(event_type)
+        if _uapf_event:
+            await on_document_event(_uapf_event, doc_id)
+    except Exception as _uapf_err:
+        # Bridge must never break the user-facing transition.
+        import logging
+        logging.getLogger(__name__).warning("UAPF bridge error: %s", _uapf_err)
+
     return {"status": new_status, "vc_submitted": vc_submitted, "trace_id": trace_id}
 
 

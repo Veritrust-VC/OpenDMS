@@ -421,6 +421,86 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
          'json')
         ON CONFLICT (instruction_key) DO NOTHING;
 
+
+        -- ════════════════════════════════════════════════════
+        -- UAPF Integration Protocol tables
+        -- ════════════════════════════════════════════════════
+
+        CREATE TABLE IF NOT EXISTS process_triggers (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            package_id TEXT NOT NULL,
+            package_version TEXT,
+            process_id TEXT NOT NULL,
+            trigger_event TEXT NOT NULL
+                CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','manual')),
+            match_condition JSONB DEFAULT '{}',
+            org_id BIGINT REFERENCES organizations(id),
+            is_active BOOLEAN DEFAULT TRUE,
+            created_by BIGINT REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_triggers_event_active
+            ON process_triggers(trigger_event) WHERE is_active = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_triggers_org ON process_triggers(org_id);
+
+        CREATE TABLE IF NOT EXISTS uapf_sessions (
+            id BIGSERIAL PRIMARY KEY,
+            session_id TEXT UNIQUE NOT NULL,
+            document_id BIGINT REFERENCES documents(id),
+            trigger_id BIGINT REFERENCES process_triggers(id),
+            package_id TEXT NOT NULL,
+            process_id TEXT NOT NULL,
+            state TEXT NOT NULL,
+            input_payload JSONB,
+            output_payload JSONB,
+            error_message TEXT,
+            started_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_uapf_sessions_doc
+            ON uapf_sessions(document_id);
+        CREATE INDEX IF NOT EXISTS idx_uapf_sessions_state
+            ON uapf_sessions(state);
+        CREATE INDEX IF NOT EXISTS idx_uapf_sessions_started
+            ON uapf_sessions(started_at DESC);
+
+        CREATE TABLE IF NOT EXISTS complaint_classifications (
+            id BIGSERIAL PRIMARY KEY,
+            document_id BIGINT NOT NULL REFERENCES documents(id),
+            session_id TEXT REFERENCES uapf_sessions(session_id),
+            topic TEXT NOT NULL,
+            topic_confidence NUMERIC(3,2),
+            priority TEXT NOT NULL,
+            sla_hours INTEGER,
+            department TEXT,
+            reviewer_role TEXT,
+            raw_facets JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_class_doc ON complaint_classifications(document_id);
+        CREATE INDEX IF NOT EXISTS idx_class_priority ON complaint_classifications(priority);
+        CREATE INDEX IF NOT EXISTS idx_class_topic ON complaint_classifications(topic);
+
+        -- Seed: default Tiesibsargs complaint-classification trigger.
+        -- Fires for every DocumentReceived event. Tweak match_condition to
+        -- restrict (e.g. only documents in a specific register).
+        INSERT INTO process_triggers (name, description, package_id, process_id, trigger_event, match_condition)
+        VALUES (
+            'Tiesibsargs iesniegums classification',
+            'Algorithmated topic classification + priority + department routing for Ombudsman complaints. Fires on every DocumentReceived event. Edit match_condition to restrict.',
+            'lv.tiesibsargs.iesnieguma-izskatisana',
+            'iesnieguma-izskatisana',
+            'document.received',
+            '{}'::jsonb
+        )
+        ON CONFLICT DO NOTHING;
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
         CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);

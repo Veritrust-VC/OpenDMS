@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     brand_logo_url: str = ""
     brand_primary_color: str = "#0d7c66"
 
+
+    # ──────────────────────────────────────────────────────────
+    # UAPF Integration Protocol — connects OpenDMS to UAPF runtimes
+    # ──────────────────────────────────────────────────────────
+    uapf_enabled: bool = True
+    uapf_engine_url: str = "http://uapf-engine:4000"
+    uapf_engine_auth_token: Optional[str] = None
+    opendms_host_did: str = "did:web:opendms.local"
+    opendms_host_base_url: str = "http://api:8002"
+
     model_config = {"env_prefix": "OPENDMS_", "env_file": ".env"}
 
 

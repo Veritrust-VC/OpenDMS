@@ -237,3 +237,96 @@ Status behavior:
 ### Privacy note
 
 OpenDMS keeps raw file content local by default. The SDK-centered intelligence flow is designed so only semantic abstractions (summary/sensitivity metadata) are centralized when policy allows it.
+
+## UAPF Integration
+
+OpenDMS embeds as a host in the [UAPF Integration Protocol (UAPF-IP)](https://github.com/UAPFormat/UAPF-IP) ecosystem — see `src/opendms/uapf/`. It both invokes UAPF processes (when document lifecycle events match configured triggers) and serves the host-side capability endpoints the runtime calls back into.
+
+### Architecture
+
+```
+                ┌────────────────────────────────────────────┐
+                │  OpenDMS API (FastAPI)                     │
+                │                                            │
+   user ───► POST /api/documents/{id}/receive                │
+                  │                                          │
+                  │ _transition() succeeds                   │
+                  │                                          │
+                  ▼                                          │
+              on_document_event("document.received", id)     │
+                  │                                          │
+                  │ matches process_triggers                 │
+                  │ asyncio.create_task(...)                 │
+                  │                                          │
+                  ▼                                          │
+              UapfClient.start_session(...)                  │
+                  │                                          │
+                  └─► POST /uapf/start-session ──────►┌──────┴────────────┐
+                                                      │ uapf-engine       │
+                                                      │ (Docker service)  │
+                                                      │                   │
+                                       walks BPMN ◄───┤ /packages/*.uapf  │
+                                                      │                   │
+                  ┌── POST /uapf/host/capability/*  ◄──┘                   │
+                  │                                                       │
+                  ▼                                                       │
+            handlers.py dispatches:                                       │
+              document.fetch → DB + storage                               │
+              ai.redact      → LLM via opendms.ai                         │
+              ai.extract     → LLM via opendms.ai                         │
+              data.write     → complaint_classifications table            │
+              event.emit     → document_events table                      │
+                                                                          │
+            session.completed audit ──► document_events ◄─────────────────┘
+                │
+                ▼
+            User sees document with uapf_classification in metadata
+```
+
+### Tables added
+
+- `process_triggers` — configures which lifecycle events fire which UAPF packages
+- `uapf_sessions` — log of every triggered session + outcome
+- `complaint_classifications` — the structured result of the Tiesibsargs flow
+
+A seed `process_triggers` row is inserted at first DB initialization:
+
+| name | trigger_event | package_id | match_condition |
+|---|---|---|---|
+| Tiesibsargs iesniegums classification | `document.received` | `lv.tiesibsargs.iesnieguma-izskatisana` | `{}` (matches all) |
+
+To restrict to a specific register or classification, update the row's `match_condition` JSONB.
+
+### Capabilities advertised
+
+OpenDMS offers these via `GET /uapf/host/manifest`:
+
+| Capability | Implementation |
+|---|---|
+| `document.fetch@1` | Reads from `documents` table + storage backend; extracts text via existing `_extract_text()` |
+| `ai.redact@1` | Calls `opendms.ai._complete_json` with Latvian PII-aware prompt; falls back to regex scrub if AI unavailable |
+| `ai.extract@1` | Calls `opendms.ai._complete_json` with the Tiesibsargs facet schema; returns all-false defaults on failure |
+| `data.write@1` | Inserts into `complaint_classifications`; mirrors to `documents.metadata.uapf_classification` |
+| `event.emit@1` | Appends to `document_events` with `event_type=iesniegums.classified` |
+
+### Config
+
+All settings live under the `OPENDMS_` env prefix:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENDMS_UAPF_ENABLED` | `true` | Master switch |
+| `OPENDMS_UAPF_ENGINE_URL` | `http://uapf-engine:4000` | Reachable URL of the runtime |
+| `OPENDMS_UAPF_ENGINE_AUTH_TOKEN` | _(empty)_ | Bearer token for both directions |
+| `OPENDMS_OPENDMS_HOST_DID` | `did:web:opendms.local` | Identifier the host advertises |
+| `OPENDMS_OPENDMS_HOST_BASE_URL` | `http://api:8002` | Where the runtime should call back to |
+
+### Adding a new UAPF process
+
+1. Drop the `.uapf` package into `./uapf-packages/`.
+2. `docker compose restart uapf-engine` so it picks the new file up.
+3. Insert a row into `process_triggers` (via SQL or, when the UI is built, the admin panel).
+
+### Disabling
+
+Set `UAPF_ENABLED=false` in `.env`, or set the matching `process_triggers` row's `is_active = false`. The bridge is fail-safe: any exception in the UAPF path is caught and logged; document lifecycle transitions never break because of a UAPF error.

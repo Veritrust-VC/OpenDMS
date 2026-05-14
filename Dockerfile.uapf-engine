@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+#
+# Builds the UAPF reference runtime (UAPFormat/uapf-engine) into a thin
+# Node 20 image. Multi-stage to keep runtime image small.
+#
+# Build context: project root (so the .uapf packages directory is co-located).
+# Run:           docker compose up -d uapf-engine
+# Configure:     env vars PACKAGES_DIR (default /packages) and PORT (default 4000)
+
+FROM node:20-bookworm-slim AS builder
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG UAPF_ENGINE_REF=main
+WORKDIR /build
+RUN git clone --depth=1 --branch ${UAPF_ENGINE_REF} \
+      https://github.com/UAPFormat/uapf-engine.git . \
+ && npm install --omit=dev --silent \
+ && npm install --silent typescript ts-node \
+ && npx tsc -p tsconfig.json
+
+FROM node:20-bookworm-slim AS runtime
+ENV NODE_ENV=production \
+    PORT=4000 \
+    PACKAGES_DIR=/packages
+WORKDIR /app
+COPY --from=builder /build/dist        ./dist
+COPY --from=builder /build/node_modules ./node_modules
+COPY --from=builder /build/package.json ./package.json
+COPY --from=builder /build/public       ./public
+RUN mkdir -p /packages
+EXPOSE 4000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
+  CMD node -e "require('http').get('http://localhost:4000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+CMD ["node", "dist/http/server.js"]
