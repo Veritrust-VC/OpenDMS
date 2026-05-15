@@ -94,6 +94,15 @@ async def handle_document_fetch(ctx: dict) -> dict:
         except Exception as e:
             logger.warning("document.fetch: could not read storage: %s", e)
 
+    # Fallback for documents without an attached file (e.g. seeded demo data
+    # created via /api/uapf/seed-demo-data which only sets content_summary).
+    # We want the AI extraction step to still have meaningful text to work on.
+    if not content_text:
+        content_text = (doc.get("content_summary") or "").strip()
+        # Also include the title — it often carries the strongest topic signal
+        if doc.get("title"):
+            content_text = f"{doc['title']}\n\n{content_text}"
+
     # Decode JSONB safely
     def _decode(v):
         if isinstance(v, (str, bytes)):
