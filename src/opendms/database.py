@@ -469,6 +469,16 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE INDEX IF NOT EXISTS idx_uapf_sessions_started
             ON uapf_sessions(started_at DESC);
 
+
+        -- UAPF package source URL tracking (for ProcessGit sync)
+        CREATE TABLE IF NOT EXISTS uapf_package_sources (
+            package_id TEXT PRIMARY KEY,
+            source_url TEXT NOT NULL,
+            last_synced_at TIMESTAMPTZ DEFAULT NOW(),
+            synced_by BIGINT REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
         CREATE TABLE IF NOT EXISTS complaint_classifications (
             id BIGSERIAL PRIMARY KEY,
             document_id BIGINT NOT NULL REFERENCES documents(id),

@@ -35,3 +35,5 @@ node_modules/
 Thumbs.db
 database.sqlite
 /data/
+frontend/dist/
+frontend/node_modules/

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import UapfPage from "./UapfPage.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -91,6 +92,7 @@ export default function App() {
       { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F" },
       { id:"archive", label:"Archive", icon:"\u{1F5C3}\uFE0F" },
       { id:"ai-instructions", label:"AI Prompts", icon:"\u{1F4DD}" },
+      { id:"uapf", label:"UAPF procesi", icon:"\u{2699}\uFE0F" },
     ] : []),
     ...(user.role === "superadmin" ? [{ id:"settings", label:"Settings", icon:"\u{2699}\uFE0F" }] : []),
   ];
@@ -129,6 +131,7 @@ export default function App() {
         {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
         {page==="archive" && <ArchivePage notify={notify} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
+        {page==="uapf" && <UapfPage notify={notify} user={user} />}
         {page==="audit" && <AuditLogsPage notify={notify} initialFilters={auditFilters} />}
         {page==="settings" && <SettingsPage notify={notify} brand={brand} setBrand={setBrand} />}
       </main>
@@ -464,6 +467,8 @@ function DocumentDetail({ doc, onAction, notify }) {
 
   return (
     <div className="p-4 space-y-3 overflow-auto max-h-[80vh]">
+        {doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
+
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">{doc.title}</h3>
         <Badge s={doc.status} />
@@ -1418,3 +1423,62 @@ function SettingsPage({ notify, brand, setBrand }) {
     </div>
   </div>);
 }
+
+function UapfClassificationCard({ classification }) {
+  if (!classification) return null;
+  const TOPIC_LV = {
+    "child-rights":           "Bērnu tiesības",
+    "discrimination":         "Diskriminācija",
+    "prisoner-rights":        "Ieslodzīto tiesības",
+    "law-enforcement-rights": "Tiesībaizsardzība",
+    "health-rights":          "Veselības aprūpe",
+    "social-rights":          "Sociālās tiesības",
+    "privacy-rights":         "Privātums",
+    "good-governance":        "Laba pārvaldība",
+    "other":                  "Cits",
+  };
+  const PRI = {
+    urgent: { bg: "bg-red-100",    text: "text-red-700",     label: "Steidzami" },
+    high:   { bg: "bg-orange-100", text: "text-orange-700",  label: "Augsta"    },
+    normal: { bg: "bg-emerald-100",text: "text-emerald-700", label: "Normāla"   },
+    low:    { bg: "bg-gray-100",   text: "text-gray-600",    label: "Zema"      },
+  };
+  const c = classification;
+  const pri = PRI[c.priority] || { bg: "bg-gray-100", text: "text-gray-600", label: c.priority };
+  return (
+    <div className="mt-3 bg-gradient-to-br from-emerald-50 to-white border-2 border-emerald-300 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-emerald-900 flex items-center gap-2">
+          <span>⚙️</span> UAPF klasifikācija
+        </h4>
+        {c.sessionId && (
+          <span className="text-xs text-gray-500 font-mono">{c.sessionId}</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-gray-500">Tēma</div>
+          <div className="font-semibold text-gray-900 mt-0.5">{TOPIC_LV[c.topic] || c.topic}</div>
+          {c.topicConfidence != null && (
+            <div className="text-xs text-gray-500">Pārliecība: {(c.topicConfidence * 100).toFixed(0)}%</div>
+          )}
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-gray-500">Prioritāte</div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${pri.bg} ${pri.text}`}>
+              {pri.label}
+            </span>
+            {c.slaHours && <span className="text-xs text-gray-500">SLA {c.slaHours}h</span>}
+          </div>
+        </div>
+        <div className="col-span-2 pt-3 border-t border-emerald-200">
+          <div className="text-xs uppercase tracking-wide text-gray-500">Maršrutēšana</div>
+          <div className="font-medium text-gray-900 mt-0.5">{c.department || "—"}</div>
+          <div className="text-xs text-gray-600 font-mono">{c.reviewerRole || "—"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
