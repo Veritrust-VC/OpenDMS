@@ -398,21 +398,64 @@ async def run_now(
         s = get_settings()
         client = UapfClient(s.uapf_engine_url, s.uapf_engine_auth_token)
         from opendms.uapf.manifest import build_host_manifest
+        input_payload = {
+            "documentId": doc["id"],
+            "documentDid": doc["doc_did"],
+            "title": doc["title"],
+            "registrationNumber": doc["registration_number"],
+        }
+        session_id = None
+        state = "starting"
+        output = None
+        error = None
         try:
             result = await client.start_session(
                 package_id=body.package_id,
                 process_id=body.process_id,
-                input_payload={
-                    "documentId": doc["id"],
-                    "documentDid": doc["doc_did"],
-                    "title": doc["title"],
-                    "registrationNumber": doc["registration_number"],
-                },
+                input_payload=input_payload,
                 host_manifest=build_host_manifest(),
             )
-            return {"mode": "direct", "result": result}
+            session_id = result.get("sessionId")
+            state = result.get("state", "unknown")
+            output = result.get("output")
         except Exception as e:
+            state = "failed"
+            error = str(e)
+            # Persist failed run too so it shows up in Sessions tab
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO uapf_sessions
+                         (session_id, document_id, package_id, process_id, state,
+                          input_payload, error_message, completed_at)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                       ON CONFLICT (session_id) DO NOTHING""",
+                    f"sess_failed_{doc_id}_{int(__import__('time').time())}",
+                    doc_id, body.package_id, body.process_id, state,
+                    json.dumps(input_payload), error,
+                )
             raise HTTPException(502, f"Engine start-session failed: {e}")
+
+        # Persist successful run so Sessions tab shows it
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO uapf_sessions
+                     (session_id, document_id, package_id, process_id, state,
+                      input_payload, output_payload,
+                      completed_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7,
+                           CASE WHEN $5 IN ('completed','failed','aborted')
+                                THEN NOW() ELSE NULL END)
+                   ON CONFLICT (session_id) DO UPDATE SET
+                     state = EXCLUDED.state,
+                     output_payload = EXCLUDED.output_payload,
+                     completed_at = CASE WHEN EXCLUDED.state IN ('completed','failed','aborted')
+                                         THEN NOW() ELSE uapf_sessions.completed_at END""",
+                session_id or f"sess_manual_{doc_id}_{int(__import__('time').time())}",
+                doc_id, body.package_id, body.process_id, state,
+                json.dumps(input_payload),
+                json.dumps(output) if output is not None else None,
+            )
+        return {"mode": "direct", "result": result}
     else:
         # Trigger-based — same code path as automatic lifecycle hook
         await on_document_event(body.event_type, doc_id)
