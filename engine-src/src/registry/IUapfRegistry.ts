@@ -1,0 +1,77 @@
+import { AlgorithmCard } from "../types/uapf";
+import type { ReferenceResolutionResult } from "./ReferenceResolver";
+
+export type RegistryMode = "packages" | "workspace";
+
+export type ArtifactKind = "manifest" | "bpmn" | "dmn" | "cmmn" | "docs" | "tests" | "algorithm-card";
+
+export interface ArtifactRef {
+  kind: ArtifactKind;
+  path: string;
+  id?: string;
+  mediaType?: string;
+}
+
+export interface PackageSummary {
+  packageId: string;
+  version?: string;
+  name?: string;
+  description?: string;
+  level?: number;
+  runnable?: boolean;
+  processes?: Array<{ id: string; label?: string; bpmnProcessId?: string }>;
+  decisions?: Array<{ id: string; label?: string; dmnDecisionId?: string }>;
+  artifacts?: ArtifactRef[];
+  requiredClaims?: string[];
+  guardrails?: Record<string, unknown>;  // G7: package guardrails snapshot
+  algorithmCards?: Record<string, AlgorithmCard>;  // v2.4.0: cards keyed by id
+  source: { mode: RegistryMode; location: string };
+}
+
+export interface ResolveResourcesRequest {
+  packageId: string;
+  processId?: string;
+  taskId?: string;
+}
+
+export interface ResourceBindingResult {
+  scope: { packageId: string; processId?: string; taskId?: string };
+  bindings: Array<{
+    type: "system" | "human" | "agent" | "external";
+    target: string;
+    invocation?: "mcp_tool" | "http_api" | "a2a" | "manual";
+    status: "resolved" | "unbound" | "blocked";
+    requiredClaims?: string[];
+  }>;
+}
+
+export interface IUapfRegistry {
+  mode(): RegistryMode;
+  listPackages(): Promise<PackageSummary[]>;
+  getPackage(packageId: string): Promise<PackageSummary | null>;
+  getArtifact(
+    packageId: string,
+    kind: ArtifactKind,
+    id?: string
+  ): Promise<{ mediaType: string; content: Buffer } | null>;
+  resolveResources(req: ResolveResourcesRequest): Promise<ResourceBindingResult>;
+  validateWorkspaceOrPackage(opts: {
+    packageId?: string;
+  }): Promise<{
+    ok: boolean;
+    issues: Array<{ level: "error" | "warn"; message: string; path?: string }>;
+  }>;
+  /** Reload all packages from disk. Returns the set of packages loaded. */
+  reloadAll?(): Promise<PackageSummary[]>;
+  /** Fetch a .uapf or repository zip from a URL, write to PACKAGES_DIR, reload. */
+  installFromUrl?(opts: {
+    sourceUrl: string;
+    packageId?: string;
+    filename?: string;
+  }): Promise<{ filename: string; packageId: string; version?: string }>;
+  /**
+   * Resolve the L0-L4 cross-package reference graph rooted at a package,
+   * validating level ordering and detecting missing references / cycles.
+   */
+  resolveReferences?(packageId: string): Promise<ReferenceResolutionResult>;
+}

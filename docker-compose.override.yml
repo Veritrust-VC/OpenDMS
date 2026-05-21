@@ -1,0 +1,7 @@
+# Pins opendms-uapf-engine to the locally-built v1.3.0 image.
+# Remove this file (or the uapf-engine section) to fall back to building
+# from GitHub via Dockerfile.uapf-engine.
+services:
+  uapf-engine:
+    image: opendms-uapf-engine:1.3.0
+    build: null

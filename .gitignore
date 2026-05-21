@@ -37,3 +37,5 @@ database.sqlite
 /data/
 frontend/dist/
 frontend/node_modules/
+engine-src/node_modules/
+engine-src/dist/
