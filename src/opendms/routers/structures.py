@@ -1,10 +1,11 @@
 """Organization, Register, and Classification management."""
 
 import json
+import re
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from opendms.database import get_pool
 from opendms.middleware.auth import get_current_user, require_role
 from opendms import sdk_client
@@ -16,10 +17,39 @@ from opendms.audit import log_integration_event, summarize_payload
 
 org_router = APIRouter(prefix="/api/organizations", tags=["Organizations"])
 
+# Valid org code (slug): lowercase letters, digits, hyphens; no leading/trailing
+# hyphen; 2–64 chars. This becomes the {code} in did:web:...:org:{code} so we
+# constrain it strictly to safe URL characters.
+ORG_CODE_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+
+
+def _validate_code(v: str) -> str:
+    if not v:
+        raise ValueError("Code is required")
+    if not ORG_CODE_RE.match(v):
+        raise ValueError(
+            "Code must be 2–64 characters, lowercase letters, digits and hyphens "
+            "only, must start and end with a letter or digit. Becomes part of the "
+            "DID — cannot be changed later without re-registering."
+        )
+    return v
+
 
 class OrgCreate(BaseModel):
-    name: str
-    code: str
+    name: str = Field(min_length=1, max_length=200)
+    code: str = Field(min_length=2, max_length=64)
+    description: Optional[str] = None
+
+    @field_validator("code")
+    @classmethod
+    def _validate_code(cls, v):
+        return _validate_code(v)
+
+
+class OrgUpdate(BaseModel):
+    """Only safe-to-edit fields. Code/DID are immutable post-creation because
+    they're embedded in every VC the org has ever issued."""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     description: Optional[str] = None
 
 
@@ -35,6 +65,17 @@ async def list_orgs(user=Depends(get_current_user)):
 async def create_org(req: OrgCreate, user=Depends(require_role("superadmin", "admin"))):
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # Pre-check uniqueness for a clean 409 rather than a 500 from the DB driver
+        existing = await conn.fetchval(
+            "SELECT id FROM organizations WHERE code = $1", req.code,
+        )
+        if existing is not None:
+            raise HTTPException(
+                409,
+                f"Organization with code '{req.code}' already exists (id={existing}). "
+                "Choose a different code.",
+            )
+
         has_default = await conn.fetchval("SELECT EXISTS(SELECT 1 FROM organizations WHERE is_default = TRUE)")
         row = await conn.fetchrow(
             """INSERT INTO organizations (name, code, description, is_default)
@@ -51,6 +92,119 @@ async def create_org(req: OrgCreate, user=Depends(require_role("superadmin", "ad
 
     org["sdk"] = sdk_result
     return org
+
+
+@org_router.put("/{org_id}")
+async def update_org(
+    org_id: int,
+    req: OrgUpdate,
+    user=Depends(require_role("superadmin", "admin")),
+):
+    """Update name and/or description. Code and DID are immutable post-create."""
+    sets, vals, idx = [], [], 1
+    if req.name is not None:
+        sets.append(f"name = ${idx}"); vals.append(req.name); idx += 1
+    if req.description is not None:
+        sets.append(f"description = ${idx}"); vals.append(req.description); idx += 1
+    if not sets:
+        raise HTTPException(400, "No fields to update")
+    vals.append(org_id)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE organizations SET {', '.join(sets)} WHERE id = ${idx} RETURNING *",
+            *vals,
+        )
+    if not row:
+        raise HTTPException(404, "Organization not found")
+    return dict(row)
+
+
+@org_router.delete("/{org_id}")
+async def delete_org(
+    org_id: int,
+    cascade: bool = Query(False, description="Also delete all documents and related rows"),
+    user=Depends(require_role("superadmin", "admin")),
+):
+    """Delete an organization.
+
+    Without cascade: fails if any documents reference this org.
+    With cascade: deletes documents, document_events, ai_processing_log,
+    archive_batch_documents, uapf_sessions, complaint_classifications,
+    process_triggers, then the org row. The remote DID in the registry is
+    NOT deleted — that record persists as proof of past existence.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        org = await conn.fetchrow("SELECT * FROM organizations WHERE id = $1", org_id)
+        if not org:
+            raise HTTPException(404, "Organization not found")
+        if org["is_default"]:
+            raise HTTPException(
+                400,
+                "Cannot delete the default organization. Promote a different "
+                "org to default first via POST /organizations/{id}/make-default.",
+            )
+
+        doc_ids = [r["id"] for r in await conn.fetch(
+            "SELECT id FROM documents WHERE org_id = $1", org_id,
+        )]
+
+        if doc_ids and not cascade:
+            raise HTTPException(
+                409,
+                f"Organization has {len(doc_ids)} documents. Re-send with "
+                f"?cascade=true to delete documents and all related events/"
+                f"classifications/sessions, then the org.",
+            )
+
+        deleted = {
+            "organization_id": org_id,
+            "name": org["name"],
+            "did": org["org_did"],
+        }
+
+        async with conn.transaction():
+            if doc_ids:
+                # Order matters: child rows before parent rows.
+                await conn.execute(
+                    "DELETE FROM complaint_classifications WHERE document_id = ANY($1::bigint[])",
+                    doc_ids,
+                )
+                await conn.execute(
+                    "DELETE FROM uapf_sessions WHERE document_id = ANY($1::bigint[])",
+                    doc_ids,
+                )
+                await conn.execute(
+                    "DELETE FROM document_events WHERE document_id = ANY($1::bigint[])",
+                    doc_ids,
+                )
+                await conn.execute(
+                    "DELETE FROM ai_processing_log WHERE document_id = ANY($1::bigint[])",
+                    doc_ids,
+                )
+                await conn.execute(
+                    "DELETE FROM archive_batch_documents WHERE document_id = ANY($1::bigint[])",
+                    doc_ids,
+                )
+                # documents → cascades to document_files
+                await conn.execute(
+                    "DELETE FROM documents WHERE id = ANY($1::bigint[])", doc_ids,
+                )
+                deleted["documents_deleted"] = len(doc_ids)
+
+            # process_triggers blocks org delete via FK
+            await conn.execute(
+                "DELETE FROM process_triggers WHERE org_id = $1", org_id,
+            )
+            await conn.execute("DELETE FROM organizations WHERE id = $1", org_id)
+
+        deleted["status"] = "deleted"
+        deleted["note"] = (
+            "The DID record remains in the central VeriDocs Registry — only the "
+            "local OpenDMS row, documents and lifecycle state were removed."
+        )
+        return deleted
 
 
 @org_router.post("/{org_id}/make-default")

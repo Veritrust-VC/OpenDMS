@@ -501,15 +501,18 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         -- Fires for every DocumentReceived event. Tweak match_condition to
         -- restrict (e.g. only documents in a specific register).
         INSERT INTO process_triggers (name, description, package_id, process_id, trigger_event, match_condition)
-        VALUES (
+        SELECT
             'Tiesibsargs iesniegums classification',
             'Algorithmated topic classification + priority + department routing for Ombudsman complaints. Fires on every DocumentReceived event. Edit match_condition to restrict.',
             'lv.tiesibsargs.iesnieguma-izskatisana',
             'iesnieguma-izskatisana',
             'document.received',
             '{}'::jsonb
-        )
-        ON CONFLICT DO NOTHING;
+        WHERE NOT EXISTS (
+            SELECT 1 FROM process_triggers
+            WHERE package_id = 'lv.tiesibsargs.iesnieguma-izskatisana'
+              AND trigger_event = 'document.received'
+        );
 
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);

@@ -23,7 +23,7 @@ import logging
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, Body, Query, Response
 from pydantic import BaseModel
 
 from opendms.config import get_settings
@@ -227,6 +227,57 @@ async def get_session(session_id: str, user=Depends(get_current_user)):
         {**dict(e), "details": _try_json(e["details"])} for e in events
     ]
     return out
+
+
+@router.get("/live/{doc_id}")
+async def live_events(
+    doc_id: int,
+    since: int = Query(0, ge=0),
+    user=Depends(get_current_user),
+):
+    """Live UAPF audit events for a document — drives real-time process
+    visualization. The engine posts step CloudEvents to /uapf/host/audit
+    during a run; those carrying a documentId are persisted to
+    document_events as UAPF/* and surfaced here as they arrive.
+
+    `since` is a document_events.id cursor: pass the highest id already
+    seen to receive only newer events on each poll."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, event_type, details, created_at
+                 FROM document_events
+                WHERE document_id = $1
+                  AND event_type LIKE 'UAPF/%'
+                  AND id > $2
+                ORDER BY id""",
+            doc_id, since,
+        )
+    events = [
+        {
+            "id": r["id"],
+            "event_type": r["event_type"],
+            "details": _try_json(r["details"]),
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+        }
+        for r in rows
+    ]
+    max_id = events[-1]["id"] if events else since
+    return {"doc_id": doc_id, "since": since, "max_id": max_id, "events": events}
+
+
+@router.get("/live-run/{correlation_id}")
+async def live_run_events(
+    correlation_id: str,
+    since: int = Query(0, ge=0),
+    user=Depends(get_current_user),
+):
+    """Live UAPF audit events for a correlationId-keyed run — drives the
+    Generate Metadata process visualisation, which runs before a document
+    exists and so has no documentId to key on. `since` is a simple list
+    cursor: pass the `next` value from the previous poll."""
+    from opendms.uapf import live_runs
+    return live_runs.get(correlation_id, since)
 
 
 def _try_json(v):
@@ -448,6 +499,8 @@ async def run_now(
                    ON CONFLICT (session_id) DO UPDATE SET
                      state = EXCLUDED.state,
                      output_payload = EXCLUDED.output_payload,
+                     package_id = EXCLUDED.package_id,
+                     process_id = EXCLUDED.process_id,
                      completed_at = CASE WHEN EXCLUDED.state IN ('completed','failed','aborted')
                                          THEN NOW() ELSE uapf_sessions.completed_at END""",
                 session_id or f"sess_manual_{doc_id}_{int(__import__('time').time())}",
@@ -522,6 +575,8 @@ async def seed_demo_data(user=Depends(require_role("admin", "superadmin"))):
         },
     ]
 
+    from opendms import sdk_client
+
     created = []
     async with pool.acquire() as conn:
         for i, ie in enumerate(iesniegumi, start=1):
@@ -532,13 +587,36 @@ async def seed_demo_data(user=Depends(require_role("admin", "superadmin"))):
                 "expected_priority": ie["expected_priority"],
                 "channel": "e-Adrese (demo)",
             }
+            # Call SDK first so the doc gets a real DID + VC — same path as
+            # a real document upload would take. Best-effort: if SDK fails
+            # we still create the local row so the demo console works.
+            sdk_result = None
+            sdk_error = None
+            try:
+                sdk_result = await sdk_client.create_document(
+                    title=ie["title"],
+                    classification="",
+                    reg_number=reg_num,
+                    metadata=metadata,
+                    actor=user,
+                    include_error_payload=True,
+                )
+                if sdk_result and sdk_result.get("_meta", {}).get("status_code") not in (200, 201):
+                    sdk_error = sdk_result.get("detail") or sdk_result.get("error")
+                    sdk_result = None
+            except Exception as e:
+                sdk_error = str(e)
+            doc_did = sdk_result.get("docDid") if sdk_result else None
+            if sdk_error:
+                metadata["sdk_error"] = sdk_error
+
             row = await conn.fetchrow(
                 """INSERT INTO documents
-                       (title, registration_number, status, org_id,
+                       (title, registration_number, doc_did, status, org_id,
                         content_summary, metadata, created_by, ai_summary_status)
-                   VALUES ($1, $2, 'registered', $3, $4, $5, $6, 'PENDING')
-                   RETURNING id, title, registration_number""",
-                ie["title"], reg_num, org_id, ie["content_summary"],
+                   VALUES ($1, $2, $3, 'registered', $4, $5, $6, $7, 'PENDING')
+                   RETURNING id, title, registration_number, doc_did""",
+                ie["title"], reg_num, doc_did, org_id, ie["content_summary"],
                 json.dumps(metadata), user["id"],
             )
             created.append(dict(row))
@@ -546,9 +624,258 @@ async def seed_demo_data(user=Depends(require_role("admin", "superadmin"))):
             await conn.execute(
                 """INSERT INTO document_events
                        (document_id, event_type, actor_id, vc_submitted, details)
-                   VALUES ($1, 'DocumentCreated', $2, FALSE, $3)""",
-                row["id"], user["id"],
-                json.dumps({"seeded": True, "registration_number": reg_num}),
+                   VALUES ($1, 'DocumentCreated', $2, $3, $4)""",
+                row["id"], user["id"], doc_did is not None,
+                json.dumps({"seeded": True, "registration_number": reg_num,
+                            "sdk_did": doc_did, "sdk_error": sdk_error}),
             )
 
     return {"created": len(created), "documents": created}
+
+
+
+# ─────────────────────────────────────────────────────────────
+# Backfill VCs for documents missing a doc_did
+# ─────────────────────────────────────────────────────────────
+
+@router.post("/backfill-vcs")
+async def backfill_vcs(
+    org_id: Optional[int] = None,
+    limit: int = 50,
+    user=Depends(require_role("admin", "superadmin")),
+):
+    """Find documents without a doc_did and register each one with the SDK,
+    updating the local row + emitting a DocumentCreated event. Useful for
+    cleaning up seeded demo data or rescuing docs that hit a transient SDK
+    error during their original upload."""
+    from opendms import sdk_client
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if org_id is not None:
+            rows = await conn.fetch(
+                """SELECT id, title, registration_number, content_summary, metadata, org_id
+                     FROM documents
+                    WHERE org_id = $1 AND (doc_did IS NULL OR doc_did = '')
+                    ORDER BY id
+                    LIMIT $2""",
+                org_id, limit,
+            )
+        else:
+            rows = await conn.fetch(
+                """SELECT id, title, registration_number, content_summary, metadata, org_id
+                     FROM documents
+                    WHERE (doc_did IS NULL OR doc_did = '')
+                    ORDER BY id
+                    LIMIT $1""",
+                limit,
+            )
+
+    if not rows:
+        return {"updated": 0, "skipped": 0, "errors": [], "message": "No docs need backfill"}
+
+    updated = []
+    errors = []
+    async with pool.acquire() as conn:
+        for r in rows:
+            meta = r["metadata"]
+            if isinstance(meta, str):
+                try: meta = json.loads(meta)
+                except Exception: meta = {}
+            meta = meta or {}
+            try:
+                sdk_result = await sdk_client.create_document(
+                    title=r["title"],
+                    classification="",
+                    reg_number=r["registration_number"] or "",
+                    metadata=meta,
+                    actor=user,
+                    include_error_payload=True,
+                )
+                if not sdk_result or sdk_result.get("_meta", {}).get("status_code") not in (200, 201):
+                    err = (sdk_result or {}).get("detail") or "SDK call failed"
+                    errors.append({"doc_id": r["id"], "error": err})
+                    continue
+                doc_did = sdk_result.get("docDid")
+                if not doc_did:
+                    errors.append({"doc_id": r["id"], "error": "no docDid in SDK response"})
+                    continue
+
+                await conn.execute(
+                    "UPDATE documents SET doc_did = $1 WHERE id = $2",
+                    doc_did, r["id"],
+                )
+                # Best-effort: replace the existing DocumentCreated event with
+                # a fresh one that records the new VC, OR add a backfill event
+                await conn.execute(
+                    """INSERT INTO document_events
+                           (document_id, event_type, actor_id, vc_submitted, details)
+                       VALUES ($1, 'DocumentCreated', $2, TRUE, $3)""",
+                    r["id"], user["id"],
+                    json.dumps({"backfilled": True, "sdk_did": doc_did,
+                                "registration_number": r["registration_number"]}),
+                )
+                updated.append({"doc_id": r["id"], "doc_did": doc_did})
+            except Exception as e:
+                errors.append({"doc_id": r["id"], "error": str(e)})
+
+    return {"updated": len(updated), "documents": updated, "errors": errors}
+
+
+
+# ─────────────────────────────────────────────────────────────
+# Package introspection — for the Demo Console process info panel
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/packages/{package_id}/info")
+async def get_package_info(package_id: str, user=Depends(get_current_user)):
+    """Return enriched package metadata + parsed BPMN steps + DMN tables +
+    trigger status. Used by the Demo Console to show what the process does
+    and how the rules are defined."""
+    from opendms.uapf.package_inspector import inspect_package
+
+    info = inspect_package(package_id)
+    if info is None:
+        raise HTTPException(404, f"Package '{package_id}' not found in /uapf-packages")
+
+    # Attach trigger status — is anything actively triggered by this package?
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        triggers = await conn.fetch(
+            """SELECT id, name, trigger_event, package_id, process_id, is_active, match_condition
+                 FROM process_triggers
+                WHERE package_id = $1 AND is_active = TRUE
+                ORDER BY id""",
+            package_id,
+        )
+        all_triggers = await conn.fetch(
+            """SELECT id, name, trigger_event, package_id, process_id, is_active, match_condition
+                 FROM process_triggers
+                WHERE package_id = $1
+                ORDER BY id""",
+            package_id,
+        )
+
+    info["triggers"] = {
+        "active": [dict(t) for t in triggers],
+        "all": [dict(t) for t in all_triggers],
+    }
+
+    return info
+
+
+
+# ─────────────────────────────────────────────────────────────
+# Raw BPMN/DMN XML — fed to bpmn-js / dmn-js viewers in the UI
+# ─────────────────────────────────────────────────────────────
+
+@router.get("/packages/{package_id}/bpmn/{process_id}.xml")
+async def get_bpmn_xml(package_id: str, process_id: str, user=Depends(get_current_user)):
+    """Return raw BPMN XML for the named process in the package."""
+    from opendms.uapf.package_inspector import find_package_file
+    import zipfile
+    path = find_package_file(package_id)
+    if not path:
+        raise HTTPException(404, "Package not found")
+    # Look for any file under bpmn/ in the .uapf zip
+    with zipfile.ZipFile(path) as z:
+        # cornerstone bpmn files are bpmn/{process_id}.bpmn per UAPF-spec v2.0.0+;
+        # legacy .bpmn.xml still accepted. Prefer the file containing process_id.
+        target = None
+        for n in z.namelist():
+            if n.startswith("bpmn/") and n.endswith((".bpmn", ".bpmn.xml")):
+                if process_id in n:
+                    target = n; break
+                if target is None:
+                    target = n
+        if target is None:
+            raise HTTPException(404, f"No BPMN found for process '{process_id}'")
+        xml = z.read(target).decode("utf-8")
+    return Response(content=xml, media_type="application/xml")
+
+
+@router.get("/packages/{package_id}/dmn/{decision_id}.xml")
+async def get_dmn_xml(package_id: str, decision_id: str, user=Depends(get_current_user)):
+    """Return raw DMN XML for the named decision in the package."""
+    from opendms.uapf.package_inspector import find_package_file
+    import zipfile
+    path = find_package_file(package_id)
+    if not path:
+        raise HTTPException(404, "Package not found")
+    with zipfile.ZipFile(path) as z:
+        target = None
+        for n in z.namelist():
+            if n.startswith("dmn/") and n.endswith((".dmn", ".dmn.xml")):
+                if decision_id in n:
+                    target = n; break
+        if target is None:
+            raise HTTPException(404, f"No DMN found for decision '{decision_id}'")
+        xml = z.read(target).decode("utf-8")
+    return Response(content=xml, media_type="application/xml")
+
+
+@router.get("/packages/{package_id}/algorithms")
+async def list_algorithm_cards(package_id: str, user=Depends(get_current_user)):
+    """List algorithm cards declared by a package (UAPF v2.4.0).
+
+    Reads algorithms/*.card.{yaml,yml,json} from the .uapf zip and returns
+    compact summaries: id, name, version, algorithm_kind, determinism, risk.
+    Returns { packageId, count, algorithms[] } matching the engine's
+    GET /uapf/packages/:id/algorithms shape.
+    """
+    from opendms.uapf.package_inspector import find_package_file
+    import zipfile, json as _json
+    import yaml as _yaml
+
+    path = find_package_file(package_id)
+    if not path:
+        raise HTTPException(404, "Package not found")
+    summaries = []
+    with zipfile.ZipFile(path) as z:
+        for n in z.namelist():
+            if not n.startswith("algorithms/"):
+                continue
+            if not (n.endswith(".card.yaml") or n.endswith(".card.yml") or n.endswith(".card.json")):
+                continue
+            try:
+                raw = z.read(n).decode("utf-8")
+                card = _json.loads(raw) if n.endswith(".card.json") else _yaml.safe_load(raw)
+            except Exception:
+                continue
+            if not isinstance(card, dict) or not card.get("id"):
+                continue
+            summaries.append({
+                "id": card.get("id"),
+                "name": card.get("name"),
+                "version": card.get("version"),
+                "algorithm_kind": card.get("algorithm_kind"),
+                "determinism": card.get("determinism"),
+                "risk": card.get("risk"),
+            })
+    return {"packageId": package_id, "count": len(summaries), "algorithms": summaries}
+
+
+@router.get("/packages/{package_id}/algorithms/{card_id}")
+async def get_algorithm_card(package_id: str, card_id: str, user=Depends(get_current_user)):
+    """Return one full algorithm card by id (UAPF v2.4.0)."""
+    from opendms.uapf.package_inspector import find_package_file
+    import zipfile, json as _json
+    import yaml as _yaml
+
+    path = find_package_file(package_id)
+    if not path:
+        raise HTTPException(404, "Package not found")
+    with zipfile.ZipFile(path) as z:
+        for n in z.namelist():
+            if not n.startswith("algorithms/"):
+                continue
+            if not (n.endswith(".card.yaml") or n.endswith(".card.yml") or n.endswith(".card.json")):
+                continue
+            try:
+                raw = z.read(n).decode("utf-8")
+                card = _json.loads(raw) if n.endswith(".card.json") else _yaml.safe_load(raw)
+            except Exception:
+                continue
+            if isinstance(card, dict) and card.get("id") == card_id:
+                return card
+    raise HTTPException(404, "Algorithm card not found")

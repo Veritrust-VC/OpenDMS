@@ -85,6 +85,7 @@ async def dispatch_capability(
         "step_id": body.get("stepId"),
         "input": body.get("input"),
         "guardrails": body.get("guardrails"),
+        "schema_ref": body.get("schemaRef"),
     }
 
     logger.info(
@@ -132,6 +133,24 @@ async def receive_audit_event(request: Request):
     data = event.get("data") or {}
     if isinstance(data, dict):
         document_id = data.get("documentId") or data.get("document_id")
+
+    # Buffer audit events for the live-run UI. The engine tags events with
+    # uapfsessionid (not the host correlationId), so buffer per session and
+    # resolve correlationId -> sessionId via the session.created event.
+    try:
+        from opendms.uapf import live_runs
+        session_id = event.get("uapfsessionid")
+        package_id = event.get("uapfpackageid")
+        etype = event.get("type", "") or ""
+        if session_id:
+            if "session.created" in etype:
+                live_runs.bind_session(str(session_id), str(package_id or ""))
+            live_runs.push(str(session_id), event)
+        corr = data.get("correlationId") if isinstance(data, dict) else None
+        if corr:
+            live_runs.push(str(corr), event)
+    except Exception as e:
+        logger.warning("live-run buffer push failed: %s", e)
 
     if document_id:
         from opendms.database import get_pool

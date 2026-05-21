@@ -14,8 +14,8 @@ RUN apt-get update \
 
 ARG UAPF_ENGINE_REF=main
 WORKDIR /build
-RUN git clone --depth=1 --branch ${UAPF_ENGINE_REF} \
-      https://github.com/UAPFormat/uapf-engine.git . \
+RUN git clone https://github.com/UAPFormat/uapf-engine.git . \
+ && git checkout ${UAPF_ENGINE_REF} \
  && npm install --omit=dev --silent \
  && npm install --silent typescript ts-node \
  && npx tsc -p tsconfig.json

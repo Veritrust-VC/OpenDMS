@@ -289,21 +289,148 @@ Respond ONLY with a JSON object. No markdown, no explanations, no preamble.
 }"""
 
 
+# ─────────────────────────────────────────────────────────────────────
+# UAPF v1.1 spec-correct contract resolver.
+#
+# Per UAPF-specification 00-overview §"Scope", the prompt itself is OUT of
+# UAPF scope ("UAPF does NOT standardize AI agent internal reasoning or
+# prompting"). What a package DOES contribute is the *contract*:
+#   - the output JSON Schema (what to extract) — bpmn task uapf:schemaRef
+#   - the guardrails (what constraints apply) — resources/guardrails.yaml
+#
+# So OpenDMS, acting as the UAPF *host*, owns the prompt wording, and reads
+# the schema + guardrails from whatever installed package declares an
+# ai.extract@1 BPMN task. Editing the schema in ProcessGit changes what the
+# extraction produces — without any DMS code change.
+# ─────────────────────────────────────────────────────────────────────
+
+_SEMANTIC_EXTRACT_CAPABILITY = "ai.extract@1"
+
+
+def _resolve_extract_contract() -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Scan installed UAPF packages for one whose BPMN declares an
+    ai.extract@1 service task, and return that task's referenced output
+    schema + the package guardrails.
+
+    Returns (schema_json, guardrails_text, audit_id) of the highest-version
+    match, or (None, None, None) if no conformant package is installed.
+    """
+    try:
+        from opendms.uapf.package_inspector import PACKAGES_DIR
+        import zipfile, json, re
+    except Exception:
+        return (None, None, None)
+
+    if not PACKAGES_DIR.exists():
+        return (None, None, None)
+
+    def _semver(name: str) -> tuple:
+        m = re.search(r"-(\d+)\.(\d+)\.(\d+)(?:[-+][^.]*)?\.uapf$", name)
+        return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else (0, 0, 0)
+
+    candidates = []
+    for p in PACKAGES_DIR.glob("*.uapf"):
+        try:
+            with zipfile.ZipFile(p) as z:
+                names = z.namelist()
+                # Find a BPMN file declaring an ai.extract@1 service task
+                schema_ref = None
+                for n in names:
+                    if not (n.startswith("bpmn/") and n.endswith((".bpmn", ".bpmn.xml"))):
+                        continue
+                    xml = z.read(n).decode("utf-8")
+                    # Locate the serviceTask whose uapf:capability is ai.extract@1
+                    for m in re.finditer(r"<\w*:?serviceTask\b[^>]*>", xml):
+                        tag = m.group(0)
+                        if 'uapf:capability="ai.extract@1"' in tag:
+                            sm = re.search(r'uapf:schemaRef="([^"]+)"', tag)
+                            if sm:
+                                schema_ref = sm.group(1)
+                            break
+                    if schema_ref:
+                        break
+                if not schema_ref:
+                    continue
+
+                # Read the schema the BPMN task points at
+                try:
+                    schema_json = z.read(schema_ref).decode("utf-8")
+                except KeyError:
+                    continue
+
+                # Read guardrails if present (resources/guardrails.yaml)
+                guardrails_text = None
+                for cand in ("resources/guardrails.yaml", "guardrails.yaml"):
+                    try:
+                        guardrails_text = z.read(cand).decode("utf-8")
+                        break
+                    except KeyError:
+                        continue
+
+                # Manifest for audit id
+                manifest = {}
+                try:
+                    manifest = json.loads(z.read("manifest.json").decode("utf-8"))
+                except Exception:
+                    pass
+                audit_id = f"{manifest.get('id', p.stem)}@{manifest.get('version', '?')}"
+
+                candidates.append((_semver(p.name), schema_json, guardrails_text, audit_id))
+        except Exception:
+            continue
+
+    if not candidates:
+        return (None, None, None)
+    candidates.sort(key=lambda c: c[0])
+    _, schema_json, guardrails_text, audit_id = candidates[-1]
+    return (schema_json, guardrails_text, audit_id)
+
+
 async def _get_semantic_prompt() -> str:
-    """Load semantic system prompt from DB with hardcoded fallback."""
+    """Build the semantic extraction system prompt.
+
+    The prompt wording is host-owned (per UAPF scope). The output schema and
+    guardrails are read from an installed UAPF package's ai.extract@1 task
+    contract, so editing them in ProcessGit changes extraction behaviour
+    without a DMS code change.
+
+    Precedence for schema/guardrails:
+      1. UAPF package contract (authoritative — versioned, ProcessGit-sourced)
+      2. DB-stored override (legacy admin UI)
+      3. None — host prompt alone (hardcoded fallback schema embedded in it)
+    """
+    schema_json, guardrails_text, audit_id = _resolve_extract_contract()
+
+    if schema_json:
+        parts = [
+            f"<!-- contract-source: uapf-package {audit_id} "
+            f"(ai.extract@1 task contract) -->",
+            _SEMANTIC_SYSTEM_PROMPT,
+            "\n## OUTPUT JSON SCHEMA (from UAPF package — authoritative)\n"
+            "Your output MUST validate against this schema:\n"
+            f"{schema_json}",
+        ]
+        if guardrails_text:
+            parts.append(
+                "\n## GUARDRAILS (from UAPF package — MUST be enforced)\n"
+                f"{guardrails_text}"
+            )
+        return "\n".join(parts)
+
+    # Secondary: DB override
     try:
         from opendms.routers.ai_instructions import load_instruction
-
         prompt = await load_instruction("semantic_summary.system_prompt")
-        if not prompt:
-            return _SEMANTIC_SYSTEM_PROMPT
-
-        schema = await load_instruction("semantic_summary.output_schema")
-        if schema:
-            return f"{prompt}\n\n## JSON SCHEMA\n{schema}"
-        return prompt
+        if prompt:
+            schema = await load_instruction("semantic_summary.output_schema")
+            if schema:
+                return f"{prompt}\n\n## JSON SCHEMA\n{schema}"
+            return prompt
     except Exception:
-        return _SEMANTIC_SYSTEM_PROMPT
+        pass
+
+    # Last resort: hardcoded fallback
+    return _SEMANTIC_SYSTEM_PROMPT
 
 
 async def _get_user_message(title: str, doc_type: str, reg_number: str, org_name: str, text: str) -> str:
@@ -383,6 +510,8 @@ async def generate_semantic_metadata(
     org_name: str = "",
     allow_centralization: bool = True,
     personal_data_risk: str = "LOW",
+    correlation_id: str = "",
+    document_id: Optional[int] = None,
 ) -> Optional[dict]:
     """
     Generate VDVC v1.1 semantic metadata via AI.
@@ -412,9 +541,42 @@ async def generate_semantic_metadata(
     content_hash = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()
     user_msg = await _get_user_message(title, doc_type, reg_number, org_name, text)
     user_msg = f"{user_msg}\n\nContent Hash: {content_hash}"
-    system_prompt = await _get_semantic_prompt()
+    system_prompt = await _get_semantic_prompt()  # noqa: F841 (host-owned; resolved by the engine's ai.extract host capability)
 
-    result = await _complete_json(system_prompt, user_msg)
+    # Execution path: run the semantic-document-analysis UAPF package through
+    # the engine (ProcessGit-sourced) rather than a direct LLM call. The engine
+    # walks redact -> extract -> emit; the ai.extract host capability performs
+    # the VDVC extraction, selected by that task's uapf:schemaRef.
+    result = None
+    try:
+        from opendms.uapf.client import UapfClient
+        from opendms.uapf.manifest import build_host_manifest
+        from opendms.config import get_settings as _get_settings
+        _s = _get_settings()
+        _client = UapfClient(_s.uapf_engine_url, _s.uapf_engine_auth_token)
+        if correlation_id:
+            try:
+                from opendms.uapf import live_runs
+                live_runs.register_pending(
+                    correlation_id, "dev.uapf.semantic-document-analysis")
+            except Exception:
+                pass
+        _session = await _client.start_session(
+            package_id="dev.uapf.semantic-document-analysis",
+            process_id="semantic-document-analysis",
+            input_payload={
+                "content": text,
+                "allowCentralization": allow_centralization,
+                **({"correlationId": correlation_id} if correlation_id else {}),
+                **({"documentId": document_id} if document_id else {}),
+            },
+            host_manifest=build_host_manifest(),
+        )
+        if isinstance(_session, dict):
+            result = _session.get("output") or None
+    except Exception as _e:
+        logger.warning("UAPF semantic-document-analysis session failed: %s", _e)
+        result = None
 
     if not result:
         if route == "CENTRAL":

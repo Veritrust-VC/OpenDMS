@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from opendms.database import get_pool
-from opendms.middleware.auth import get_current_user, require_role, hash_password
+from opendms.middleware.auth import get_current_user, require_role, hash_password, verify_password
 
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
@@ -65,6 +65,55 @@ async def create_user(req: UserCreate, user=Depends(require_role("superadmin", "
             req.email, hash_password(req.password), req.full_name, req.role, req.org_id, req.department,
         )
     return dict(row)
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class PasswordReset(BaseModel):
+    new_password: str
+
+
+@router.post("/me/change-password")
+async def change_my_password(req: PasswordChange, user=Depends(get_current_user)):
+    """Self-service password change. Verifies the current password first."""
+    if len(req.new_password or "") < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT password_hash FROM users WHERE id = $1", user["id"])
+        if not row or not verify_password(req.current_password, row["password_hash"]):
+            raise HTTPException(400, "Current password is incorrect")
+        await conn.execute(
+            "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+            hash_password(req.new_password), user["id"],
+        )
+    return {"ok": True}
+
+
+@router.post("/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: int, req: PasswordReset,
+    user=Depends(require_role("superadmin", "admin")),
+):
+    """Admin password reset for another user. An admin cannot reset a
+    superadmin's password; only a superadmin can."""
+    if len(req.new_password or "") < 8:
+        raise HTTPException(400, "New password must be at least 8 characters")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        target = await conn.fetchrow("SELECT id, role FROM users WHERE id = $1", user_id)
+        if not target:
+            raise HTTPException(404, "User not found")
+        if target["role"] == "superadmin" and user["role"] != "superadmin":
+            raise HTTPException(403, "Only a superadmin can reset a superadmin password")
+        await conn.execute(
+            "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+            hash_password(req.new_password), user_id,
+        )
+    return {"ok": True}
 
 
 @router.get("/{user_id}")

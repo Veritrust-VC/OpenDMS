@@ -389,6 +389,16 @@ async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(ge
             "UPDATE documents SET storage_key=$1, storage_backend=$2, file_name=$3, file_size=$4, mime_type=$5 WHERE id=$6",
             key, get_settings().storage_backend, file.filename, len(content), file.content_type, doc_id)
 
+    # UAPF: the document now has a file and is processable. Fire the
+    # 'document.received' lifecycle event so matching process_triggers run.
+    # Only on the first file; non-blocking — a UAPF failure must not break upload.
+    if not doc["storage_key"]:
+        try:
+            from opendms.uapf import on_document_event
+            await on_document_event("document.received", doc_id)
+        except Exception as _uapf_err:
+            logging.getLogger(__name__).warning("UAPF bridge error on upload: %s", _uapf_err)
+
     return {"status": "uploaded", "key": key, "size": len(content), "filename": file.filename}
 
 
@@ -462,6 +472,16 @@ async def add_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_c
             doc_id, file.filename, file.content_type, len(content),
             key, get_settings().storage_backend, checksum, is_primary, user["id"])
 
+    # UAPF: first file attached — the document is processable. Fire the
+    # 'document.received' lifecycle event so matching process_triggers run.
+    # Non-blocking — a UAPF failure must not break the upload.
+    if is_primary:
+        try:
+            from opendms.uapf import on_document_event
+            await on_document_event("document.received", doc_id)
+        except Exception as _uapf_err:
+            logging.getLogger(__name__).warning("UAPF bridge error on add_file: %s", _uapf_err)
+
     return dict(row)
 
 
@@ -491,6 +511,7 @@ async def remove_file(doc_id: int, file_id: int, user=Depends(get_current_user))
 async def generate_metadata_preview(
     file: Optional[UploadFile] = File(default=None),
     metadata: str = Form(default="{}"),
+    correlation_id: str = Form(default="", alias="correlationId"),
     user=Depends(get_current_user),
 ):
     """
@@ -545,6 +566,7 @@ async def generate_metadata_preview(
         org_name="",
         allow_centralization=True,
         personal_data_risk="LOW",
+        correlation_id=correlation_id,
     )
 
     if not result:
@@ -569,7 +591,7 @@ async def generate_metadata_preview(
 
 
 @router.post("/{doc_id}/generate-metadata")
-async def generate_metadata(doc_id: int, user=Depends(get_current_user)):
+async def generate_metadata(doc_id: int, correlation_id: str = "", user=Depends(get_current_user)):
     """AI-powered VDVC v1.1 semantic metadata generation."""
     from opendms.ai import generate_semantic_metadata, is_configured
     import hashlib as _hl
@@ -627,6 +649,8 @@ async def generate_metadata(doc_id: int, user=Depends(get_current_user)):
         org_name=doc.get("org_name") or "",
         allow_centralization=allow_cent if isinstance(allow_cent, bool) else str(allow_cent).lower() == "true",
         personal_data_risk=pdr,
+        correlation_id=correlation_id,
+        document_id=doc_id,
     )
 
     if not result:

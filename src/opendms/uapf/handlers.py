@@ -174,9 +174,30 @@ async def handle_ai_redact(ctx: dict) -> dict:
     """
     inp = ctx.get("input") or {}
     content = inp.get("content") or ""
+
+    # Deterministic PII regex signals — consumed by the
+    # assess-personal-data-risk DMN decision. Computed always, on the raw
+    # content, independent of the LLM redaction path below.
+    from opendms.ai import _LV_PERSONAS_KODS, _EMAIL_RE, _PHONE_RE, _IBAN_RE
+    _pk = bool(_LV_PERSONAS_KODS.search(content))
+    _iban = bool(_IBAN_RE.search(content))
+    _email = bool(_EMAIL_RE.search(content))
+    _phone = bool(_PHONE_RE.search(content))
+    _cats = [c for c in (("personas_kods" if _pk else None),
+                         ("financial_account" if _iban else None),
+                         ("email" if _email else None),
+                         ("phone" if _phone else None)) if c]
+    _pii = {
+        "personasKodaPresent": _pk,
+        "financialDataPresent": _iban,
+        "contactDataPresent": _email or _phone,
+        "piiCategoryCount": len(_cats),
+        "detectedEntityTypes": _cats,
+    }
+
     if not content:
         # Edge case: if document.fetch returned no content, propagate empty.
-        return {"output": {"redactedContent": "", "detectedCategories": [], "languageDetected": "und"}}
+        return {"output": {"redactedContent": "", "detectedCategories": [], "languageDetected": "und", **_pii}}
 
     # Enforce guardrails: text length cap.
     MAX_CHARS = 15000
@@ -205,10 +226,11 @@ async def handle_ai_redact(ctx: dict) -> dict:
                 "detectedCategories": ["regex_fallback"],
                 "languageDetected": "und",
                 "_warning": "AI redaction unavailable; regex fallback applied",
+                **_pii,
             }
         }
 
-    return {"output": result}
+    return {"output": {**result, **_pii}}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -256,14 +278,56 @@ No markdown, no preamble, no commentary. Booleans must be true/false (not string
 
 async def handle_ai_extract(ctx: dict) -> dict:
     """
-    Extract structured facets from a redacted complaint text.
+    Extract structured facets from document text.
 
-    Input:  { content: str, redactedContent?: str }
-    Output: { mentionsChildren: bool, ..., languageDetected: str }
+    Schema-driven: the invoking BPMN task's uapf:schemaRef selects the
+    extraction contract:
+      - .../vdvc-semantic-summary.schema.json -> VDVC semantic metadata
+        (Primary Topic, Summary, Keywords ... — the Generate Metadata flow)
+      - anything else -> Tiesibsargs triage facets (mentions*, urgency ...
+        — the iesnieguma-izskatisana classification DMN)
+
+    Input: { content: str, redactedContent?: str }
     """
     inp = ctx.get("input") or {}
+    schema_ref = ctx.get("schema_ref") or ""
     # Prefer the redacted form if both are present
     text = inp.get("redactedContent") or inp.get("content") or ""
+
+    MAX_CHARS = 15000
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS]
+
+    # ---- VDVC semantic-metadata extraction (selected by uapf:schemaRef) ----
+    if "semantic-summary" in schema_ref or "vdvc" in schema_ref.lower():
+        if not text:
+            return {"output": {"_warning": "no text to extract from"}}
+        from opendms.ai import _get_semantic_prompt
+        prompt = await _get_semantic_prompt()
+        sem = await _complete_json(
+            prompt, f"--- DOCUMENT TEXT ---\n{text}\n--- END ---"
+        )
+        if not sem:
+            return {"output": {"_warning": "AI semantic extraction unavailable",
+                               "aiConfidenceScore": 0.0, "outputPiiErrorCount": 0}}
+        # Surface the human-validation-gate DMN inputs as flat session
+        # variables: outputPiiErrorCount is the deterministic post-extraction
+        # PII re-scan, aiConfidenceScore is lifted out of semanticSummary.
+        from opendms.ai import scan_response_for_pii
+        _ss = sem.get("semanticSummary") or {}
+        try:
+            _conf = float(_ss.get("aiConfidenceScore"))
+        except (TypeError, ValueError):
+            _conf = 0.0
+        _pii_errs = scan_response_for_pii(sem)
+        return {"output": {
+            **sem,
+            "aiConfidenceScore": _conf,
+            "outputPiiErrorCount": len(_pii_errs),
+            "detectedLanguage": _ss.get("detectedLanguage") or "und",
+        }}
+
+    # ---- Tiesibsargs triage facets (default contract) ----
     if not text:
         return {
             "output": {
@@ -276,10 +340,6 @@ async def handle_ai_extract(ctx: dict) -> dict:
                 "_warning": "no text to extract from",
             }
         }
-
-    MAX_CHARS = 15000
-    if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
 
     result = await _complete_json(
         EXTRACTION_SYSTEM_PROMPT_TIESIBSARGS, f"--- COMPLAINT TEXT ---\n{text}\n--- END ---"
@@ -349,6 +409,22 @@ async def handle_data_write(ctx: dict) -> dict:
 
     pool = await get_pool()
     async with pool.acquire() as conn:
+        # Pre-create uapf_sessions row to satisfy FK. The run-now handler in
+        # uapf_admin.py only inserts the session row AFTER engine.start_session
+        # returns, but the engine calls back to this capability DURING the
+        # start_session call — so the session row doesn't exist yet. Insert
+        # with state='running'; the run-now handler will UPDATE it on return.
+        if session_id:
+            # Placeholders for package_id/process_id (NOT NULL) — the run-now
+            # handler's ON CONFLICT UPDATE overwrites them with real values.
+            await conn.execute(
+                """INSERT INTO uapf_sessions
+                       (session_id, document_id, package_id, process_id, state, started_at)
+                   VALUES ($1, $2, '<pending>', '<pending>', 'running', NOW())
+                   ON CONFLICT (session_id) DO NOTHING""",
+                session_id, int(document_id),
+            )
+
         row = await conn.fetchrow(
             """INSERT INTO complaint_classifications (
                    document_id, session_id, topic, topic_confidence,

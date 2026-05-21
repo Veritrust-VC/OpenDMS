@@ -120,6 +120,9 @@ async def _dispatch_trigger(trigger: dict, document: dict) -> None:
                        CASE WHEN $6 IN ('completed','failed','aborted') THEN NOW() ELSE NULL END)
                ON CONFLICT (session_id) DO UPDATE SET
                  state = EXCLUDED.state,
+                 trigger_id = EXCLUDED.trigger_id,
+                 package_id = EXCLUDED.package_id,
+                 process_id = EXCLUDED.process_id,
                  output_payload = EXCLUDED.output_payload,
                  error_message = EXCLUDED.error_message,
                  completed_at = CASE WHEN EXCLUDED.state IN ('completed','failed','aborted')

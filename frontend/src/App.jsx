@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import UapfPage from "./UapfPage.jsx";
+import BpmnDiagram from "./components/BpmnDiagram.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -37,6 +38,49 @@ async function api(path, opts = {}) {
 function Badge({ s }) { const c = { draft:"bg-gray-100 text-gray-600", registered:"bg-sky-100 text-sky-700", sent:"bg-amber-100 text-amber-700", received:"bg-violet-100 text-violet-700", assigned:"bg-teal-100 text-teal-700", decided:"bg-green-100 text-green-700", archived:"bg-gray-200 text-gray-600" }; return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c[s]||"bg-gray-100"}`}>{s}</span>; }
 const EI = { DocumentCreated:"\u{1F4C4}", DocumentSent:"\u{1F4E4}", DocumentReceived:"\u{1F4E5}", DocumentAssigned:"\u{1F464}", DocumentDecided:"\u{2705}", DocumentArchived:"\u{1F5C4}\uFE0F" };
 
+// ── Document lifecycle log: compact per-event detail rendering ──
+const UAPF_EI = {
+  "session.created": "▶️", "step.entered": "▸",
+  "capability.invoking": "⚙️", "capability.invoked": "⚙️",
+  "decision.evaluated": "⚖️", "session.completed": "✅",
+  "session.failed": "⛔",
+};
+function fmtEventVal(v) {
+  if (v == null) return "—";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  if (typeof v === "object") { try { return JSON.stringify(v); } catch { return "—"; } }
+  const str = String(v);
+  return str.length > 80 ? str.slice(0, 80) + "…" : str;
+}
+function uapfEventDetail(eventType, details) {
+  const t = eventType || "";
+  const d = (details && details.data) || {};
+  if (t.includes("session.created"))
+    return { line: "Process: " + (d.processId || (details && details.uapfpackageid) || "—") };
+  if (t.includes("step.entered"))
+    return { line: ((details && details.uapfstepid) || "") + (d.nodeName ? " — " + d.nodeName : "") };
+  if (t.includes("capability.invoking"))
+    return { line: "Izsauc " + (d.capability || "?") + (d.nodeName ? " — " + d.nodeName : "") };
+  if (t.includes("capability.invoked")) {
+    const kv = (d.output && typeof d.output === "object")
+      ? Object.entries(d.output).filter(function (e) { return !String(e[0]).startsWith("_"); })
+          .slice(0, 5).map(function (e) { return e[0] + ": " + fmtEventVal(e[1]); })
+      : [];
+    return { line: (d.capability || "?") + " ✓", kv: kv };
+  }
+  if (t.includes("decision.evaluated")) {
+    const res = (d.result && typeof d.result === "object") ? d.result : {};
+    const kv = Object.entries(res).map(function (e) { return e[0] + ": " + fmtEventVal(e[1]); });
+    const rules = Array.isArray(d.rulesFired) ? d.rulesFired.join(", ") : "";
+    return { line: "Lēmums: " + (d.decisionId || "?"), kv: kv, rules: rules, accent: true };
+  }
+  if (t.includes("session.completed"))
+    return { line: Array.isArray(d.trace) ? ("Pabeigts — " + d.trace.length + " soļi") : "Pabeigts" };
+  if (t.includes("session.failed"))
+    return { line: "Neizdevās: " + (d.error || d.reason || "nezināms"), err: true };
+  return null;
+}
+
 
 const SUMMARY_FIELDS = ["primaryTopic","subTopics","summary","documentPurpose","requestedAction","involvedPartyTypes","geographicScope","sectorTags","legalDomain","estimatedRiskLevel","urgencyLevel","keywords","summarySource","aiConfidenceScore","aiModelVersion"];
 const SENSITIVITY_FIELDS = ["allowCentralization","redactionLevel","personalDataRisk","accessRestrictionBasis","classifiedInformation"];
@@ -62,12 +106,27 @@ const BOOL_DISPLAY = (v) => v === true || v === "true" ? "Yes" : v === false || 
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [page, setPage] = useState("dashboard");
+  const [route, setRoute] = useState(() => window.location.pathname.split("/").filter(Boolean));
+  const navigate = useCallback((path, opts = {}) => {
+    let p = (path.startsWith("/") ? path : "/" + path).replace(/\/+$/, "") || "/";
+    if (window.location.pathname !== p) {
+      window.history[opts.replace ? "replaceState" : "pushState"]({}, "", p);
+    }
+    setRoute(p.split("/").filter(Boolean));
+  }, []);
+  const page = route[0] || "dashboard";
+  const setPage = (id) => navigate("/" + id);
   const [brand, setBrand] = useState({ brand_name: "OpenDMS", brand_primary_color: "#0d7c66", brand_logo_url: "" });
   const [toast, setToast] = useState(null);
   const [auditFilters, setAuditFilters] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
+
+  useEffect(() => {
+    const onPop = () => setRoute(window.location.pathname.split("/").filter(Boolean));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   useEffect(() => {
     setLogoutHandler(() => setUser(null));
@@ -76,26 +135,26 @@ export default function App() {
 
   useEffect(() => { api("/settings/branding").then(setBrand).catch(()=>{}); }, []);
   useEffect(() => { if (authToken) { api("/users/me/profile").then(setUser).catch(()=>{ authToken=""; localStorage.removeItem("opendms_token"); }); } }, []);
+  useEffect(() => { if (user && route.length === 0) navigate("/dashboard", { replace: true }); }, [user]);
 
   if (!user) return <LoginPage onLogin={(u,t)=>{ authToken=t; localStorage.setItem("opendms_token",t); _isLoggingOut = false; setUser(u); }} brand={brand} />;
 
   const isAdmin = ["superadmin","admin"].includes(user.role);
   const nav = [
-    { id:"dashboard", label:"Dashboard", icon:"\u{1F4CA}" },
-    { id:"documents", label:"Documents", icon:"\u{1F4C4}" },
-    { id:"intelligence", label:"Intelligence", icon:"\u{1F9E0}" },
-    ...(isAdmin ? [
-      { id:"users", label:"Users", icon:"\u{1F465}" },
-      { id:"audit", label:"Audit Logs", icon:"\u{1F4DD}" },
-      { id:"organizations", label:"Organizations", icon:"\u{1F3E2}" },
-      { id:"registers", label:"Registers", icon:"\u{1F4C1}" },
-      { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F" },
-      { id:"archive", label:"Archive", icon:"\u{1F5C3}\uFE0F" },
-      { id:"ai-instructions", label:"AI Prompts", icon:"\u{1F4DD}" },
-      { id:"uapf", label:"UAPF procesi", icon:"\u{2699}\uFE0F" },
-    ] : []),
-    ...(user.role === "superadmin" ? [{ id:"settings", label:"Settings", icon:"\u{2699}\uFE0F" }] : []),
-  ];
+    { id:"dashboard",       label:"Dashboard",       icon:"\u{1F4CA}" },
+    { id:"documents",       label:"Documents",       icon:"\u{1F4C4}" },
+    { id:"uapf",            label:"UAPF procesi",    icon:"\u{2699}\uFE0F", roles:["superadmin","admin"] },
+    { id:"intelligence",    label:"Intelligence",    icon:"\u{1F9E0}" },
+    { id:"registers",       label:"Registers",       icon:"\u{1F4C1}", roles:["superadmin","admin"] },
+    { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F", roles:["superadmin","admin"] },
+    { id:"organizations",   label:"Organizations",   icon:"\u{1F3E2}", roles:["superadmin","admin"] },
+    { id:"users",           label:"Users",           icon:"\u{1F465}", roles:["superadmin","admin"] },
+    { id:"ai-instructions", label:"AI Prompts",      icon:"\u{1F4DD}", roles:["superadmin","admin"] },
+    { id:"audit",           label:"Audit Logs",      icon:"\u{1F4DD}", roles:["superadmin","admin"] },
+    { id:"archive",         label:"Archive",         icon:"\u{1F5C3}\uFE0F", roles:["superadmin","admin"] },
+    { id:"settings",        label:"Settings",        icon:"\u{2699}\uFE0F", roles:["superadmin"] },
+    { id:"account",         label:"Mans konts",      icon:"\u{1F464}" },
+  ].filter(n => !n.roles || n.roles.includes(user.role));
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -123,17 +182,18 @@ export default function App() {
       <main className={`flex-1 ${sidebarOpen ? "ml-52" : "ml-14"} p-5 transition-all duration-200`}>
         {toast && <div className={`fixed top-3 right-3 z-50 px-4 py-2 rounded-lg shadow text-sm ${toast.t==="error"?"bg-red-50 text-red-700 border border-red-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{toast.m}</div>}
         {page==="dashboard" && <DashboardPage notify={notify} user={user} />}
-        {page==="documents" && <DocumentsPage notify={notify} user={user} />}
+        {page==="documents" && <DocumentsPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="intelligence" && <IntelligencePage notify={notify} />}
-        {page==="users" && <UsersPage notify={notify} />}
+        {page==="users" && <UsersPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="organizations" && <OrgsPage notify={notify} onViewLogs={(filters)=>{ setAuditFilters(filters); setPage("audit"); }} />}
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
         {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
         {page==="archive" && <ArchivePage notify={notify} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
-        {page==="uapf" && <UapfPage notify={notify} user={user} />}
+        {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="audit" && <AuditLogsPage notify={notify} initialFilters={auditFilters} />}
         {page==="settings" && <SettingsPage notify={notify} brand={brand} setBrand={setBrand} />}
+        {page==="account" && <AccountPage notify={notify} user={user} />}
       </main>
     </div>
   );
@@ -200,7 +260,8 @@ function DashboardPage({ notify, user }) {
   </div>);
 }
 
-function DocumentsPage({ notify, user }) {
+function DocumentsPage({ notify, user, route, navigate }) {
+  const docRef = route && route[1] ? decodeURIComponent(route[1]) : null;
   const [docs, setDocs] = useState([]); const [total, setTotal] = useState(0); const [sel, setSel] = useState(null);
   const [statusF, setStatusF] = useState(""); const [search, setSearch] = useState(""); const [showCreate, setShowCreate] = useState(false);
   const [sdkStatus, setSdkStatus] = useState(null);
@@ -208,6 +269,13 @@ function DocumentsPage({ notify, user }) {
   useEffect(()=>{load();},[load]);
   useEffect(()=>{ api("/sdk/setup-status").then(setSdkStatus).catch(()=>{}); },[]);
   const loadDetail = async(id) => { try { setSel(await api(`/documents/${id}`)); } catch(e){notify(e.message,"error");} };
+  useEffect(() => {
+    if (!docRef) { setSel(null); return; }
+    if (sel && (String(sel.registration_number) === docRef || String(sel.id) === docRef)) return;
+    const m = docs.find(d => String(d.registration_number) === docRef || String(d.id) === docRef);
+    if (m) loadDetail(m.id);
+    else if (/^\d+$/.test(docRef)) loadDetail(docRef);
+  }, [docRef, docs]);
 
   return (<div>
     <div className="flex items-center justify-between mb-4">
@@ -220,15 +288,16 @@ function DocumentsPage({ notify, user }) {
         <button onClick={()=>setShowCreate(!showCreate)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">+ New</button>
       </div>
     </div>
+    {showCreate && <CreateDocForm onDone={()=>{setShowCreate(false);load();}} notify={notify} />}
+    {!showCreate && <>
     <div className="text-xs text-gray-500 mb-3">
       Workspace: <strong>{sdkStatus?.default_organization?.name || "No default organization selected"}</strong>
     </div>
-    {showCreate && <CreateDocForm onDone={()=>{setShowCreate(false);load();}} notify={notify} />}
     <div className="grid grid-cols-5 gap-4">
       <div className="col-span-2 bg-white rounded-lg border">
         <div className="divide-y max-h-[550px] overflow-y-auto">
           {docs.map(d=>(
-            <div key={d.id} onClick={()=>loadDetail(d.id)} className={`px-4 py-3 cursor-pointer hover:bg-gray-50 ${sel?.id===d.id?"bg-emerald-50":""}`}>
+            <div key={d.id} onClick={()=>navigate("/documents/"+encodeURIComponent(d.registration_number||d.id))} className={`px-4 py-3 cursor-pointer hover:bg-gray-50 ${sel?.id===d.id?"bg-emerald-50":""}`}>
               <div className="flex items-center justify-between"><span className={`text-sm font-medium truncate max-w-[200px] ${!d.title ? "text-gray-400 italic" : ""}`}>{d.title || "Untitled Document"}</span><Badge s={d.status}/></div>
               <div className="text-xs text-gray-400 mt-0.5">{d.registration_number} {d.org_name && `\u00b7 ${d.org_name}`}</div>
             </div>
@@ -240,6 +309,7 @@ function DocumentsPage({ notify, user }) {
         {sel ? <DocumentDetail doc={sel} onAction={()=>{loadDetail(sel.id);load();}} notify={notify} /> : <div className="p-8 text-center text-gray-400 text-sm">Select a document</div>}
       </div>
     </div>
+    </>}
   </div>);
 }
 
@@ -258,11 +328,15 @@ function CreateDocForm({ onDone, notify }) {
     }
   };
 
+  const [vizCid, setVizCid] = useState(null);
   const generateMetadata = async () => {
     if (!file) return notify("Please select a file first", "error");
+    const cid = (window.crypto?.randomUUID?.() || `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    setVizCid(cid);
     const fd = new FormData();
     fd.append("file", file);
     fd.append("metadata", JSON.stringify({ title }));
+    fd.append("correlationId", cid);
     try {
       setExtracting(true);
       const r = await api("/documents/generate-metadata-preview", { method: "POST", body: fd });
@@ -360,6 +434,7 @@ function CreateDocForm({ onDone, notify }) {
           <span className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700">Confidence: {Math.round(aiData.semanticSummary.aiConfidenceScore * 100)}%</span>
         )}
       </div>
+      <SemanticProcessViz correlationId={vizCid} />
       {aiData.route && <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">Route: {JSON.stringify(aiData.route)}</div>}
       <textarea value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Content summary" rows={2} className="w-full text-sm px-3 py-2 border rounded" />
       <div className="grid grid-cols-2 gap-2">
@@ -381,6 +456,438 @@ function CreateDocForm({ onDone, notify }) {
         <button onClick={onDone} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button>
         <button onClick={submit} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">Create</button>
       </div>
+    </div>
+  );
+}
+
+const UAPF_PKG = "lv.tiesibsargs.iesnieguma-izskatisana";
+const UAPF_PROC = "iesnieguma-izskatisana";
+
+// Compact label of a DMN decision's outcome, for diagram node annotations.
+function decisionLabel(result) {
+  if (!result || typeof result !== "object") return "";
+  const parts = Object.entries(result)
+    .filter(([k, v]) => v != null && v !== "" && typeof v !== "object"
+            && !/confidence|rationale/i.test(k))
+    .map(([, v]) => String(v));
+  if (!parts.length) return "";
+  const str = parts.slice(0, 2).join(" \u00B7 ");
+  return str.length > 38 ? str.slice(0, 38) + "\u2026" : str;
+}
+
+const SEMANTIC_PKG = "dev.uapf.semantic-document-analysis";
+const SEMANTIC_PROC = "semantic-document-analysis";
+
+// Live visualization of the semantic-document-analysis UAPF process.
+// Keyed by a correlationId (not a documentId) so it works on the create
+// form, before a document exists. Polls /uapf/live-run while the engine
+// runs the session and lights up the BPMN node-by-node.
+const SEMANTIC_STEPS = [
+  { id: "Task_DetectRedactPii",    n: 1, kind: "ai",       name: "Maskēt personas datus" },
+  { id: "Decision_AssessRisk",     n: 2, kind: "decision", name: "Novērtēt personas datu risku" },
+  { id: "Decision_GdprRoute",      n: 3, kind: "decision", name: "Noteikt GDPR apstrādes maršrutu" },
+  { id: "Task_ExtractSemantics",   n: 4, kind: "ai",       name: "Izvilkt semantisko metadatu" },
+  { id: "Decision_ValidationGate", n: 5, kind: "decision", name: "Cilvēka validācijas statuss" },
+  { id: "Task_EmitResult",         n: 6, kind: "event",    name: "Publicēt analīzes rezultātu" },
+];
+const SEM_KIND = {
+  ai:       { sol: "#7c3aed", fill: "#f5f3ff", txt: "#5b21b6", label: "AI solis" },
+  decision: { sol: "#4f46e5", fill: "#eef2ff", txt: "#3730a3", label: "Lēmums (DMN)" },
+  event:    { sol: "#d97706", fill: "#fffbeb", txt: "#92400e", label: "Notikums" },
+};
+const SEM_FIELD_LV = {
+  personalDataRisk: "Personas datu risks", processingRoute: "Apstrādes maršruts",
+  redactionLevel: "Maskēšanas līmenis", humanValidationStatus: "Validācijas statuss",
+  riskLevel: "Riska līmenis", recommendation: "Ieteikums", topic: "Tēma", priority: "Prioritāte",
+};
+
+function SemanticProcessViz({ correlationId }) {
+  const [bpmnXml, setBpmnXml] = useState(null);
+  const [activeStepId, setActiveStepId] = useState(null);
+  const [completedStepIds, setCompletedStepIds] = useState([]);
+  const [nodeDecisions, setNodeDecisions] = useState({});
+  const [phase, setPhase] = useState("idle"); // idle|running|done|failed
+  const timer = useRef(null);
+  const activeRef = useRef(null);
+  const doneRef = useRef([]);
+  const finishedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api(`/uapf/packages/${SEMANTIC_PKG}/bpmn/${SEMANTIC_PROC}.xml`);
+        const xml = typeof res === "string" ? res : await res.text();
+        if (!cancelled) setBpmnXml(xml);
+      } catch { /* diagram optional */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!correlationId) return;
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    finishedRef.current = false;
+    activeRef.current = null;
+    doneRef.current = [];
+    setActiveStepId(null);
+    setCompletedStepIds([]);
+    setNodeDecisions({});
+    setPhase("running");
+    let since = 0;
+
+    const finish = (failed) => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+      if (activeRef.current && !doneRef.current.includes(activeRef.current)) {
+        doneRef.current.push(activeRef.current);
+      }
+      setCompletedStepIds([...doneRef.current]);
+      setActiveStepId(null);
+      setPhase(failed ? "failed" : "done");
+    };
+
+    const poll = async () => {
+      if (finishedRef.current) return;
+      try {
+        const r = await api(`/uapf/live-run/${encodeURIComponent(correlationId)}?since=${since}`);
+        if (typeof r?.next === "number") since = r.next;
+        for (const ev of (r?.events || [])) {
+          const t = ev.type || "";
+          const d = ev.data || {};
+          const sid = ev.uapfstepid || ev.stepId || d.stepId;
+          if (t.includes("step.entered")) {
+            if (sid) {
+              if (activeRef.current && activeRef.current !== sid &&
+                  !doneRef.current.includes(activeRef.current)) {
+                doneRef.current.push(activeRef.current);
+              }
+              activeRef.current = sid;
+              setCompletedStepIds([...doneRef.current]);
+              setActiveStepId(sid);
+            }
+          } else if (t.includes("decision.evaluated")) {
+            const res = d.result || d.outputs || d.output || d.decisionOutput;
+            if (res && typeof res === "object" && sid) {
+              setNodeDecisions((prev) => ({ ...prev, [sid]: { ...(prev[sid] || {}), ...res } }));
+            }
+          } else if (t.includes("session.completed")) { finish(false); return; }
+          else if (t.includes("session.failed")) { finish(true); return; }
+        }
+      } catch { /* transient — keep polling */ }
+      if (!finishedRef.current) timer.current = setTimeout(poll, 600);
+    };
+    poll();
+    const guard = setTimeout(() => finish(false), 45000);
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+      clearTimeout(guard);
+      finishedRef.current = true;
+    };
+  }, [correlationId]);
+
+  if (!correlationId) return null;
+
+  const running = phase === "running";
+  const nodeAnnotations = Object.fromEntries(
+    Object.entries(nodeDecisions)
+      .map(([nid, res]) => [nid, decisionLabel(res)])
+      .filter(([, lbl]) => lbl),
+  );
+  const statusLabel = running ? "izpildās…" : phase === "done" ? "pabeigts"
+                    : phase === "failed" ? "neizdevās" : "";
+
+  return (
+    <div className="border rounded-lg p-3 bg-slate-50 space-y-3">
+      <div className="flex items-center gap-2.5">
+        {running ? (
+          <span className="inline-block w-6 h-6 rounded-full border-[3px] border-emerald-200 border-t-emerald-600 animate-spin" />
+        ) : phase === "done" ? (
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-600 text-white text-sm font-bold">✓</span>
+        ) : phase === "failed" ? (
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-sm font-bold">✕</span>
+        ) : (
+          <span className="inline-block w-6 h-6" />
+        )}
+        <div>
+          <div className="text-sm font-semibold text-gray-800">Semantiskās analīzes process</div>
+          <div className="text-xs text-gray-400">
+            {SEMANTIC_PKG}{statusLabel ? <span className="text-gray-500"> · {statusLabel}</span> : null}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        {SEMANTIC_STEPS.map((s, i) => {
+          const k = SEM_KIND[s.kind];
+          const done = phase === "done" || completedStepIds.includes(s.id);
+          const active = running && activeStepId === s.id;
+          const reached = done || active;
+          const dec = nodeDecisions[s.id];
+          return (
+            <div key={s.id} className="flex gap-2.5">
+              <div className="flex flex-col items-center">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+                  style={{
+                    background: reached ? k.sol : "#ffffff",
+                    color: reached ? "#ffffff" : "#9ca3af",
+                    border: `2px solid ${reached ? k.sol : "#d1d5db"}`,
+                    boxShadow: active ? `0 0 0 4px ${k.fill}` : "none",
+                  }}>
+                  {done ? "✓" : active
+                    ? <span className="inline-block w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    : s.n}
+                </div>
+                {i < SEMANTIC_STEPS.length - 1 && (
+                  <div className="w-0.5 flex-1" style={{ minHeight: "12px", background: done ? k.sol : "#e5e7eb" }} />
+                )}
+              </div>
+              <div className="flex-1 pb-2.5 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium" style={{ color: reached ? "#111827" : "#9ca3af" }}>{s.name}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-medium" style={{ background: k.fill, color: k.txt }}>{k.label}</span>
+                </div>
+                {dec && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {Object.entries(dec)
+                      .filter(([key, v]) => v != null && v !== "" && typeof v !== "object" && !/confidence|rationale/i.test(key))
+                      .map(([key, v]) => (
+                        <span key={key} className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
+                          {SEM_FIELD_LV[key] || key}: <strong>{String(v)}</strong>
+                        </span>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {bpmnXml
+        ? <BpmnDiagram xml={bpmnXml} activeStepId={activeStepId}
+            completedStepIds={completedStepIds} nodeAnnotations={nodeAnnotations} height={240} />
+        : <div className="text-xs text-gray-400">Ielādē procesa diagrammu…</div>}
+    </div>
+  );
+}
+
+// In-pane UAPF process runner + live BPMN visualization for one document.
+function DocumentProcessPanel({ doc, notify }) {
+  const [sessions, setSessions] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [bpmnXml, setBpmnXml] = useState(null);
+  const [activeStepId, setActiveStepId] = useState(null);
+  const [completedStepIds, setCompletedStepIds] = useState([]);
+  const [nodeDecisions, setNodeDecisions] = useState({});
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState(null);
+  const timer = useRef(null);
+  const activeRef = useRef(null);
+  const doneRef = useRef([]);
+  const finishedRef = useRef(false);
+  const decisionsRef = useRef({});
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const rows = await api(`/uapf/sessions?doc=${doc.id}`);
+      const list = Array.isArray(rows) ? rows : [];
+      setSessions(list);
+      setSel((prev) => prev || list[0] || null);
+    } catch (e) { setError(e.message); }
+  }, [doc.id]);
+  useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api(`/uapf/packages/${UAPF_PKG}/bpmn/${UAPF_PROC}.xml`);
+        const xml = await res.text();
+        if (!cancelled) setBpmnXml(xml);
+      } catch { /* diagram is optional */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const fetchSteps = async (sessionId) => {
+    try {
+      const d = await api(`/uapf/sessions/${encodeURIComponent(sessionId)}`);
+      const chain = d.audit_chain_live || d.audit_chain_persisted || [];
+      const ordered = [];
+      const decisions = {};
+      for (const ev of chain) {
+        const sid = ev.uapfstepid || ev.stepId || ev.step_id || (ev.data && ev.data.stepId);
+        const t = ev.type || ev.event_type || "";
+        if (sid && t.includes("step.entered") && !ordered.includes(sid)) ordered.push(sid);
+        if (t.includes("decision.evaluated") && sid && ev.data && ev.data.result) {
+          decisions[sid] = ev.data.result;
+        }
+      }
+      return { ordered, decisions };
+    } catch { return { ordered: [], decisions: {} }; }
+  };
+
+  useEffect(() => {
+    if (!sel || running) return;
+    let cancelled = false;
+    (async () => {
+      const { ordered, decisions } = await fetchSteps(sel.session_id);
+      if (cancelled) return;
+      setActiveStepId(null);
+      setCompletedStepIds(sel.state === "completed" ? ordered : []);
+      setNodeDecisions(decisions || {});
+    })();
+    return () => { cancelled = true; };
+  }, [sel && sel.session_id]);
+
+  // Real-time process visualization: fire the run un-awaited (it executes
+  // server-side while the engine posts step CloudEvents to the host audit
+  // endpoint), and concurrently poll /uapf/live to drive the diagram as
+  // each BPMN node is actually entered.
+  const runProcess = async () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    setError(null);
+    setRunning(true);
+    setActiveStepId(null);
+    setCompletedStepIds([]);
+    activeRef.current = null;
+    doneRef.current = [];
+    decisionsRef.current = {};
+    setNodeDecisions({});
+    finishedRef.current = false;
+
+    // cursor: highest UAPF audit-event id already on record for this doc
+    let since = 0;
+    try {
+      const cur = await api(`/uapf/live/${doc.id}`);
+      since = cur && typeof cur.max_id === "number" ? cur.max_id : 0;
+    } catch { /* start from 0 */ }
+
+    // fire the run — do NOT await; the engine streams audit events while it runs
+    api(`/uapf/run-now/${doc.id}`, {
+      method: "POST",
+      body: JSON.stringify({ event_type: "manual", package_id: UAPF_PKG, process_id: UAPF_PROC }),
+    }).catch((e) => { if (!finishedRef.current) setError(e.message); });
+
+    const finish = (failed) => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+      if (activeRef.current && !doneRef.current.includes(activeRef.current)) {
+        doneRef.current.push(activeRef.current);
+      }
+      setCompletedStepIds([...doneRef.current]);
+      setActiveStepId(null);
+      setRunning(false);
+      if (notify) notify(failed ? "UAPF process neizdevās" : "UAPF process izpildīts");
+      loadSessions();
+    };
+
+    // poll the live audit feed and light up the diagram in real time
+    const poll = async () => {
+      if (finishedRef.current) return;
+      try {
+        const r = await api(`/uapf/live/${doc.id}?since=${since}`);
+        const evs = r && Array.isArray(r.events) ? r.events : [];
+        for (const ev of evs) {
+          if (typeof ev.id === "number") since = Math.max(since, ev.id);
+          const d = ev.details || {};
+          const t = d.type || ev.event_type || "";
+          const sid = d.uapfstepid || d.stepId || d.step_id || (d.data && d.data.stepId);
+          if (t.includes("step.entered") && sid) {
+            if (activeRef.current && activeRef.current !== sid &&
+                !doneRef.current.includes(activeRef.current)) {
+              doneRef.current.push(activeRef.current);
+            }
+            activeRef.current = sid;
+            setCompletedStepIds([...doneRef.current]);
+            setActiveStepId(sid);
+          } else if (t.includes("decision.evaluated") && d.uapfstepid && d.data && d.data.result) {
+            decisionsRef.current[d.uapfstepid] = d.data.result;
+            setNodeDecisions({ ...decisionsRef.current });
+          } else if (t.includes("session.completed")) {
+            finish(false); return;
+          } else if (t.includes("session.failed")) {
+            finish(true); return;
+          }
+        }
+      } catch { /* transient — keep polling */ }
+      if (!finishedRef.current) timer.current = setTimeout(poll, 600);
+    };
+    poll();
+
+    // safety: never spin forever
+    setTimeout(() => { if (!finishedRef.current) finish(false); }, 45000);
+  };
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const out = sel && sel.output_payload && typeof sel.output_payload === "object" ? sel.output_payload : null;
+  const highlight = ["topic", "priority", "slaHours", "department", "languageDetected"];
+  const hasCompletedRun = sessions.some((sn) => sn.state === "completed");
+  const nodeAnnotations = Object.fromEntries(
+    Object.entries(nodeDecisions)
+      .map(([nid, res]) => [nid, decisionLabel(res)])
+      .filter(([, lbl]) => lbl),
+  );
+
+  return (
+    <div className="border-t pt-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-gray-500">UAPF process</div>
+        <button onClick={runProcess} disabled={running || hasCompletedRun}
+          className="text-xs px-3 py-1.5 bg-violet-600 text-white rounded disabled:opacity-50 flex items-center gap-1">
+          {running ? (<><span className="animate-spin">⦵</span> Izpildās...</>)
+            : hasCompletedRun ? ("✓ Klasifikācija veikta")
+            : ("▶ Palaist klasifikācijas procesu")}
+        </button>
+      </div>
+
+      {error && (
+        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{error}</div>
+      )}
+
+      {sessions.length === 0 && !running && (
+        <div className="text-xs text-gray-400">
+          Klasifikācija vēl nav veikta. Nospiediet "Palaist klasifikācijas procesu", lai to palaistu.
+        </div>
+      )}
+
+      {(sessions.length > 0 || running) && bpmnXml && (
+        <BpmnDiagram xml={bpmnXml} activeStepId={activeStepId}
+          completedStepIds={completedStepIds} nodeAnnotations={nodeAnnotations} height={300} />
+      )}
+
+      {out && (
+        <div className="bg-gray-50 border border-gray-200 rounded p-2 space-y-1">
+          <div className="text-xs font-medium text-gray-600">Klasifikācijas rezultāts</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+            {highlight.filter((k) => out[k] != null).map((k) => (
+              <div key={k}>
+                <span className="text-gray-400">{k}: </span>
+                <span className="font-medium">{String(out[k])}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sessions.length > 0 && (
+        <div className="space-y-1">
+          {sessions.slice(0, 5).map((s) => (
+            <button key={s.session_id} onClick={() => setSel(s)}
+              className={`w-full text-left text-xs rounded border px-2 py-1 flex items-center justify-between ${
+                sel && sel.session_id === s.session_id
+                  ? "border-violet-300 bg-violet-50"
+                  : "border-gray-200 bg-white hover:border-gray-300"}`}>
+              <span className="font-mono text-gray-500">{s.session_id}</span>
+              <span className={s.state === "completed" ? "text-emerald-600"
+                : s.state === "failed" ? "text-red-600" : "text-amber-600"}>{s.state}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -424,10 +931,13 @@ function DocumentDetail({ doc, onAction, notify }) {
     } catch (e) { notify(e.message, "error"); }
   };
 
+  const [vizCid, setVizCid] = useState(null);
   const generateMetadata = async () => {
+    const cid = (window.crypto?.randomUUID?.() || `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    setVizCid(cid);
     try {
       setGenerating(true);
-      const r = await api(`/documents/${doc.id}/generate-metadata`, { method: "POST" });
+      const r = await api(`/documents/${doc.id}/generate-metadata?correlation_id=${encodeURIComponent(cid)}`, { method: "POST" });
       const conf = r.semanticSummary?.aiConfidenceScore;
       const route = r.route || "unknown";
       notify(`Metadati ģenerēti (maršruts: ${route}, ticamība: ${conf ? Math.round(conf * 100) + '%' : 'N/A'})`);
@@ -559,6 +1069,7 @@ function DocumentDetail({ doc, onAction, notify }) {
           </>
         )}
       </div>
+      <SemanticProcessViz correlationId={vizCid} />
 
       {doc.semantic_summary?.aiConfidenceScore != null && (
         <div className="text-xs flex items-center gap-2">
@@ -604,20 +1115,40 @@ function DocumentDetail({ doc, onAction, notify }) {
         )}
       </div>
 
+      <DocumentProcessPanel doc={doc} notify={notify} />
+
       {doc.events?.length > 0 && (
         <div className="border-t pt-3">
           <div className="text-xs font-medium text-gray-500 mb-2">Lifecycle ({doc.events.length} events)</div>
           <div className="space-y-1">
-            {doc.events.map((e, i) => {
+            {[...doc.events].sort((a, b) => (b.id || 0) - (a.id || 0)).map((e, i) => {
               const details = typeof e.details === "string" ? JSON.parse(e.details || "{}") : (e.details || {});
+              const isUapf = (e.event_type || "").startsWith("UAPF/");
+              const shortType = (e.event_type || "").replace(/^UAPF\/(dev\.uapf\.)?/, "");
+              const det = isUapf ? uapfEventDetail(e.event_type, details) : null;
               return (
-                <div key={i} className="bg-gray-50 rounded px-3 py-2 text-xs">
+                <div key={e.id || i} className={`rounded px-3 py-2 text-xs ${det && det.accent ? "bg-violet-50" : "bg-gray-50"}`}>
                   <div className="flex items-center gap-2">
-                    <span>{EI[e.event_type] || "📎"}</span>
-                    <span className="font-medium">{e.event_type}</span>
-                    {e.vc_submitted ? <span className="text-emerald-500">✓ VC</span> : <span className="text-red-400">✗ no VC</span>}
+                    <span>{isUapf ? (UAPF_EI[shortType] || "⚙️") : (EI[e.event_type] || "📎")}</span>
+                    <span className="font-medium">{isUapf ? shortType : e.event_type}</span>
+                    {!isUapf && (e.vc_submitted
+                      ? <span className="text-emerald-500">✓ VC</span>
+                      : <span className="text-red-400">✗ no VC</span>)}
                     <span className="text-gray-400 ml-auto">{new Date(e.created_at).toLocaleString()}</span>
                   </div>
+                  {det && det.line && (
+                    <div className={`mt-1 text-[11px] ${det.err ? "text-red-500" : "text-gray-600"}`}>{det.line}</div>
+                  )}
+                  {det && det.kv && det.kv.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {det.kv.map((kvStr, j) => (
+                        <span key={j} className="px-1.5 py-0.5 rounded bg-white border border-gray-200 text-[10px] text-gray-700">{kvStr}</span>
+                      ))}
+                    </div>
+                  )}
+                  {det && det.rules && (
+                    <div className="mt-0.5 text-[10px] text-gray-400">rules: {det.rules}</div>
+                  )}
                   {details.sdk_error && (
                     <div className="mt-1 text-red-500 text-[10px]">SDK error: {details.sdk_error}</div>
                   )}
@@ -865,34 +1396,212 @@ function BriefingDisplay({ briefing }) {
   );
 }
 
-function UsersPage({ notify }) {
-  const [users, setUsers] = useState([]); const [show, setShow] = useState(false);
-  const load = async () => { try { const d = await api("/users"); setUsers(d.items); } catch(e){notify(e.message,"error");} };
-  useEffect(()=>{load();},[]);
-  const [nf, setNf] = useState({email:"",password:"",full_name:"",role:"operator"});
-  const create = async () => { try { await api("/users",{method:"POST",body:JSON.stringify(nf)}); notify("User created"); setShow(false); load(); } catch(e){notify(e.message,"error");} };
+function UsersPage({ notify, user, route, navigate }) {
+  const ROLES = ["operator", "viewer", "admin", "superadmin"];
+  const userRef = route && route[1] ? route[1] : null;
+  const [users, setUsers] = useState([]);
+  const [show, setShow] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [nf, setNf] = useState({ email: "", password: "", full_name: "", role: "operator" });
+  const [edit, setEdit] = useState({});
+  const [pw, setPw] = useState("");
+
+  const load = async () => {
+    try { const d = await api("/users"); setUsers(d.items || []); }
+    catch (e) { notify(e.message, "error"); }
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!userRef) { setEditId(null); return; }
+    const u = users.find(x => String(x.id) === userRef);
+    if (u) {
+      setEditId(u.id);
+      setEdit({ full_name: u.full_name, role: u.role, department: u.department || "", is_active: u.is_active });
+    }
+  }, [userRef, users]);
+
+  const create = async () => {
+    try {
+      await api("/users", { method: "POST", body: JSON.stringify(nf) });
+      notify("Lietotājs izveidots");
+      setShow(false);
+      setNf({ email: "", password: "", full_name: "", role: "operator" });
+      load();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const openEdit = (u) => {
+    setPw("");
+    navigate(editId === u.id ? "/users" : "/users/" + u.id);
+  };
+
+  const saveEdit = async (id) => {
+    try {
+      await api(`/users/${id}`, { method: "PATCH", body: JSON.stringify(edit) });
+      notify("Izmaiņas saglabātas");
+      navigate("/users");
+      load();
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const resetPw = async (id) => {
+    if ((pw || "").length < 8) return notify("Parolei jābūt vismaz 8 rakstzīmes", "error");
+    try {
+      await api(`/users/${id}/reset-password`, { method: "POST", body: JSON.stringify({ new_password: pw }) });
+      notify("Parole atiestatīta");
+      setPw("");
+    } catch (e) { notify(e.message, "error"); }
+  };
+
   return (<div>
-    <div className="flex items-center justify-between mb-4"><h2 className="text-xl font-bold">Users</h2><button onClick={()=>setShow(!show)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">+ New User</button></div>
-    {show && <div className="bg-white border rounded-lg p-4 mb-4 grid grid-cols-2 gap-2">
-      {[["email","Email"],["password","Password"],["full_name","Full Name"]].map(([k,l])=>(<input key={k} value={nf[k]} onChange={e=>setNf({...nf,[k]:e.target.value})} placeholder={l} type={k==="password"?"password":"text"} className="text-sm px-3 py-2 border rounded" />))}
-      <select value={nf.role} onChange={e=>setNf({...nf,role:e.target.value})} className="text-sm px-3 py-2 border rounded">
-        {["operator","admin","viewer","superadmin"].map(r=><option key={r} value={r}>{r}</option>)}
-      </select>
-      <button onClick={create} className="text-sm px-4 py-2 bg-emerald-600 text-white rounded col-span-2">Create</button>
-    </div>}
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="text-xl font-bold">Lietotāju pārvaldība</h2>
+      <button onClick={() => setShow(!show)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">
+        {show ? "Aizvērt" : "+ Jauns lietotājs"}
+      </button>
+    </div>
+    {show && (
+      <div className="bg-white border rounded-lg p-4 mb-4 grid grid-cols-2 gap-2">
+        {[["email", "E-pasts"], ["password", "Parole"], ["full_name", "Pilns vārds"]].map(([k, l]) => (
+          <input key={k} value={nf[k]} onChange={e => setNf({ ...nf, [k]: e.target.value })}
+            placeholder={l} type={k === "password" ? "password" : "text"}
+            className="text-sm px-3 py-2 border rounded" />
+        ))}
+        <select value={nf.role} onChange={e => setNf({ ...nf, role: e.target.value })}
+          className="text-sm px-3 py-2 border rounded">
+          {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+        </select>
+        <button onClick={create} className="text-sm px-4 py-2 bg-emerald-600 text-white rounded col-span-2">
+          Izveidot lietotāju
+        </button>
+      </div>
+    )}
     <div className="bg-white rounded-lg border divide-y">
-      {users.map(u=>(<div key={u.id} className="px-4 py-3 flex items-center justify-between">
-        <div><div className="text-sm font-medium">{u.full_name}</div><div className="text-xs text-gray-400">{u.email}</div></div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{u.role}</span>
-          <span className={`w-2 h-2 rounded-full ${u.is_active?"bg-green-400":"bg-red-400"}`}/>
+      {users.map(u => (
+        <div key={u.id}>
+          <div className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer"
+            onClick={() => openEdit(u)}>
+            <div>
+              <div className="text-sm font-medium">
+                {u.full_name}
+                {u.id === user.id && <span className="ml-2 text-[10px] text-emerald-600">(jūs)</span>}
+              </div>
+              <div className="text-xs text-gray-400">{u.email}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{u.role}</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded ${u.is_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                {u.is_active ? "aktīvs" : "neaktīvs"}
+              </span>
+              <span className="text-gray-300 text-xs">{editId === u.id ? "▲" : "▼"}</span>
+            </div>
+          </div>
+          {editId === u.id && (
+            <div className="px-4 py-3 bg-gray-50 border-t space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500">Pilns vārds</label>
+                  <input value={edit.full_name || ""} onChange={e => setEdit({ ...edit, full_name: e.target.value })}
+                    className="w-full text-sm px-3 py-1.5 border rounded" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Nodaļa</label>
+                  <input value={edit.department || ""} onChange={e => setEdit({ ...edit, department: e.target.value })}
+                    className="w-full text-sm px-3 py-1.5 border rounded" />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">Loma</label>
+                  <select value={edit.role || "operator"} onChange={e => setEdit({ ...edit, role: e.target.value })}
+                    className="w-full text-sm px-3 py-1.5 border rounded">
+                    {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={!!edit.is_active}
+                      onChange={e => setEdit({ ...edit, is_active: e.target.checked })} />
+                    Aktīvs konts
+                  </label>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => saveEdit(u.id)}
+                  className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">
+                  Saglabāt izmaiņas
+                </button>
+                <span className="text-gray-300">|</span>
+                <input type="password" value={pw} onChange={e => setPw(e.target.value)}
+                  placeholder="Jauna parole" className="text-sm px-3 py-1.5 border rounded" />
+                <button onClick={() => resetPw(u.id)}
+                  className="text-sm px-3 py-1.5 border border-amber-400 text-amber-700 rounded hover:bg-amber-50">
+                  Atiestatīt paroli
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-      </div>))}
+      ))}
+    </div>
+  </div>);
+}
+
+function AccountPage({ notify, user }) {
+  const [cur, setCur] = useState("");
+  const [nw, setNw] = useState("");
+  const [cf, setCf] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (nw.length < 8) return notify("Jaunajai parolei jābūt vismaz 8 rakstzīmes", "error");
+    if (nw !== cf) return notify("Jaunās paroles nesakrīt", "error");
+    try {
+      setBusy(true);
+      await api("/users/me/change-password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: cur, new_password: nw }),
+      });
+      notify("Parole veiksmīgi nomainīta");
+      setCur(""); setNw(""); setCf("");
+    } catch (e) { notify(e.message, "error"); }
+    finally { setBusy(false); }
+  };
+
+  return (<div>
+    <h2 className="text-xl font-bold mb-4">Mans konts</h2>
+    <div className="space-y-4 max-w-lg">
+      <div className="bg-white rounded-lg border p-4">
+        <h3 className="font-semibold text-sm mb-3">Profils</h3>
+        {[["Pilns vārds", user.full_name], ["E-pasts", user.email], ["Loma", user.role]].map(([l, v]) => (
+          <div key={l} className="flex text-sm py-1">
+            <span className="text-gray-500 w-32">{l}</span>
+            <span className="font-medium">{v}</span>
+          </div>
+        ))}
+      </div>
+      <div className="bg-white rounded-lg border p-4">
+        <h3 className="font-semibold text-sm mb-3">Mainīt paroli</h3>
+        <div className="space-y-2">
+          {[["Pašreizējā parole", cur, setCur], ["Jaunā parole", nw, setNw], ["Apstipriniet jauno paroli", cf, setCf]].map(([l, v, set]) => (
+            <input key={l} type="password" value={v} onChange={e => set(e.target.value)}
+              placeholder={l} className="w-full text-sm px-3 py-2 border rounded" />
+          ))}
+          <button onClick={submit} disabled={busy || !cur || !nw || !cf}
+            className="text-sm px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50">
+            {busy ? "Saglabā..." : "Mainīt paroli"}
+          </button>
+          <p className="text-xs text-gray-400">Parolei jābūt vismaz 8 rakstzīmes garai.</p>
+        </div>
+      </div>
     </div>
   </div>);
 }
 
 function OrgsPage({ notify, onViewLogs }) {
+  // Slug rule mirrors backend ORG_CODE_RE: lowercase, digits, hyphens; no edge hyphens; 2-64 chars
+  const ORG_CODE_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
+  const [editing, setEditing] = useState(null);   // org being edited
+  const [deleting, setDeleting] = useState(null); // org pending delete
+  const [busy, setBusy] = useState({});
   const [orgs, setOrgs] = useState([]); const [show, setShow] = useState(false);
   const [sdkStatus, setSdkStatus] = useState(null); const [orgDidStatus, setOrgDidStatus] = useState({});
   const [registering, setRegistering] = useState({}); const [checking, setChecking] = useState({});
@@ -998,12 +1707,45 @@ function OrgsPage({ notify, onViewLogs }) {
       )}
     </div>}
 
-    {show && <div className="bg-white border rounded-lg p-4 mb-4 flex gap-2">
-      <input value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})} placeholder="Name" className="flex-1 text-sm px-3 py-2 border rounded" />
-      <input value={nf.code} onChange={e=>setNf({...nf,code:e.target.value})} placeholder="Code" className="w-32 text-sm px-3 py-2 border rounded" />
-      <input value={nf.description} onChange={e=>setNf({...nf,description:e.target.value})} placeholder="Description" className="flex-1 text-sm px-3 py-2 border rounded" />
-      <button onClick={create} className="text-sm px-4 py-2 bg-emerald-600 text-white rounded">Create</button>
-    </div>}
+    {show && (() => {
+      const codeEmpty = nf.code.trim() === "";
+      const codeValid = codeEmpty || ORG_CODE_RE.test(nf.code);
+      const nameValid = nf.name.trim().length > 0;
+      const canCreate = !codeEmpty && codeValid && nameValid;
+      return (
+        <div className="bg-white border rounded-lg p-4 mb-4 space-y-2">
+          <div className="flex gap-2">
+            <input value={nf.name} onChange={e=>setNf({...nf,name:e.target.value})}
+                   placeholder="Name" className="flex-1 text-sm px-3 py-2 border rounded" />
+            <input value={nf.code} onChange={e=>setNf({...nf,code:e.target.value.toLowerCase()})}
+                   placeholder="slug (e.g. tiesibsargs)"
+                   className={`w-48 text-sm px-3 py-2 border rounded font-mono ${
+                     codeEmpty ? "" : (codeValid ? "border-emerald-300" : "border-red-300 bg-red-50")
+                   }`} />
+            <input value={nf.description} onChange={e=>setNf({...nf,description:e.target.value})}
+                   placeholder="Description" className="flex-1 text-sm px-3 py-2 border rounded" />
+            <button onClick={create} disabled={!canCreate}
+                    className="text-sm px-4 py-2 bg-emerald-600 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed">
+              Create
+            </button>
+          </div>
+          <div className="text-xs space-y-0.5">
+            <div className={`${codeEmpty ? "text-gray-500" : (codeValid ? "text-emerald-700" : "text-red-600")}`}>
+              {codeEmpty ? (
+                <>Slug becomes part of the DID: <code className="bg-gray-100 px-1">did:web:register.opendms.dev:org:&lt;slug&gt;</code></>
+              ) : codeValid ? (
+                <>✓ Slug is valid. The DID will be <code className="bg-emerald-50 px-1">did:web:register.opendms.dev:org:{nf.code}</code></>
+              ) : (
+                <>✗ Invalid slug. Use only lowercase letters, digits and hyphens; 2-64 chars; cannot start or end with a hyphen.</>
+              )}
+            </div>
+            <div className="text-gray-400">
+              The slug is permanent — it's embedded in every Verifiable Credential this org will ever issue. Plan accordingly.
+            </div>
+          </div>
+        </div>
+      );
+    })()}
     <div className="bg-white rounded-lg border divide-y">
       {orgs.map(o=>{
         const status = orgDidStatus[o.id];
@@ -1027,7 +1769,13 @@ function OrgsPage({ notify, onViewLogs }) {
               <div>Local DID matches SDK: <strong>{status.matches_local_org_did ? "Yes" : "No"}</strong></div>
             </div>}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => setEditing({...o})}
+                    className="text-xs px-3 py-1 border rounded text-gray-700 hover:bg-gray-50">Edit</button>
+            {!o.is_default && (
+              <button onClick={() => setDeleting(o)}
+                      className="text-xs px-3 py-1 border border-red-200 rounded text-red-600 hover:bg-red-50">Delete</button>
+            )}
             {!o.is_default && (
               <button onClick={() => makeDefault(o)} className="text-xs px-3 py-1 border rounded text-emerald-700">Make Default</button>
             )}
@@ -1043,6 +1791,102 @@ function OrgsPage({ notify, onViewLogs }) {
         </div>);
       })}
     </div>
+
+    {editing && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setEditing(null)}>
+        <div className="bg-white rounded-lg p-5 w-[500px]" onClick={e=>e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Edit Organization</h3>
+            <button onClick={()=>setEditing(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div className="text-xs text-gray-500 mb-3">
+            Code and DID are immutable. To rename the slug you must create a new organization and migrate documents.
+          </div>
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs text-gray-500">Name</label>
+              <input value={editing.name || ""} onChange={e=>setEditing({...editing, name:e.target.value})}
+                     className="w-full text-sm px-3 py-2 border rounded" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Code (read-only)</label>
+              <input value={editing.code || ""} readOnly
+                     className="w-full text-sm px-3 py-2 border rounded font-mono bg-gray-50 text-gray-500" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Description</label>
+              <textarea value={editing.description || ""} onChange={e=>setEditing({...editing, description:e.target.value})}
+                        rows={3} className="w-full text-sm px-3 py-2 border rounded" />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={()=>setEditing(null)} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button>
+            <button disabled={busy[editing.id] || !editing.name?.trim()}
+                    onClick={async()=>{
+                      setBusy(p=>({...p, [editing.id]:true}));
+                      try {
+                        await api(`/organizations/${editing.id}`, {
+                          method:"PUT",
+                          body: JSON.stringify({ name: editing.name, description: editing.description }),
+                        });
+                        notify("Organization updated");
+                        setEditing(null);
+                        load();
+                      } catch(e) { notify(e.message, "error"); }
+                      finally { setBusy(p=>({...p, [editing.id]:false})); }
+                    }}
+                    className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded disabled:opacity-50">
+              {busy[editing.id] ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {deleting && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setDeleting(null)}>
+        <div className="bg-white rounded-lg p-5 w-[500px]" onClick={e=>e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-red-700">Delete Organization</h3>
+            <button onClick={()=>setDeleting(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div className="text-sm space-y-2">
+            <p>Delete <strong>{deleting.name}</strong> (code <code className="bg-gray-100 px-1">{deleting.code}</code>)?</p>
+            {deleting.org_did && (
+              <p className="text-xs text-gray-500">
+                DID <code className="bg-gray-100 px-1 break-all">{deleting.org_did}</code> will remain registered in the central VeriDocs Registry — only the local OpenDMS row is removed.
+              </p>
+            )}
+            <div className="flex items-start gap-2 mt-3 p-2 bg-amber-50 border border-amber-200 rounded">
+              <input type="checkbox" id="cascade-cb" checked={!!deleting._cascade}
+                     onChange={e=>setDeleting({...deleting, _cascade:e.target.checked})}
+                     className="mt-0.5" />
+              <label htmlFor="cascade-cb" className="text-xs text-amber-900">
+                <strong>Also delete all documents</strong> belonging to this org, including their lifecycle events, classifications, UAPF sessions, and AI logs. This cannot be undone.
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button onClick={()=>setDeleting(null)} className="text-sm px-3 py-1.5 border rounded text-gray-600">Cancel</button>
+            <button disabled={busy[deleting.id]}
+                    onClick={async()=>{
+                      setBusy(p=>({...p, [deleting.id]:true}));
+                      try {
+                        const q = deleting._cascade ? "?cascade=true" : "";
+                        const r = await api(`/organizations/${deleting.id}${q}`, { method:"DELETE" });
+                        notify(`Deleted ${r.name}${r.documents_deleted ? ` and ${r.documents_deleted} documents` : ""}`);
+                        setDeleting(null);
+                        load();
+                      } catch(e) { notify(e.message, "error"); }
+                      finally { setBusy(p=>({...p, [deleting.id]:false})); }
+                    }}
+                    className="text-sm px-3 py-1.5 bg-red-600 text-white rounded disabled:opacity-50">
+              {busy[deleting.id] ? "Deleting..." : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     {didViewer && (
       <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={()=>setDidViewer(null)}>

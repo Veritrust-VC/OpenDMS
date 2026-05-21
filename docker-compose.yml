@@ -6,27 +6,29 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-opendms}
       POSTGRES_DB: opendms
     ports:
-      - "127.0.0.1:${DB_PORT:-15433}:5432"
+    - 127.0.0.1:${DB_PORT:-15433}:5432
     volumes:
-      - pgdata:/var/lib/postgresql/data
+    - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U opendms"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U opendms
       interval: 5s
       timeout: 3s
       retries: 10
-
+    restart: unless-stopped
   redis:
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
-
+    - 127.0.0.1:${REDIS_PORT:-16379}:6379
+    restart: unless-stopped
   sdk:
     build:
       context: ${SDK_PATH:-/home/VeriDocs-SDK}
     ports:
-      - "127.0.0.1:${SDK_PORT:-13100}:3100"
+    - 127.0.0.1:${SDK_PORT:-13100}:3100
     environment:
-      PORT: "3100"
+      PORT: '3100'
       SECRET_KEY: ${SECRET_KEY}
       ORG_DID: ${ORG_DID:-}
       REGISTRY_URL: ${REGISTRY_URL:-https://api.register.opendms.dev}
@@ -39,26 +41,26 @@ services:
       VC_HOST_BASE: ${VC_HOST_BASE:-https://sdk.opendms.dev}
       CONTEXT_ORIGIN: ${CONTEXT_ORIGIN:-https://sdk.opendms.dev}
     volumes:
-      - sdk-data:/app/status-data
-      - sdk-state:/app/data 
+    - sdk-data:/app/status-data
+    - sdk-state:/app/data
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+    - host.docker.internal:host-gateway
     networks:
-      - default
-      - veridocs-register_default
-
+    - default
+    - veridocs-register_default
+    restart: unless-stopped
   api:
     build:
       context: .
       target: development
     ports:
-      - "127.0.0.1:${API_PORT:-18002}:8002"
+    - 127.0.0.1:${API_PORT:-18002}:8002
     environment:
       OPENDMS_DATABASE_URL: postgresql://opendms:${DB_PASSWORD:-opendms}@db:5432/opendms
       OPENDMS_REDIS_URL: redis://redis:6379
       OPENDMS_SDK_URL: http://sdk:3100
       OPENDMS_SDK_API_KEY: ${VERAMO_API_KEY:-}
-      OPENDMS_SDK_ENABLED: "true"
+      OPENDMS_SDK_ENABLED: 'true'
       OPENDMS_STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       OPENDMS_STORAGE_LOCAL_PATH: /data/documents
       OPENDMS_STORAGE_S3_ENDPOINT: ${S3_ENDPOINT:-}
@@ -68,7 +70,7 @@ services:
       OPENDMS_JWT_SECRET: ${JWT_SECRET}
       OPENDMS_SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@opendms.local}
       OPENDMS_SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-admin}
-      OPENDMS_DEBUG: "true"
+      OPENDMS_DEBUG: 'true'
       OPENDMS_LLM_PROVIDER: ${OPENDMS_LLM_PROVIDER:-anthropic}
       OPENDMS_LLM_API_KEY: ${OPENDMS_LLM_API_KEY:-}
       OPENDMS_LLM_BASE_URL: ${OPENDMS_LLM_BASE_URL:-}
@@ -88,17 +90,17 @@ services:
       uapf-engine:
         condition: service_healthy
     volumes:
-      - ./src:/app/src
-      - doc-storage:/data/documents
+    - ./src:/app/src
+    - doc-storage:/data/documents
+    - ./uapf-packages:/uapf-packages:ro
     restart: unless-stopped
-
   frontend:
     build:
       context: ./frontend
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-28080}:80"
+    - ${FRONTEND_PORT:-28080}:80
     depends_on:
-      - api
+    - api
     restart: unless-stopped
 
 
@@ -113,16 +115,25 @@ services:
     environment:
       PORT: "4000"
       PACKAGES_DIR: /packages
+      # Canonical UAPF v1.1 schemas — turn on strict validation per
+      # UAPF-specification/schemas/. Engine's UapfValidator loads:
+      # manifest.schema.json, policies.schema.json, resource-binding.schema.json
+      UAPF_SCHEMAS_DIR: /uapf-schemas
     volumes:
-      - ./uapf-packages:/packages:ro
+      - ./uapf-packages:/packages
+      - ./uapf-schemas:/uapf-schemas:ro
+    networks:
+      - default
+      - deploy_default
     restart: unless-stopped
 
 volumes:
-  pgdata:
-  sdk-data:
-  sdk-state:
-  doc-storage:
-
+  pgdata: null
+  sdk-data: null
+  sdk-state: null
+  doc-storage: null
 networks:
   veridocs-register_default:
+    external: true
+  deploy_default:
     external: true
