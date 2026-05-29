@@ -1,27 +1,48 @@
 # OpenDMS
 
-Open Document Management System with built-in W3C DID/VC lifecycle tracking.
+> **OpenDMS is an open-source, AI-native document management system that effectively automates the organization's document lifecycle through machine-readable, manageable processes and classifiers, so every automated or human-in-the-loop document transaction is safely guardrailed and cryptographically signed for provenance.**
 
-Every document gets a decentralized identifier. Every lifecycle event — created, sent, received, assigned, decided, archived — is signed as a Verifiable Credential via the VeriDocs SDK and submitted to the central VeriDocs Register. Documents stay local; only trust evidence crosses organizational boundaries.
-
-**Integrates with:** [VeriDocs SDK](https://github.com/Veritrust-VC/VeriDocs-SDK) (sidecar) + [VeriDocs Register](https://github.com/Veritrust-VC/VeriDocs-Register) (central registry)
+**Companion projects:** [VeriDocs SDK](https://github.com/Veritrust-VC/VeriDocs-SDK) (trust sidecar) · [VeriDocs Register](https://github.com/Veritrust-VC/VeriDocs-Register) (optional central trust node)
 
 ---
 
+## The problem
+
+Conventional document management systems are built around a **document database**. Two consequences follow, and both are now disqualifying:
+
+- **They store what happened, not what it means.** A row records a document's id, status, and date. *Why* it was classified that way, *which* rule applied, *whether* the handling was correct — all of that is implicit, living in a clerk's memory and a binder of procedures. There is little for AI to reason over and nothing to audit except the records themselves.
+- **Their processes are hardcoded.** How documents are routed, classified, and retained is compiled into the application. Changing a procedure means a ticket, a release, a redeploy — and the system can't be reused across organizations without forking the code.
+
+A modern DMS has to be **AI-native at the core**, which is only possible if it is built around **processes and events** instead of a static document store, with the processes and classifiers held *externally* so they can change without touching the system.
+
+## Architecture — the core idea
+
+OpenDMS is designed around **events and processes**, not around a document database.
+
+- **Lifecycle events are first-class and signed.** Every transition — created → registered → sent → received → assigned → decided → archived — is recorded as an append-only event and signed as a W3C Verifiable Credential (JsonWebSignature2020 / ES256K) via the VeriDocs SDK.
+- **Processes and classifiers live outside the core.** What happens to a document is defined in external, machine-readable process packages (BPMN / DMN / CMMN via the UAPF format), loaded by the runtime engine and swappable without redeploying OpenDMS.
+- **AI proposes; the process governs; a human approves; the event records.** That pipeline is what makes the AI both native and safe.
+
+> **Current implementation vs. direction.** Today OpenDMS persists current document state in a relational registry **and** records every lifecycle transition in an append-only, signed event log (`document_events`). The direction of travel is full event-sourcing — the event log as the single source of truth with the registry and a knowledge graph as regenerable projections. The concept above describes that design; the README marks where the current build already implements it.
+
 ## Features
 
-- **Document CRUD** with registration numbers, metadata, file attachments
-- **Lifecycle workflow**: draft → registered → sent → received → assigned → decided → archived
-- **VeriDocs SDK integration**: every state transition creates a signed VC (JsonWebSignature2020 / ES256K)
-- **Pluggable document storage**: local filesystem, S3-compatible (MinIO/AWS), Azure Blob
-- **User management**: superadmin, admin, operator, viewer roles
-- **Organization management** with DID registration via SDK
-- **Document register structure**: hierarchical, importable/exportable as JSON
-- **Classification schema**: hierarchical, importable/exportable as JSON
-- **Archive export**: batch documents into ZIP with metadata + files
-- **Document tracking**: query VeriDocs Registry for cross-institutional lifecycle
-- **Customizable branding**: logo, name, primary color — configurable from admin UI
-- **React admin frontend** with login, dashboard, documents workplace, admin settings
+- **Document lifecycle** — created → registered → sent → received → assigned → decided → archived, every transition a signed VC.
+- **External process & classifier packs** — UAPF process packages drive routing, classification, and structured extraction; added without code changes (see [UAPF Integration](#uapf-integration)).
+- **AI review (human-in-the-loop)** — generate an editable semantic summary and sensitivity assessment before a document is created; reviewed, never auto-applied.
+- **Pluggable storage** — local filesystem, S3-compatible (MinIO/AWS/Wasabi), or Azure Blob.
+- **Registers & classification** — hierarchical, importable/exportable as JSON.
+- **Users & organizations** — role-based access (superadmin / admin / operator / viewer); per-organization DID registration via the SDK.
+- **Audit trail** — internal integration audit log with `X-Trace-Id` propagation across every OpenDMS → SDK call; combined OpenDMS + SDK audit viewer.
+- **Document tracking** — query the VeriDocs Register for cross-node lifecycle.
+- **Self-hosted & brandable** — name, logo, primary color configurable from the admin UI; one `docker compose up`.
+
+## Two ways to run it
+
+- **Standalone node** — one self-contained instance. Full DMS, full AI pipeline, signed lifecycle events anchored to the instance's own DID. No external dependency, no central server.
+- **Trust network** — several OpenDMS nodes (subsidiaries, departments, partner organizations) register their organization DIDs with a shared, **optional** central trust node (VeriDocs Register). Signed events resolve into one verifiable chain across every node; a document is traceable by its originating submitter while each node keeps its own data.
+
+The central node is **optional and additive** — start standalone, add the Register later by pointing nodes at it. No migration, no re-issued identities.
 
 ## Quick Start
 
@@ -34,48 +55,33 @@ docker compose up --build
 
 - **Frontend**: http://localhost:8080
 - **API (Swagger)**: http://localhost:8002/docs
-- **Default login**: admin@opendms.local / admin
+- **Default login**: admin@opendms.local / admin (change in `.env`)
 
-## Architecture
+## Stack
 
 ```
 ┌──────────────────┐    ┌────────────────┐    ┌──────────────────┐
 │  React Frontend   │───▶│  FastAPI API    │───▶│  PostgreSQL      │
-│  :8080 (nginx)    │    │  :8002          │    │  :5433           │
-└──────────────────┘    │                 │    └──────────────────┘
-                        │    ┌─────────┐  │    ┌──────────────────┐
-                        │───▶│  Redis   │  │    │  Document Storage │
-                        │    │  :6379   │  │    │  Local/S3/Azure   │
-                        │    └─────────┘  │    └──────────────────┘
-                        │                 │
-                        │───▶ VeriDocs SDK sidecar (:3100)
-                        │    │  Veramo agent (VeriTrust fork)
-                        │    │  DID creation, VC signing
-                        │    │  → submits to VeriDocs Register
-                        └────┘
+│  nginx            │    │  business logic │    │  registry + event│
+└──────────────────┘    │  + event log    │    │  log             │
+                        │    ┌─────────┐  │    └──────────────────┘
+                        │───▶│  Redis   │  │    ┌──────────────────┐
+                        │    └─────────┘  │    │  Document Storage │
+                        │                 │    │  Local/S3/Azure   │
+                        │───▶ VeriDocs SDK sidecar (DID/VC signing)
+                        │───▶ UAPF runtime engine (external process packs)
+                        └─────────────────┘
 ```
 
-## SDK and Registry Integration Model
+## SDK & Register integration
 
-OpenDMS does not talk directly to VeriDocs Register. All DID and VC lifecycle operations are brokered through the VeriDocs SDK sidecar.
+OpenDMS never talks to the Register directly. All DID/VC operations are brokered through the **VeriDocs SDK sidecar**, so the SDK is the single trust component that gets hardened and audited.
 
-**Flow:** `OpenDMS -> VeriDocs SDK -> VeriDocs Register`
+**Flow:** `OpenDMS → VeriDocs SDK → VeriDocs Register`
 
-- OpenDMS calls SDK APIs only.
-- SDK handles authentication to VeriDocs Register.
-- VeriDocs Register API is protected by bearer authentication.
+The `sdk` service needs `REGISTRY_URL`, `REGISTRY_EMAIL`, `REGISTRY_PASSWORD`. When the Register runs as a separate Compose stack, attach the `sdk` service to the Register's Docker network so it can reach the Register API. Health/readiness is exposed via `GET /api/health` and `GET /api/sdk/setup-status`; a returned local DID alone does not prove central registration — treat a DID as centrally ready only when `registry_connected`, `registry_authenticated`, `org_registered_in_registry`, `org_verified_in_registry`, and `org_did_configured` are all true.
 
-## Docker deployment requirements for SDK/Register
-
-The `sdk` service in `docker-compose.yml` must receive these environment variables:
-
-- `REGISTRY_URL`
-- `REGISTRY_EMAIL`
-- `REGISTRY_PASSWORD`
-
-When VeriDocs Register runs in a separate Compose stack, attach the OpenDMS `sdk` service to the Register Docker network (for example `veridocs-register_default`) so SDK can reach the Register API container directly.
-
-## Storage Configuration
+## Storage configuration
 
 | Backend | Env vars | Description |
 |---------|----------|-------------|
@@ -83,250 +89,78 @@ When VeriDocs Register runs in a separate Compose stack, attach the OpenDMS `sdk
 | `s3` | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Any S3-compatible (MinIO, AWS, Wasabi) |
 | `azure` | `OPENDMS_STORAGE_AZURE_CONNECTION_STRING`, `OPENDMS_STORAGE_AZURE_CONTAINER` | Azure Blob Storage |
 
-## API Endpoints
+## API endpoints (selected)
 
-### Auth
-| `POST` | `/api/auth/login` | Login, returns JWT token |
-
-### Documents
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/auth/login` | Login, returns JWT |
 | `GET/POST` | `/api/documents` | List / create documents |
 | `GET` | `/api/documents/{id}` | Document detail + events |
-| `POST` | `/api/documents/{id}/upload` | Upload file attachment |
-| `GET` | `/api/documents/{id}/download` | Download file |
-| `POST` | `/api/documents/{id}/send` | Send → DocumentSent VC |
-| `POST` | `/api/documents/{id}/receive` | Receive → DocumentReceived VC |
-| `POST` | `/api/documents/{id}/assign` | Assign → DocumentAssigned VC |
-| `POST` | `/api/documents/{id}/decide` | Decide → DocumentDecided VC |
-| `POST` | `/api/documents/{id}/archive` | Archive → DocumentArchived VC |
-| `GET` | `/api/documents/{id}/track` | Track via VeriDocs Registry |
-
-### Admin
-| `GET/POST` | `/api/users` | User management |
-| `GET/POST` | `/api/organizations` | Organization management |
+| `POST` | `/api/documents/{id}/upload` `/download` | File attachment in/out |
+| `POST` | `/api/documents/{id}/{send\|receive\|assign\|decide\|archive}` | Lifecycle transition → signed VC |
+| `GET` | `/api/documents/{id}/track` | Track via VeriDocs Register |
+| `POST` | `/api/documents/{id}/extract-summary` | AI semantic summary (review flow) |
+| `GET` | `/api/intelligence/{topics\|warnings\|similar/{id}}` | Intelligence over the corpus |
+| `GET/POST` | `/api/users`, `/api/organizations` | Admin management |
 | `POST` | `/api/organizations/{id}/register-did` | Register org DID via SDK |
-| `GET/POST` | `/api/registers` | Document register structure |
-| `POST/GET` | `/api/registers/import` `/export` | Import/export register schema |
-| `GET/POST` | `/api/classifications` | Classification schema |
-| `POST/GET` | `/api/classifications/import` `/export` | Import/export classifications |
-| `POST` | `/api/archive/batches` | Create archive batch |
-| `POST` | `/api/archive/batches/{id}/export` | Export batch as ZIP |
-| `GET/PUT` | `/api/settings` | System settings (branding, etc.) |
-| `GET` | `/api/settings/branding` | Public branding (no auth) |
+| `GET/POST` | `/api/registers`, `/api/classifications` (+ `/import` `/export`) | Structure & schema |
+| `POST` | `/api/archive/batches` (+ `/export`) | Archive batches → ZIP |
+| `GET/PUT` | `/api/settings`; `GET /api/settings/branding` | System settings / public branding |
+| `GET` | `/api/audit/{logs\|sdk-logs\|summary}` | Audit trail |
 
+## AI review flow (human-in-the-loop)
 
-## SDK and Registry status
+1. Select a file in the **Documents** create form.
+2. Click **Generate AI Summary** — OpenDMS calls the SDK to extract a summary.
+3. The frontend shows editable `semanticSummary` + `sensitivityControl` fields.
+4. Review/edit and submit; the reviewed data is stored locally and included in document metadata.
 
-The platform exposes dedicated endpoints to separate application health from SDK onboarding readiness:
-
-- `GET /api/health`: Overall OpenDMS health (database, storage, SDK service status, and aggregated SDK setup snapshot).
-- `GET /api/sdk/setup-status`: Direct SDK onboarding and registry connectivity/auth state.
-- `POST /api/organizations/{id}/register-did`: Starts/updates organization onboarding in SDK and stores the local organization DID.
-- `GET /api/organizations/{id}/did-status`: Compares local OpenDMS org DID with the SDK active org DID and returns match status plus registry auth indicators.
-
-Key SDK setup fields:
-
-- `registry_connected`: SDK can reach VeriDocs Register over network.
-- `registry_auth_configured`: SDK has registry credentials configured.
-- `registry_authenticated`: SDK successfully authenticated to Register.
-- `registry_auth_error`: Auth failure details returned by SDK (if any).
-
-### Partial setup warning
-
-A returned DID alone does **not** prove full end-to-end readiness. A local DID can exist even when the central Register entry is not yet created.
-
-Common partial causes:
-
-1. Registry credentials are missing (`REGISTRY_EMAIL` / `REGISTRY_PASSWORD`).
-2. Registry authentication failed (invalid or expired credentials).
-3. Registry connectivity problem (SDK cannot reach Register).
-
-
-## Organizations UI updates
-
-Organizations now include `name`, `code`, and `description` at creation time.
-The Organizations page exposes:
-
-- Local DID
-- SDK setup status
-- Registry connectivity
-- Local DID vs SDK DID match status
-
-## Related Repositories
-
-| Repository | Description |
-|------------|-------------|
-| [VeriDocs-Register](https://github.com/Veritrust-VC/VeriDocs-Register) | Central DID/VC registry |
-| [VeriDocs-SDK](https://github.com/Veritrust-VC/VeriDocs-SDK) | SDK sidecar (runs alongside OpenDMS) |
-
-## License
-
-MIT
-
-## Audit logging and trace propagation
-
-OpenDMS now stores an internal integration audit trail in PostgreSQL (`integration_audit_log`) for organization and document operations initiated from OpenDMS.
-
-Each OpenDMS → SDK call propagates a trace identifier using `X-Trace-Id`. If one is not provided, OpenDMS generates a UUID. Actor context (`X-Actor-User-Id`, `X-Actor-Email`) is included for traceability only and is not added to SDK authentication tokens.
-
-### Audit APIs
-
-- `GET /api/audit/logs` — OpenDMS local audit rows
-- `GET /api/audit/logs/{id}` — OpenDMS local audit row detail
-- `GET /api/audit/sdk-logs` — proxied SDK audit logs
-- `GET /api/audit/sdk-logs/{id}` — proxied SDK audit log detail
-- `GET /api/audit/summary` — combined high-level counters (OpenDMS + SDK)
-
-Supported local-log filters: `limit`, `offset`, `action`, `success`, `trace_id`, `organization_id`.
-
-## Audit Logs GUI
-
-The admin sidebar includes **Audit Logs** with:
-
-- summary cards for OpenDMS actions, SDK sync calls, and failures
-- tabs for OpenDMS logs vs SDK logs
-- trace/action/success/org filters
-- row detail modal with full trace ID, request/response summaries, and error details
-
-Organizations page also includes **View sync logs** to jump into filtered audit logs by organization and trace context.
-
-## Central registration truth model
-
-A DID should be treated as centrally ready only when all are true:
-
-- `registry_connected`
-- `registry_authenticated`
-- `org_registered_in_registry`
-- `org_verified_in_registry`
-- `org_did_configured`
-
-If any of these are false, onboarding is partial (local DID may exist, but central verification is incomplete).
-
-## March 2026 semantic summary review flow (SDK-driven)
-
-OpenDMS now supports an additive SDK-centered AI review workflow:
-
-1. User uploads/selects a file in the **Documents** create form.
-2. User clicks **Generate AI Summary** (OpenDMS calls SDK `extract-summary`).
-3. Frontend displays editable `semanticSummary` + `sensitivityControl` fields.
-4. User reviews/edits and submits document creation.
-5. OpenDMS stores reviewed semantic data locally and includes it in SDK document creation metadata.
-
-### New document fields
-
-`documents` table now includes:
-
-- `semantic_summary` (`JSONB`)
-- `sensitivity_control` (`JSONB`)
-- `ai_summary_status` (`TEXT`, default `PENDING`)
-
-Status behavior:
-
-- `GENERATED`: SDK produced summary and user did not revise it yet.
-- `VALIDATED`: user reviewed/edited and submitted.
-- `SKIPPED`: created without AI summary.
-
-### New API endpoints
-
-- `POST /api/documents/{id}/extract-summary`
-- `POST /api/documents/extract-summary-preview`
-- `GET /api/intelligence/topics`
-- `GET /api/intelligence/similar/{doc_id}`
-- `GET /api/intelligence/warnings`
-- `POST /api/intelligence/briefing`
-
-### Privacy note
-
-OpenDMS keeps raw file content local by default. The SDK-centered intelligence flow is designed so only semantic abstractions (summary/sensitivity metadata) are centralized when policy allows it.
+Document fields: `semantic_summary` (JSONB), `sensitivity_control` (JSONB), `ai_summary_status` (`GENERATED` / `VALIDATED` / `SKIPPED`). Raw file content stays local by default; only semantic abstractions are centralized when policy allows.
 
 ## UAPF Integration
 
-OpenDMS embeds as a host in the [UAPF Integration Protocol (UAPF-IP)](https://github.com/UAPFormat/UAPF-IP) ecosystem — see `src/opendms/uapf/`. It both invokes UAPF processes (when document lifecycle events match configured triggers) and serves the host-side capability endpoints the runtime calls back into.
+OpenDMS is a **host** in the [UAPF Integration Protocol](https://github.com/UAPFormat/UAPF-IP) ecosystem (see `src/opendms/uapf/`). When a document lifecycle event matches a configured trigger, OpenDMS starts a process session on the external **UAPF runtime engine**, which walks the machine-readable process package and calls back into OpenDMS's host capabilities. The bridge is **fail-safe**: any error in the UAPF path is caught and logged; lifecycle transitions never break because of it.
 
-### Architecture
-
-```
-                ┌────────────────────────────────────────────┐
-                │  OpenDMS API (FastAPI)                     │
-                │                                            │
-   user ───► POST /api/documents/{id}/receive                │
-                  │                                          │
-                  │ _transition() succeeds                   │
-                  │                                          │
-                  ▼                                          │
-              on_document_event("document.received", id)     │
-                  │                                          │
-                  │ matches process_triggers                 │
-                  │ asyncio.create_task(...)                 │
-                  │                                          │
-                  ▼                                          │
-              UapfClient.start_session(...)                  │
-                  │                                          │
-                  └─► POST /uapf/start-session ──────►┌──────┴────────────┐
-                                                      │ uapf-engine       │
-                                                      │ (Docker service)  │
-                                                      │                   │
-                                       walks BPMN ◄───┤ /packages/*.uapf  │
-                                                      │                   │
-                  ┌── POST /uapf/host/capability/*  ◄──┘                   │
-                  │                                                       │
-                  ▼                                                       │
-            handlers.py dispatches:                                       │
-              document.fetch → DB + storage                               │
-              ai.redact      → LLM via opendms.ai                         │
-              ai.extract     → LLM via opendms.ai                         │
-              data.write     → complaint_classifications table            │
-              event.emit     → document_events table                      │
-                                                                          │
-            session.completed audit ──► document_events ◄─────────────────┘
-                │
-                ▼
-            User sees document with uapf_classification in metadata
-```
-
-### Tables added
-
-- `process_triggers` — configures which lifecycle events fire which UAPF packages
-- `uapf_sessions` — log of every triggered session + outcome
-- `complaint_classifications` — the structured result of the Tiesibsargs flow
-
-A seed `process_triggers` row is inserted at first DB initialization:
-
-| name | trigger_event | package_id | match_condition |
-|---|---|---|---|
-| Tiesibsargs iesniegums classification | `document.received` | `lv.tiesibsargs.iesnieguma-izskatisana` | `{}` (matches all) |
-
-To restrict to a specific register or classification, update the row's `match_condition` JSONB.
-
-### Capabilities advertised
-
-OpenDMS offers these via `GET /uapf/host/manifest`:
+**Host capabilities** advertised via `GET /uapf/host/manifest`:
 
 | Capability | Implementation |
 |---|---|
-| `document.fetch@1` | Reads from `documents` table + storage backend; extracts text via existing `_extract_text()` |
-| `ai.redact@1` | Calls `opendms.ai._complete_json` with Latvian PII-aware prompt; falls back to regex scrub if AI unavailable |
-| `ai.extract@1` | Calls `opendms.ai._complete_json` with the Tiesibsargs facet schema; returns all-false defaults on failure |
-| `data.write@1` | Inserts into `complaint_classifications`; mirrors to `documents.metadata.uapf_classification` |
-| `event.emit@1` | Appends to `document_events` with `event_type=iesniegums.classified` |
+| `document.fetch@1` | Reads from the documents store + storage backend; extracts text |
+| `ai.redact@1` | PII-aware redaction via `opendms.ai`; regex fallback if AI unavailable |
+| `ai.extract@1` | Structured extraction per the schema declared by the active process package |
+| `data.write@1` | Writes the structured result and mirrors it to `documents.metadata` |
+| `event.emit@1` | Appends a typed event to the document event log |
 
-### Config
+**Adding a process:**
+1. Drop a `.uapf` package into `./uapf-packages/`.
+2. `docker compose restart uapf-engine`.
+3. Configure a `process_triggers` row (which lifecycle event fires which package, with an optional match condition).
 
-All settings live under the `OPENDMS_` env prefix:
+> **Deployment-specific content stays out of core.** Process packages, their classifiers and result schemas, triggers, and branding are **deployment configuration**, not product code. They belong in a deployment overlay (or a private packages directory), never committed to this repository. A process hardcoded into the application is a bug against this design.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `OPENDMS_UAPF_ENABLED` | `true` | Master switch |
-| `OPENDMS_UAPF_ENGINE_URL` | `http://uapf-engine:4000` | Reachable URL of the runtime |
-| `OPENDMS_UAPF_ENGINE_AUTH_TOKEN` | _(empty)_ | Bearer token for both directions |
-| `OPENDMS_OPENDMS_HOST_DID` | `did:web:opendms.local` | Identifier the host advertises |
-| `OPENDMS_OPENDMS_HOST_BASE_URL` | `http://api:8002` | Where the runtime should call back to |
+Config (under the `OPENDMS_` env prefix): `OPENDMS_UAPF_ENABLED` (master switch), `OPENDMS_UAPF_ENGINE_URL`, `OPENDMS_UAPF_ENGINE_AUTH_TOKEN`, `OPENDMS_OPENDMS_HOST_DID`, `OPENDMS_OPENDMS_HOST_BASE_URL`. Disable with `UAPF_ENABLED=false` or by setting a trigger's `is_active = false`.
 
-### Adding a new UAPF process
+## Standards & no lock-in
 
-1. Drop the `.uapf` package into `./uapf-packages/`.
-2. `docker compose restart uapf-engine` so it picks the new file up.
-3. Insert a row into `process_triggers` (via SQL or, when the UI is built, the admin panel).
+W3C DID Core and Verifiable Credentials; `did:web` over HTTPS (no blockchain); eIDAS 2.0 / EUDI-Wallet aligned; standard stack (FastAPI · React · PostgreSQL · Redis); pluggable storage. No lock-in at any layer — not the DMS, the storage, the process engine, the classifier, the AI model, or the trust registry.
 
-### Disabling
+## Related repositories
 
-Set `UAPF_ENABLED=false` in `.env`, or set the matching `process_triggers` row's `is_active = false`. The bridge is fail-safe: any exception in the UAPF path is caught and logged; document lifecycle transitions never break because of a UAPF error.
+| Repository | Role |
+|------------|------|
+| [VeriDocs-SDK](https://github.com/Veritrust-VC/VeriDocs-SDK) | Trust sidecar — runs alongside OpenDMS (required for signing) |
+| [VeriDocs-Register](https://github.com/Veritrust-VC/VeriDocs-Register) | Optional central trust node for networked deployments |
+
+## License
+
+OpenDMS is **source-available and dual-licensed** — see [LICENSE](LICENSE).
+
+- **Free** for personal, academic, internal non-commercial, and evaluation/trial use.
+- **Commercial license required** for SaaS/hosting, redistribution, embedding, provision to external users, rebranding, and any revenue-generating use.
+- **Public-sector / government use** requires a commercial license in **all** cases.
+
+Trial freely; for licensing options contact **hello@veritrust.vc**.
+
+> The licensing documents are a draft pending review by legal counsel.
+
+© 2026 VeriTrust.vc
