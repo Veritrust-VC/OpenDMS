@@ -39,3 +39,4 @@ frontend/dist/
 frontend/node_modules/
 engine-src/node_modules/
 engine-src/dist/
+sdk-agent-store/

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import UapfPage from "./UapfPage.jsx";
 import BpmnDiagram from "./components/BpmnDiagram.jsx";
+import LandingPage from "./LandingPage.jsx";
+import ConnectionsPage from "./ConnectionsPage.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -137,13 +139,18 @@ export default function App() {
   useEffect(() => { if (authToken) { api("/users/me/profile").then(setUser).catch(()=>{ authToken=""; localStorage.removeItem("opendms_token"); }); } }, []);
   useEffect(() => { if (user && route.length === 0) navigate("/dashboard", { replace: true }); }, [user]);
 
-  if (!user) return <LoginPage onLogin={(u,t)=>{ authToken=t; localStorage.setItem("opendms_token",t); _isLoggingOut = false; setUser(u); }} brand={brand} />;
+  if (!user) {
+    const _onLogin = (u,t)=>{ authToken=t; localStorage.setItem("opendms_token",t); _isLoggingOut = false; setUser(u); navigate("/dashboard", { replace: true }); };
+    if (route[0] === "login") return <LoginPage onLogin={_onLogin} brand={brand} />;
+    return <LandingPage brand={brand} onLoginClick={()=>navigate("/login")} />;
+  }
 
   const isAdmin = ["superadmin","admin"].includes(user.role);
   const nav = [
     { id:"dashboard",       label:"Dashboard",       icon:"\u{1F4CA}" },
     { id:"documents",       label:"Documents",       icon:"\u{1F4C4}" },
     { id:"uapf",            label:"UAPF procesi",    icon:"\u{2699}\uFE0F", roles:["superadmin","admin"] },
+    { id:"connections",     label:"Connections",     icon:"\u{1F50C}", roles:["superadmin","admin"] },
     { id:"intelligence",    label:"Intelligence",    icon:"\u{1F9E0}" },
     { id:"registers",       label:"Registers",       icon:"\u{1F4C1}", roles:["superadmin","admin"] },
     { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F", roles:["superadmin","admin"] },
@@ -191,6 +198,7 @@ export default function App() {
         {page==="archive" && <ArchivePage notify={notify} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
+        {page==="connections" && <ConnectionsPage notify={notify} />}
         {page==="audit" && <AuditLogsPage notify={notify} initialFilters={auditFilters} />}
         {page==="settings" && <SettingsPage notify={notify} brand={brand} setBrand={setBrand} />}
         {page==="account" && <AccountPage notify={notify} user={user} />}

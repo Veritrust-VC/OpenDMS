@@ -514,6 +514,50 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
               AND trigger_event = 'document.received'
         );
 
+        -- ──────────────────────────────────────────────────────────
+        -- Connectors: connections to external systems.
+        --
+        -- config holds NON-SECRET configuration only (URLs, project keys,
+        -- mailbox names). Credentials live in connection_secrets, encrypted,
+        -- and are never returned by any read endpoint. Phase 2 would replace
+        -- that table with a Vault / Key Vault reference; the secret_ref
+        -- indirection exists so that swap does not touch this table.
+        -- ──────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS connections (
+            id BIGSERIAL PRIMARY KEY,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            org_id BIGINT REFERENCES organizations(id),
+            config JSONB NOT NULL DEFAULT '{}',
+            secret_ref TEXT,
+            is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            status TEXT NOT NULL DEFAULT 'not_configured'
+                CHECK (status IN ('not_configured','active','degraded','error','paused')),
+            last_verified_at TIMESTAMPTZ,
+            last_error TEXT,
+            created_by BIGINT REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_kind_name
+            ON connections(kind, name);
+        CREATE INDEX IF NOT EXISTS idx_connections_enabled
+            ON connections(kind, is_enabled);
+
+        -- Encrypted credential bundles. Deliberately a separate table so that
+        -- no SELECT * on connections can leak a token, and so that access to
+        -- it can be audited and restricted independently.
+        CREATE TABLE IF NOT EXISTS connection_secrets (
+            ref TEXT PRIMARY KEY,
+            ciphertext TEXT NOT NULL,
+            updated_by BIGINT REFERENCES users(id),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        DROP TRIGGER IF EXISTS trg_connections_updated ON connections;
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
         CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
@@ -543,5 +587,7 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
         DROP TRIGGER IF EXISTS trg_users_updated ON users;
         CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+        CREATE TRIGGER trg_connections_updated BEFORE UPDATE ON connections
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
     """)

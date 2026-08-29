@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     sdk_api_key: str = ""
     sdk_enabled: bool = True
 
+    # Connector credential encryption (see connectors/secrets.py).
+    # urlsafe-base64 32-byte Fernet key. If blank it is derived from jwt_secret,
+    # which works out of the box but ties every stored credential to that secret.
+    connector_secret_key: str = ""
+
     # Branding
     brand_name: str = "OpenDMS"
     brand_logo_url: str = ""

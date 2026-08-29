@@ -43,6 +43,7 @@ services:
     volumes:
     - sdk-data:/app/status-data
     - sdk-state:/app/data
+    - ./sdk-agent-store/database.sqlite:/app/database.sqlite
     extra_hosts:
     - host.docker.internal:host-gateway
     networks:

@@ -526,4 +526,44 @@ HANDLERS = {
     "event/emit":     (handle_event_emit,     {"namespace": "event",    "operation": "emit",   "version": 1}),
 }
 
+
+# ─────────────────────────────────────────────────────────────
+# connector/* — external system connectors
+#
+# Generated from the connector registry rather than hand-listed, so the host
+# manifest cannot drift away from the drivers that actually exist. Placeholder
+# connectors are registered too: a process author needs to see the capability
+# in the manifest and get a structured "not implemented, here is what is
+# missing" answer, instead of a 422 that looks like a typo in the BPMN.
+# ─────────────────────────────────────────────────────────────
+
+def _connector_handler(capability_key: str):
+    async def handler(ctx: dict) -> dict:
+        from opendms.connectors.runtime import run_capability
+
+        result = await run_capability(
+            capability_key,
+            ctx.get("input") or {},
+            {
+                "session_id": ctx.get("session_id"),
+                "step_id": ctx.get("step_id"),
+                "trace_id": ctx.get("session_id"),
+            },
+        )
+        return {"output": result.as_dict()}
+
+    handler.__name__ = "handle_" + capability_key.replace("/", "_").replace(".", "_").replace("-", "_")
+    return handler
+
+
+def _register_connector_capabilities() -> None:
+    from opendms.connectors import advertised_capabilities
+
+    for cap in advertised_capabilities():
+        key = f"{cap['namespace']}/{cap['operation']}"
+        HANDLERS[key] = (_connector_handler(key), dict(cap))
+
+
+_register_connector_capabilities()
+
 ADVERTISED_CAPABILITIES = [ref for _, ref in HANDLERS.values()]
