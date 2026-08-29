@@ -1,0 +1,312 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/mcp-tools.schema.json",
+  "title": "UAPF MCP Tool Definitions",
+  "description": "Normative schemas for required UAPF MCP tools",
+  "type": "object",
+  "properties": {
+    "tools": {
+      "type": "object",
+      "properties": {
+        "uapf.describe": {
+          "$ref": "#/$defs/describeToolSchema"
+        },
+        "uapf.list": {
+          "$ref": "#/$defs/listToolSchema"
+        },
+        "uapf.run_process": {
+          "$ref": "#/$defs/runProcessToolSchema"
+        },
+        "uapf.evaluate_decision": {
+          "$ref": "#/$defs/evaluateDecisionToolSchema"
+        },
+        "uapf.resolve_resources": {
+          "$ref": "#/$defs/resolveResourcesToolSchema"
+        },
+        "uapf.get_artifact": {
+          "$ref": "#/$defs/getArtifactToolSchema"
+        },
+        "uapf.validate": {
+          "$ref": "#/$defs/validateToolSchema"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "describeToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "required": ["mode", "version", "capabilities"],
+          "properties": {
+            "mode": { "type": "string", "enum": ["package", "workspace"] },
+            "version": { "type": "string" },
+            "capabilities": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "packageId": { "type": "string" },
+            "workspaceId": { "type": "string" }
+          }
+        }
+      }
+    },
+    "listToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "level": { "type": "integer", "minimum": 0, "maximum": 4 },
+            "domain": { "type": "string" },
+            "tags": { "type": "array", "items": { "type": "string" } },
+            "status": { "type": "string", "enum": ["draft", "review", "approved", "deprecated"] },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 },
+            "offset": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["packages", "total"],
+          "properties": {
+            "packages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "name", "level", "version"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "name": { "type": "string" },
+                  "level": { "type": "integer" },
+                  "version": { "type": "string" },
+                  "status": { "type": "string" },
+                  "domain": { "type": "string" },
+                  "tags": { "type": "array", "items": { "type": "string" } },
+                  "runnable": { "type": "boolean" }
+                }
+              }
+            },
+            "total": { "type": "integer" },
+            "hasMore": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "runProcessToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": ["processId"],
+          "properties": {
+            "packageId": { "type": "string", "description": "Package containing the process" },
+            "processId": { "type": "string", "description": "BPMN process element ID" },
+            "version": { "type": "string", "description": "Specific version to run" },
+            "inputs": { "type": "object", "description": "Process input variables" },
+            "options": {
+              "type": "object",
+              "properties": {
+                "async": { "type": "boolean", "default": false },
+                "timeout": { "type": "string", "pattern": "^[0-9]+(s|m|h)$" },
+                "dryRun": { "type": "boolean", "default": false }
+              }
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["executionId", "status"],
+          "properties": {
+            "executionId": { "type": "string" },
+            "status": { "type": "string", "enum": ["completed", "running", "failed", "pending", "cancelled"] },
+            "outputs": { "type": "object" },
+            "error": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" },
+                "details": { "type": "object" }
+              }
+            },
+            "executionLog": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "timestamp": { "type": "string", "format": "date-time" },
+                  "elementId": { "type": "string" },
+                  "action": { "type": "string" },
+                  "targetId": { "type": "string" }
+                }
+              }
+            },
+            "duration": { "type": "integer", "description": "Execution duration in milliseconds" }
+          }
+        }
+      }
+    },
+    "evaluateDecisionToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": ["decisionId"],
+          "properties": {
+            "packageId": { "type": "string" },
+            "decisionId": { "type": "string", "description": "DMN decision element ID" },
+            "version": { "type": "string" },
+            "context": { "type": "object", "description": "Decision input context" }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["result"],
+          "properties": {
+            "result": { "description": "Decision output value" },
+            "hitPolicy": { "type": "string" },
+            "matchedRules": { "type": "array", "items": { "type": "integer" } },
+            "trace": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "decisionId": { "type": "string" },
+                  "inputs": { "type": "object" },
+                  "output": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "resolveResourcesToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "packageId": { "type": "string" },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "processId": { "type": "string" },
+                "taskId": { "type": "string" },
+                "decisionId": { "type": "string" }
+              }
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["bindings"],
+          "properties": {
+            "bindings": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["source", "status"],
+                "properties": {
+                  "source": {
+                    "type": "object",
+                    "properties": {
+                      "type": { "type": "string" },
+                      "ref": { "type": "string" }
+                    }
+                  },
+                  "status": { "type": "string", "enum": ["bound", "unbound", "blocked", "unavailable"] },
+                  "target": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "type": { "type": "string" },
+                      "name": { "type": "string" },
+                      "endpoint": { "type": "string" }
+                    }
+                  },
+                  "mode": { "type": "string" },
+                  "reason": { "type": "string", "description": "Explanation if not bound" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "getArtifactToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "required": ["artifactType"],
+          "properties": {
+            "packageId": { "type": "string" },
+            "artifactType": { "type": "string", "enum": ["manifest", "bpmn", "dmn", "cmmn", "mappings", "policies", "docs"] },
+            "artifactId": { "type": "string", "description": "Specific file/element ID" },
+            "format": { "type": "string", "enum": ["raw", "json", "summary"], "default": "raw" }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["content"],
+          "properties": {
+            "content": { "type": "string" },
+            "contentType": { "type": "string" },
+            "metadata": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "size": { "type": "integer" },
+                "lastModified": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "validateToolSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "packageId": { "type": "string" },
+            "scope": { "type": "string", "enum": ["schema", "semantic", "full"], "default": "full" }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["valid", "errors", "warnings"],
+          "properties": {
+            "valid": { "type": "boolean" },
+            "errors": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/validationIssue" }
+            },
+            "warnings": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/validationIssue" }
+            }
+          }
+        }
+      }
+    },
+    "validationIssue": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "path": { "type": "string" },
+        "line": { "type": "integer" },
+        "column": { "type": "integer" }
+      }
+    }
+  }
+}

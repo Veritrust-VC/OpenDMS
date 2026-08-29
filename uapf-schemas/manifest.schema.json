@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/manifest.schema.json",
+  "$ref": "uapf-manifest.schema.json"
+}

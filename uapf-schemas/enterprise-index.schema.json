@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/enterprise-index.schema.json",
+  "title": "Enterprise Index (enterprise.yaml) Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "level", "enterprise", "packages"],
+  "properties": {
+    "kind": { "type": "string", "enum": ["uapf.enterprise.index"] },
+    "level": { "type": "integer", "enum": [0] },
+    "enterprise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
+        "name": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref", "level"],
+        "properties": {
+          "ref": { "type": "string", "pattern": "^(\\.\\.?/|package:)[^\\s]+$" },
+          "level": { "type": "integer", "minimum": 1, "maximum": 4 },
+          "domain": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

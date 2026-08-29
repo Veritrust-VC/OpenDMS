@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/policies.schema.json",
+  "title": "UAPF Policies Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind"],
+  "properties": {
+    "kind": { "type": "string", "enum": ["uapf.policies"] },
+    "classification": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "dataCategories": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "requiresApproval": { "type": "boolean", "default": false },
+        "approvalRoles": { "type": "array", "items": { "type": "string" } },
+        "auditRequired": { "type": "boolean", "default": true },
+        "maxConcurrentExecutions": { "type": "integer", "minimum": 1 },
+        "allowedEnvironments": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["development", "staging", "production"] }
+        }
+      }
+    },
+    "requiredClaims": {
+      "type": "array",
+      "description": "DID/VC claims required for execution (optional profile)",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string" },
+          "issuer": { "type": "string" },
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "delegation": {
+      "type": "object",
+      "properties": {
+        "allowAgentDelegation": { "type": "boolean", "default": true },
+        "maxDelegationDepth": { "type": "integer", "minimum": 0, "default": 3 },
+        "trustedAgents": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

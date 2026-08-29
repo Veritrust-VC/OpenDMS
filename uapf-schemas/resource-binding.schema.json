@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/resource-binding.schema.json",
+  "type": "object",
+  "required": ["scope", "bindings"],
+  "properties": {
+    "scope": {
+      "type": "object",
+      "properties": {
+        "packageId": { "type": "string" },
+        "processId": { "type": "string" },
+        "taskId": { "type": "string" }
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "target", "status"],
+        "properties": {
+          "type": {
+            "enum": ["system", "human", "agent", "external"]
+          },
+          "target": {
+            "type": "string",
+            "description": "Logical resource identifier"
+          },
+          "invocation": {
+            "enum": ["mcp_tool", "http_api", "a2a", "manual"]
+          },
+          "status": {
+            "enum": ["resolved", "unbound", "blocked"]
+          },
+          "requiredClaims": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

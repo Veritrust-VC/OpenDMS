@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/bpmn-extension.schema.json",
+  "title": "UAPF BPMN Extension Attributes (xmlns:uapf)",
+  "description": "Defines the UAPF extension attributes valid on BPMN elements. The namespace is https://uapf.dev/bpmn/v2.4. UAPF extends BPMN with attributes (not new elements) so existing BPMN parsers and viewers degrade gracefully.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "namespace": {
+      "const": "https://uapf.dev/bpmn/v2.4"
+    },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uapf:algorithmCardRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["validOn", "valueType", "pattern", "description"],
+          "properties": {
+            "validOn": {
+              "type": "array",
+              "items": { "enum": ["serviceTask", "businessRuleTask", "task"] },
+              "default": ["serviceTask"]
+            },
+            "valueType": { "const": "string" },
+            "pattern": { "const": "^algo\\.[a-z0-9][a-z0-9._-]+$" },
+            "description": { "type": "string" }
+          },
+          "default": {
+            "validOn": ["serviceTask"],
+            "valueType": "string",
+            "pattern": "^algo\\.[a-z0-9][a-z0-9._-]+$",
+            "description": "References an Algorithm Card by id. The card MUST exist under the package's algorithms/ folder. Visual renderers SHOULD overlay the algorithm icon, the card id, and a risk-class indicator on the task. The card's io block SHOULD be synthesized as a sibling <bpmn:ioSpecification> on the same task so downstream gateways and data flow are visible (see chapter 13.9)."
+          }
+        }
+      }
+    }
+  }
+}
