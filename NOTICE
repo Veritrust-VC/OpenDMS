@@ -1,0 +1,15 @@
+OpenDMS
+Copyright (c) 2026 Cyberfort SIA (reg. 40203459193), Latvia.
+
+Licensed under the OpenDMS License (source-available, dual) - see LICENSE.
+For commercial licensing: info@cyberfort.lv
+
+--------------------------------------------------------------------------
+THIRD-PARTY DEPENDENCIES
+--------------------------------------------------------------------------
+
+This project depends on third-party open-source packages declared in its
+package manifests. Each remains under its own license (predominantly MIT,
+BSD-3-Clause and Apache-2.0). Nothing in the OpenDMS License alters those
+terms. Dependencies are not vendored into this repository; they are fetched
+at build time from their respective registries.

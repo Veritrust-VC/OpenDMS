@@ -7,7 +7,7 @@ name = "opendms"
 version = "0.1.0"
 description = "Open Document Management System with VeriDocs DID/VC integration"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = {text = "LicenseRef-OpenDMS-Source-Available"}
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",

@@ -3,5 +3,7 @@
   "version": "0.0.0",
   "main": "index.js",
   "types": "index.d.ts",
-  "type": "commonjs"
+  "type": "commonjs",
+  "license": "LicenseRef-OpenDMS-Source-Available",
+  "private": true
 }

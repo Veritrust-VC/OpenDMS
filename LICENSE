@@ -1,28 +1,35 @@
 OpenDMS License
 Source-Available, Dual (Free Use + Commercial)
 
-Copyright (c) 2026 VeriTrust.vc. All rights reserved.
+Copyright (c) 2026 Cyberfort SIA. All rights reserved.
 
-This license is a DRAFT pending review by legal counsel. "VeriTrust.vc"
-("Licensor") is the copyright holder and the intended grantor of commercial
-licenses; a definitive licensing entity will be named on completion of that
-review. Until then, the terms below state the Licensor's intent and the basis
-on which the Software is made available.
+Licensor: Cyberfort SIA, registration number 40203459193, registered in the
+Republic of Latvia, Kojusalas iela 19-62, Riga. Cyberfort SIA is the copyright
+holder of the Software and the sole grantor of commercial licenses for it.
+
+This is a source-available license, not an open-source license as defined by
+the Open Source Initiative. The source is published so that it can be read,
+audited, evaluated and run under Section 2; it is not placed in the public
+domain and it is not licensed for production or commercial use without a
+separate agreement under Section 4.
 
 1. DEFINITIONS
-   "Software" means the original source code and assets of OpenDMS authored by
-   the Licensor in this repository. It does not include third-party components
-   (see Section 6), which are governed by their own licenses.
+   "Software" means the original source code and assets in this repository
+   authored by the Licensor. It does not include third-party components (see
+   Section 7), which are governed by their own licenses.
    "Commercial Use" means any use described in Section 4.
+   "Production Use" means use of the Software to carry out an organization's
+   actual business operations, as distinct from evaluating whether it could.
 
-2. GRANT — FREE USE
+2. GRANT - FREE USE
    The Licensor grants you a free, worldwide, non-exclusive, non-transferable
-   license to use, copy, modify, and run the Software for the following
-   purposes, at no charge:
+   license to use, copy, modify and run the Software, at no charge, for:
      (a) personal use;
      (b) academic and educational use and research;
-     (c) internal, non-commercial use within an organization; and
-     (d) evaluation and trial of the Software.
+     (c) evaluation, trial, testing and proof-of-concept work, including
+         within a commercial or public-sector organization; and
+     (d) internal, non-commercial use within an organization that is not
+         Production Use.
    This grant includes the right to modify the Software for these purposes and
    to share modifications with others who use the Software under this same
    license.
@@ -32,33 +39,50 @@ on which the Software is made available.
    substantial portions of the Software. You may not remove or alter
    attribution, and you may not represent the Software as your own.
 
-4. COMMERCIAL USE — LICENSE REQUIRED
-   A separate commercial license from the Licensor is required for any use that
-   is not covered by Section 2, including without limitation:
-     (a) offering the Software, or a service based on it, to third parties
-         (including SaaS, hosting, or managed services);
-     (b) redistribution, resale, sublicensing, or embedding the Software in a
+4. COMMERCIAL USE - LICENSE REQUIRED
+   A separate written commercial license from the Licensor is required for any
+   use not covered by Section 2, including without limitation:
+     (a) Production Use, including deployment on the user's own infrastructure
+         ("on-premises") for the user's own business processes;
+     (b) offering the Software, or a service based on it, to third parties
+         (including SaaS, hosting or managed services);
+     (c) redistribution, resale, sublicensing, or embedding the Software in a
          product or service provided to others;
-     (c) rebranding or white-labeling the Software; and
-     (d) any revenue-generating use.
+     (d) rebranding or white-labeling the Software; and
+     (e) any revenue-generating use.
 
-5. PUBLIC SECTOR AND GOVERNMENT USE
-   Use by, or on behalf of, any government, public authority, or public-sector
-   body requires a commercial license in ALL cases, including internal and
-   non-revenue use.
+5. REGULATORY SANDBOX AND PILOT PROJECTS
+   Participation in a supervised pilot or regulatory sandbox programme - where
+   the Software is operated for the purpose of evaluating it, under a written
+   agreement with the Licensor or with a programme operator authorised by the
+   Licensor - is evaluation under Section 2(c) and requires no payment, for the
+   duration and scope of that programme. This applies irrespective of whether
+   the participant is a private or a public-sector body.
+   Continuing to use the Software after the programme ends, or adopting it for
+   the participant's own business operations, is Production Use and requires a
+   license under Section 4.
 
-6. THIRD-PARTY COMPONENTS
-   The Software depends on third-party open-source components that remain under
-   their respective licenses. Nothing in this license modifies those terms.
+6. PUBLIC SECTOR AND GOVERNMENT USE
+   Production Use by, or on behalf of, any government, public authority or
+   public-sector body requires a commercial license, including where that use
+   generates no revenue. Evaluation and pilot use remain free under Sections
+   2(c) and 5.
 
-7. NO WARRANTY
+7. THIRD-PARTY COMPONENTS
+   The Software depends on, and in places incorporates, third-party components
+   that remain under their own licenses. Those licenses are unaffected by this
+   one, and where a third-party component's license is more permissive than
+   this license, that component may be used on its own terms. See NOTICE.
+
+8. NO WARRANTY
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
    FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM,
+   LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM,
    OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
    THE SOFTWARE.
 
-8. CONTACT
-   For commercial licensing, including SaaS, redistribution, rebranding, and
-   public-sector use, contact: hello@veritrust.vc
+9. CONTACT
+   For commercial licensing, including Production Use, on-premises deployment,
+   SaaS, redistribution, rebranding and public-sector use:
+   Cyberfort SIA - info@cyberfort.lv
