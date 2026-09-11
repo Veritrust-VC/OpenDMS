@@ -5,6 +5,16 @@ Licensed under the OpenDMS License (source-available, dual) - see LICENSE.
 For commercial licensing: info@cyberfort.lv
 
 --------------------------------------------------------------------------
+VENDORED COMPONENTS
+--------------------------------------------------------------------------
+
+engine-src/vendor/uapf-typescript (@uapf/uapf-typescript)
+    A vendored copy of the UAPF TypeScript reference implementation. It is a
+    reference implementation of an open format and is NOT governed by the
+    OpenDMS License; its own terms apply. Its package manifest is left
+    untouched on purpose.
+
+--------------------------------------------------------------------------
 THIRD-PARTY DEPENDENCIES
 --------------------------------------------------------------------------
 
