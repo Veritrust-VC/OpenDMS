@@ -1,2 +1,68 @@
-@tailwind base; @tailwind components; @tailwind utilities;
-body { -webkit-font-smoothing: antialiased; }
+/* Self-hosted: no request leaves the browser for fonts. Google Fonts' CDN
+   transmits the visitor IP to a third country, which is exactly the kind of
+   thing that gets flagged in a public-sector review. */
+@import '@fontsource/fira-sans/400.css';
+@import '@fontsource/fira-sans/500.css';
+@import '@fontsource/fira-sans/600.css';
+@import '@fontsource/fira-sans/700.css';
+@import '@fontsource/fira-code/400.css';
+@import '@fontsource/fira-code/500.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv05' 1, 'tnum' 0;
+    @apply font-sans text-base text-ink-800 bg-ink-50;
+  }
+  /* Tabular numerals wherever numbers line up in columns. */
+  table, .tabular { font-variant-numeric: tabular-nums; }
+
+  /* One focus treatment everywhere, visible only for keyboard users. */
+  :focus-visible {
+    outline: 2px solid theme('colors.brand.500');
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection { background: theme('colors.brand.100'); }
+
+  h1 { @apply text-xl font-semibold text-ink-900; }
+  h2 { @apply text-lg font-semibold text-ink-900; }
+  h3 { @apply text-base font-semibold text-ink-900; }
+
+  /* Scrollbars that don't shout. */
+  * { scrollbar-width: thin; scrollbar-color: theme('colors.ink.300') transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background: theme('colors.ink.300'); border-radius: 6px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: theme('colors.ink.400'); }
+}
+
+@layer components {
+  .card { @apply bg-white border border-ink-200 rounded-lg shadow-card; }
+  .label-eyebrow { @apply text-2xs font-semibold uppercase tracking-wider text-ink-400; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium
+          transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed
+          px-3 py-1.5 min-h-[34px]; }
+  .btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
+  .btn-quiet   { @apply btn border border-ink-200 text-ink-700 hover:bg-ink-50 bg-white; }
+  .btn-danger  { @apply btn border border-red-200 text-red-600 hover:bg-red-50 bg-white; }
+  .input { @apply w-full rounded-md border border-ink-200 bg-white px-2.5 py-1.5 text-sm
+           text-ink-900 placeholder:text-ink-400 transition-colors
+           focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20; }
+}
+
+/* Respect the OS setting rather than animating regardless. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+}

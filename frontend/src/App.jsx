@@ -3,6 +3,9 @@ import UapfPage from "./UapfPage.jsx";
 import BpmnDiagram from "./components/BpmnDiagram.jsx";
 import LandingPage from "./LandingPage.jsx";
 import ConnectionsPage from "./ConnectionsPage.jsx";
+import AgentPage from "./AgentPage.jsx";
+import BrandMark from "./BrandMark.jsx";
+import Icon from "./Icon.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -118,7 +121,7 @@ export default function App() {
   }, []);
   const page = route[0] || "dashboard";
   const setPage = (id) => navigate("/" + id);
-  const [brand, setBrand] = useState({ brand_name: "OpenDMS", brand_primary_color: "#0d7c66", brand_logo_url: "" });
+  const [brand, setBrand] = useState({ brand_name: "Dokumentu vadības aģents", brand_primary_color: "#0d7c66", brand_logo_url: "" });
   const [toast, setToast] = useState(null);
   const [auditFilters, setAuditFilters] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -146,47 +149,107 @@ export default function App() {
   }
 
   const isAdmin = ["superadmin","admin"].includes(user.role);
-  const nav = [
-    { id:"dashboard",       label:"Dashboard",       icon:"\u{1F4CA}" },
-    { id:"documents",       label:"Documents",       icon:"\u{1F4C4}" },
-    { id:"uapf",            label:"UAPF procesi",    icon:"\u{2699}\uFE0F", roles:["superadmin","admin"] },
-    { id:"connections",     label:"Connections",     icon:"\u{1F50C}", roles:["superadmin","admin"] },
-    { id:"intelligence",    label:"Intelligence",    icon:"\u{1F9E0}" },
-    { id:"registers",       label:"Registers",       icon:"\u{1F4C1}", roles:["superadmin","admin"] },
-    { id:"classifications", label:"Classifications", icon:"\u{1F3F7}\uFE0F", roles:["superadmin","admin"] },
-    { id:"organizations",   label:"Organizations",   icon:"\u{1F3E2}", roles:["superadmin","admin"] },
-    { id:"users",           label:"Users",           icon:"\u{1F465}", roles:["superadmin","admin"] },
-    { id:"ai-instructions", label:"AI Prompts",      icon:"\u{1F4DD}", roles:["superadmin","admin"] },
-    { id:"audit",           label:"Audit Logs",      icon:"\u{1F4DD}", roles:["superadmin","admin"] },
-    { id:"archive",         label:"Archive",         icon:"\u{1F5C3}\uFE0F", roles:["superadmin","admin"] },
-    { id:"settings",        label:"Settings",        icon:"\u{2699}\uFE0F", roles:["superadmin"] },
-    { id:"account",         label:"Mans konts",      icon:"\u{1F464}" },
-  ].filter(n => !n.roles || n.roles.includes(user.role));
+  // Ordered by how central each area is to what this system now does.
+  // The agent leads, then the documents it acts on, then the machinery it
+  // acts through, then configuration, then housekeeping.
+  // Grouped rather than a flat list of fifteen. Fifteen equal-weight items is
+  // a wall — the eye has nowhere to rest and everything looks equally urgent.
+  // The groups say what each area is FOR, which is also the information
+  // hierarchy: what the agent does, what it runs on, what it keeps, who
+  // administers it.
+  const navGroups = [
+    { title: null, items: [
+      { id:"agent",         label:"Aģents",           icon:"agent", roles:["superadmin","admin"] },
+      { id:"dashboard",     label:"Pārskats",         icon:"dashboard" },
+      { id:"documents",     label:"Dokumenti",        icon:"document" },
+      { id:"intelligence",  label:"Analīze",          icon:"insight" },
+    ]},
+    { title: "Procesi", items: [
+      { id:"uapf",          label:"UAPF procesi",     icon:"process", roles:["superadmin","admin"] },
+      { id:"connections",   label:"Savienojumi",      icon:"plug", roles:["superadmin","admin"] },
+      { id:"ai-instructions", label:"MI uzvednes",    icon:"prompt", roles:["superadmin","admin"] },
+    ]},
+    { title: "Reģistrs", items: [
+      { id:"registers",     label:"Reģistri",         icon:"folder", roles:["superadmin","admin"] },
+      { id:"classifications", label:"Klasifikatori",  icon:"tag", roles:["superadmin","admin"] },
+      { id:"archive",       label:"Arhīvs",           icon:"archive", roles:["superadmin","admin"] },
+      { id:"audit",         label:"Audita pieraksti", icon:"audit", roles:["superadmin","admin"] },
+    ]},
+    { title: "Pārvaldība", items: [
+      { id:"organizations", label:"Organizācijas",    icon:"building", roles:["superadmin","admin"] },
+      { id:"users",         label:"Lietotāji",        icon:"users", roles:["superadmin","admin"] },
+      { id:"settings",      label:"Iestatījumi",      icon:"settings", roles:["superadmin"] },
+      { id:"account",       label:"Mans konts",       icon:"user" },
+    ]},
+  ].map(g => ({ ...g, items: g.items.filter(n => !n.roles || n.roles.includes(user.role)) }))
+   .filter(g => g.items.length);
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <aside className={`${sidebarOpen ? "w-52" : "w-14"} bg-white border-r border-gray-200 fixed h-full flex flex-col transition-all duration-200 z-30`}>
-        <div className="px-3 py-3 border-b border-gray-100 flex items-center gap-2">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="w-7 h-7 rounded flex items-center justify-center hover:bg-gray-100 flex-shrink-0" title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}>
-            {brand.brand_logo_url ? <img src={brand.brand_logo_url} className="h-7 w-7 rounded" alt="" /> :
-             <div className="w-7 h-7 rounded text-white font-bold text-xs flex items-center justify-center" style={{background:brand.brand_primary_color}}>D</div>}
+      <aside className={`${sidebarOpen ? "w-60" : "w-16"} bg-white border-r border-ink-200 fixed h-full flex flex-col transition-[width] duration-200 z-30`}>
+        <div className={`h-14 flex items-center gap-2.5 border-b border-ink-100 ${sidebarOpen ? "px-3" : "px-0 justify-center"}`}>
+          <button onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? "Sakļaut izvēlni" : "Izvērst izvēlni"}
+            className="rounded-md hover:opacity-80 transition-opacity cursor-pointer">
+            {brand.brand_logo_url ? <img src={brand.brand_logo_url} className="h-8 w-8 rounded-md" alt="" /> :
+             <BrandMark size={32} color={brand.brand_primary_color} className="rounded-md" />}
           </button>
-          {sidebarOpen && <span className="font-semibold text-sm text-gray-900 truncate">{brand.brand_name}</span>}
+          {sidebarOpen && (
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-ink-900 leading-tight truncate">{brand.brand_name}</div>
+              <div className="text-2xs text-ink-400 leading-tight">Lietvedības procesi</div>
+            </div>
+          )}
         </div>
-        <nav className="flex-1 py-2 px-1.5 space-y-0.5 overflow-y-auto overflow-x-hidden">
-          {nav.map(n=>(
-            <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id!=="audit") setAuditFilters(null); }} title={sidebarOpen ? undefined : n.label}
-              className={`w-full flex items-center gap-2 ${sidebarOpen ? "px-3" : "px-0 justify-center"} py-1.5 rounded text-sm ${page===n.id?"bg-emerald-50 text-emerald-700 font-medium":"text-gray-600 hover:bg-gray-50"}`}>
-              <span className="flex-shrink-0 text-base">{n.icon}</span>{sidebarOpen && <span className="truncate">{n.label}</span>}
-            </button>
+
+        <nav className="flex-1 py-3 px-2 overflow-y-auto overflow-x-hidden">
+          {navGroups.map((g, gi) => (
+            <div key={gi} className={gi ? "mt-5" : ""}>
+              {g.title && sidebarOpen && <div className="label-eyebrow px-2.5 mb-1.5">{g.title}</div>}
+              {g.title && !sidebarOpen && <div className="mx-3 mb-2 border-t border-ink-100" />}
+              <div className="space-y-0.5">
+                {g.items.map(n => {
+                  const active = page === n.id;
+                  return (
+                    <button key={n.id} onClick={()=>{ setPage(n.id); if(n.id!=="audit") setAuditFilters(null); }}
+                      title={sidebarOpen ? undefined : n.label}
+                      aria-current={active ? "page" : undefined}
+                      className={`w-full flex items-center gap-2.5 min-h-[36px] rounded-md text-sm transition-colors cursor-pointer
+                        ${sidebarOpen ? "px-2.5" : "px-0 justify-center"}
+                        ${active ? "bg-brand-50 text-brand-700 font-medium" : "text-ink-600 hover:bg-ink-50 hover:text-ink-900"}`}>
+                      <Icon name={n.icon} size={18} className={active ? "text-brand-600" : "text-ink-400"} />
+                      {sidebarOpen && <span className="truncate">{n.label}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </nav>
-        <div className={`${sidebarOpen ? "px-3" : "px-1 text-center"} py-2 border-t border-gray-100 text-xs text-gray-400`}>
-          {sidebarOpen ? <>{user.full_name} ({user.role})</> : <span title={`${user.full_name} (${user.role})`}>👤</span>}
-          <button onClick={()=>{authToken="";localStorage.removeItem("opendms_token");setUser(null);}} className={`${sidebarOpen ? "block" : "block mx-auto"} mt-1 text-red-400 hover:text-red-600`}>{sidebarOpen ? "Logout" : "⏻"}</button>
+
+        <div className={`border-t border-ink-100 ${sidebarOpen ? "px-3 py-2.5" : "px-1 py-2.5 text-center"}`}>
+          {sidebarOpen ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-ink-700 truncate">{user.full_name}</div>
+                <div className="text-2xs text-ink-400">{user.role}</div>
+              </div>
+              <button onClick={()=>{authToken="";localStorage.removeItem("opendms_token");setUser(null);}}
+                className="text-2xs text-ink-400 hover:text-red-600 transition-colors cursor-pointer shrink-0">
+                Iziet
+              </button>
+            </div>
+          ) : (
+            <button onClick={()=>{authToken="";localStorage.removeItem("opendms_token");setUser(null);}}
+              title={`${user.full_name} — iziet`} aria-label="Iziet"
+              className="mx-auto flex items-center justify-center text-ink-400 hover:text-red-600 transition-colors cursor-pointer">
+              <Icon name="user" size={18} />
+            </button>
+          )}
         </div>
       </aside>
-      <main className={`flex-1 ${sidebarOpen ? "ml-52" : "ml-14"} p-5 transition-all duration-200`}>
+      <main className={`flex-1 ${sidebarOpen ? "ml-60" : "ml-16"} transition-[margin] duration-200`}>
+        <div className="mx-auto max-w-[1400px] px-6 py-6">
         {toast && <div className={`fixed top-3 right-3 z-50 px-4 py-2 rounded-lg shadow text-sm ${toast.t==="error"?"bg-red-50 text-red-700 border border-red-200":"bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>{toast.m}</div>}
         {page==="dashboard" && <DashboardPage notify={notify} user={user} />}
         {page==="documents" && <DocumentsPage notify={notify} user={user} route={route} navigate={navigate} />}
@@ -199,9 +262,11 @@ export default function App() {
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="connections" && <ConnectionsPage notify={notify} />}
+        {page==="agent" && <AgentPage notify={notify} />}
         {page==="audit" && <AuditLogsPage notify={notify} initialFilters={auditFilters} />}
         {page==="settings" && <SettingsPage notify={notify} brand={brand} setBrand={setBrand} />}
         {page==="account" && <AccountPage notify={notify} user={user} />}
+        </div>
       </main>
     </div>
   );
@@ -215,8 +280,8 @@ function LoginPage({ onLogin, brand }) {
       <div className="bg-white rounded-xl shadow-lg p-8 w-96">
         <div className="flex items-center gap-3 mb-6">
           {brand.brand_logo_url ? <img src={brand.brand_logo_url} className="h-10 rounded" alt="" /> :
-           <div className="w-10 h-10 rounded-lg text-white font-bold text-lg flex items-center justify-center" style={{background:brand.brand_primary_color}}>D</div>}
-          <div><div className="font-bold text-lg">{brand.brand_name}</div><div className="text-xs text-gray-400">Document Management System</div></div>
+           <BrandMark size={40} color={brand.brand_primary_color} className="rounded-lg" />}
+          <div><div className="font-bold text-lg">{brand.brand_name}</div><div className="text-xs text-gray-400">Lietvedības procesu aģents</div></div>
         </div>
         <form onSubmit={submit} className="space-y-3">
           <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" className="w-full px-3 py-2 border rounded-lg text-sm" />

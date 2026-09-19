@@ -558,6 +558,101 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
 
         DROP TRIGGER IF EXISTS trg_connections_updated ON connections;
 
+        -- ──────────────────────────────────────────────────────────
+        -- Agent runs: the planner's episodic memory and decision log.
+        --
+        -- This is NOT the same thing as integration_audit_log. That table
+        -- records WHAT happened. For a planner the accountable question is
+        -- WHY THIS ACTION RATHER THAN ANOTHER, because the sequence was
+        -- composed at runtime and no declared package can be replayed to
+        -- explain it. agent_steps therefore stores the thought, the tools
+        -- that were on offer, the one chosen, and the guardrail verdict.
+        -- ──────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS agent_runs (
+            id BIGSERIAL PRIMARY KEY,
+            run_uuid TEXT UNIQUE NOT NULL,
+            goal TEXT NOT NULL,
+            document_id BIGINT REFERENCES documents(id),
+            org_id BIGINT REFERENCES organizations(id),
+            status TEXT NOT NULL DEFAULT 'planning'
+                CHECK (status IN ('planning','awaiting_approval','running',
+                                  'completed','failed','halted')),
+            -- Hard stops. A planner without a budget is an outage waiting
+            -- for a bad prompt; these are enforced in code, not advisory.
+            max_steps INTEGER NOT NULL DEFAULT 12,
+            steps_used INTEGER NOT NULL DEFAULT 0,
+            -- Non-secret scratchpad the planner may write across iterations.
+            scratchpad JSONB NOT NULL DEFAULT '{}',
+            allowed_capabilities JSONB NOT NULL DEFAULT '[]',
+            outcome JSONB,
+            halt_reason TEXT,
+            model_ref TEXT,
+            created_by BIGINT REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+        CREATE INDEX IF NOT EXISTS idx_agent_runs_doc ON agent_runs(document_id);
+
+        CREATE TABLE IF NOT EXISTS agent_steps (
+            id BIGSERIAL PRIMARY KEY,
+            run_id BIGINT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            seq INTEGER NOT NULL,
+            phase TEXT NOT NULL
+                CHECK (phase IN ('observe','think','act','reflect','halt')),
+            -- The planner's stated reason. Nullable because observe/halt
+            -- steps have no deliberation behind them.
+            thought TEXT,
+            offered_capabilities JSONB,
+            action_capability TEXT,
+            action_inputs JSONB,
+            observation JSONB,
+            -- Interceptor verdict. 'require_approval' parks the whole run.
+            guardrail_verdict TEXT
+                CHECK (guardrail_verdict IN ('allow','deny','require_approval')),
+            guardrail_reason TEXT,
+            approved_by BIGINT REFERENCES users(id),
+            approved_at TIMESTAMPTZ,
+            model_ref TEXT,
+            prompt_version TEXT,
+            latency_ms INTEGER,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (run_id, seq)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_steps_run ON agent_steps(run_id, seq);
+
+        DROP TRIGGER IF EXISTS trg_agent_runs_updated ON agent_runs;
+
+        -- Conversation turns attached to a run.
+        --
+        -- Kept apart from agent_steps because they are different kinds of
+        -- record: steps are what the agent did and must never be edited;
+        -- messages are what was said between a person and the agent. Mixing
+        -- them would make the decision log arguable.
+        --
+        -- consumed_at is the interjection mechanism. A message written while a
+        -- run is mid-loop stays unconsumed until the planner picks it up at the
+        -- top of its next iteration, folds it into context, and stamps it. That
+        -- is what makes it possible to correct an agent at step 2 instead of
+        -- watching it spend the remaining budget going the wrong way.
+        CREATE TABLE IF NOT EXISTS agent_messages (
+            id BIGSERIAL PRIMARY KEY,
+            run_id BIGINT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK (role IN ('user','agent','system')),
+            content TEXT NOT NULL,
+            author_id BIGINT REFERENCES users(id),
+            consumed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_messages_run
+            ON agent_messages(run_id, id);
+        CREATE INDEX IF NOT EXISTS idx_agent_messages_pending
+            ON agent_messages(run_id) WHERE consumed_at IS NULL AND role = 'user';
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
         CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
@@ -589,5 +684,7 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE TRIGGER trg_users_updated BEFORE UPDATE ON users
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
         CREATE TRIGGER trg_connections_updated BEFORE UPDATE ON connections
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+        CREATE TRIGGER trg_agent_runs_updated BEFORE UPDATE ON agent_runs
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
     """)

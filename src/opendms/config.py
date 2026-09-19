@@ -49,8 +49,12 @@ class Settings(BaseSettings):
     # which works out of the box but ties every stored credential to that secret.
     connector_secret_key: str = ""
 
+    # Shared bearer for MCP callers with no user identity. Read-only by design:
+    # a credential this coarse must not be able to start work. Blank disables it.
+    mcp_node_token: str = ""
+
     # Branding
-    brand_name: str = "OpenDMS"
+    brand_name: str = "Dokumentu vadības aģents"
     brand_logo_url: str = ""
     brand_primary_color: str = "#0d7c66"
 

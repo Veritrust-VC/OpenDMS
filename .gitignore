@@ -40,3 +40,8 @@ frontend/node_modules/
 engine-src/node_modules/
 engine-src/dist/
 sdk-agent-store/
+
+# editor and deploy backups
+*.bak
+*.bak-*
+*.bak[0-9]*

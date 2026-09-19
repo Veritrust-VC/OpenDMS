@@ -45,13 +45,33 @@ async def _complete(system: str, user_msg: str, temperature=0.2, max_tokens=1500
         return None
     try:
         if cfg["provider"] == "anthropic":
+            headers = {
+                "x-api-key": cfg["api_key"], "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            payload = {"model": cfg["model"], "max_tokens": max_tokens,
+                       "system": system, "messages": [{"role": "user", "content": user_msg}]}
             async with httpx.AsyncClient(timeout=60.0) as c:
-                r = await c.post(f"{cfg['base_url']}/v1/messages", headers={
-                    "x-api-key": cfg["api_key"], "anthropic-version": "2023-06-01", "content-type": "application/json",
-                }, json={"model": cfg["model"], "max_tokens": max_tokens, "temperature": temperature,
-                         "system": system, "messages": [{"role": "user", "content": user_msg}]})
+                # Newer models (claude-sonnet-5 and later) reject `temperature`
+                # outright: "temperature is deprecated for this model", HTTP 400.
+                # Send it, and drop it on that specific complaint rather than
+                # keeping a hard-coded list of which models still accept it —
+                # that list would go stale exactly the way the pinned model
+                # string did.
+                r = await c.post(f"{cfg['base_url']}/v1/messages", headers=headers,
+                                 json={**payload, "temperature": temperature})
+                if r.status_code == 400 and "temperature" in r.text:
+                    logger.info("model %s rejects temperature; retrying without it", cfg["model"])
+                    r = await c.post(f"{cfg['base_url']}/v1/messages",
+                                     headers=headers, json=payload)
                 r.raise_for_status()
-                return r.json()["content"][0]["text"]
+                # Do NOT assume content[0] is the text. Newer models can put a
+                # thinking block first, and indexing [0]["text"] then raises
+                # KeyError('text') — which _complete swallows into a None, so
+                # every caller silently degrades instead of failing loudly.
+                blocks = r.json().get("content", [])
+                text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                return text or None
         else:
             url = f"{cfg['base_url']}/api/chat" if cfg["provider"] == "ollama" else f"{cfg['base_url']}/v1/chat/completions"
             headers = {"content-type": "application/json"}

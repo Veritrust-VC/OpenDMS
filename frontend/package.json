@@ -13,7 +13,9 @@
     "react-dom": "^18.3.0",
     "bpmn-js": "^17.11.1",
     "dmn-js": "^16.7.1",
-    "bpmn-auto-layout": "^0.4.0"
+    "bpmn-auto-layout": "^0.4.0",
+    "@fontsource/fira-sans": "^5.0.0",
+    "@fontsource/fira-code": "^5.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.0",

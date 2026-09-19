@@ -1,233 +1,400 @@
-import { useState, useEffect } from "react";
+// Landing page — bilingual (LV/EN), agent first, register subordinate.
+//
+// Deliberately NOT a replacement pitch. The previous version opened with
+// "Conventional DMS are built around a database — and that is now
+// disqualifying", which argues against the system the buyer already owns and
+// paid for. The argument here is additive: the agent takes on the work around
+// the register, and the register the organisation already runs stays the
+// system of record.
+//
+// The Latvian is written, not translated. Company voice ("mēs" / the product
+// as subject), flowing sentences rather than English-style fragments, MI akts
+// terminology per the locked glossary.
 
-// ──────────────────────────────────────────────────────────────────────────
-// OpenDMS public landing page.
-// Generic, brand-driven (brand_name / brand_primary_color / brand_logo_url from
-// GET /api/settings/branding). No deployment-specific content. Ships with core.
-// Props: brand, onLoginClick
-// ──────────────────────────────────────────────────────────────────────────
+import { useState } from "react";
+import BrandMark from "./BrandMark.jsx";
+import Icon from "./Icon.jsx";
 
-const DEFINITION =
-  "An open-source, AI-native document management system that effectively automates the organization's document lifecycle through machine-readable, manageable processes and classifiers, so every automated or human-in-the-loop document transaction is safely guardrailed and cryptographically signed for provenance.";
+const COPY = {
+  lv: {
+    nav: { what: "Ko tas dara", parts: "Uzbūve", connect: "Savienojumi", trust: "Uzraudzība", login: "Ieiet" },
+    tagline: "Lietvedības procesu aģents",
+    heroTitle: "Aģents, kas pārņem lietvedības rutīnu",
+    heroBody:
+      "Dokumentu vadības aģents pats izlemj, kā virzīt konkrētu dokumentu: atrod saistīto, ierosina klasifikāciju, sagatavo uzdevumu atbildīgajai struktūrvienībai. Pirms katras darbības, ko vairs nevar atsaukt, tas apstājas un jautā cilvēkam.",
+    heroNote:
+      "Aģents strādā blakus iestādes esošajai dokumentu vadības sistēmai. Juridiskais oriģināls paliek tur, kur tas ir šodien.",
+    ctaPrimary: "Ieiet sistēmā",
+    ctaSecondary: "Skatīt pirmkodu",
 
-const FEATURES = [
-  ["📑", "Document lifecycle", "Created → registered → sent → received → assigned → decided → archived — every transition a first-class, signed event."],
-  ["⚙️", "External process packs", "Routing, classification, and extraction are defined in machine-readable UAPF packages, swapped without redeploying."],
-  ["🧠", "AI review, human-in-the-loop", "Editable semantic summary and sensitivity assessment before a document is created — reviewed, never auto-applied."],
-  ["🗄️", "Pluggable storage", "Local filesystem, any S3-compatible bucket, or Azure Blob — one environment variable."],
-  ["🏷️", "Registers & classification", "Hierarchical registers and classification schemas, importable and exportable as JSON."],
-  ["🛡️", "Audit trail", "Internal integration audit log with trace propagation across every signing call; combined OpenDMS + SDK viewer."],
-  ["🔗", "Signed provenance", "Every lifecycle event signed as a W3C Verifiable Credential — provenance is intrinsic, not bolted on."],
-  ["🎨", "Self-hosted & brandable", "Name, logo, and primary color are configuration. Runs on your infrastructure with one command."],
-];
+    whatEyebrow: "KO AĢENTS DARA",
+    whatTitle: "Četras lietas, ar ko tas atšķiras no darbplūsmas",
+    what: [
+      ["Plāno pats",
+       "Aģents nesaņem gatavu soļu sarakstu. Katru nākamo darbību tas izvēlas, redzot iepriekšējās rezultātu — tāpat kā lietvedis, kurš vispirms pārbauda reģistru un tikai pēc tam izlemj, ko darīt tālāk."],
+      ["Atceras savu darbu",
+       "Faktus, ko aģents noskaidro viena uzdevuma laikā, tas pārnes uz nākamajiem soļiem. Sarunu var turpināt arī pēc pārtraukuma — konteksts nepazūd."],
+      ["Rīkojas caur rīkiem",
+       "Meklēšana reģistrā, ieraksts pastkastē, uzdevums Jira, dati no SAP — katrs rīks ir atsevišķi pieteikts, un aģents izvēlas no tā, kas tam atļauts."],
+      ["Apstājas pirms neatgriezeniskā",
+       "Nosūtīt vēstuli vai reģistrēt dokumentu ārējā sistēmā aģents nevar patstāvīgi. Šādas darbības tiek sagatavotas un gaida konkrēta cilvēka apstiprinājumu."],
+    ],
 
-function hexToRgba(hex, a) {
-  const h = (hex || "#0d7c66").replace("#", "");
-  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+    partsEyebrow: "UZBŪVE",
+    partsTitle: "Aģenta daļas",
+    partsBody:
+      "Katrai daļai ir sava funkcija, un bez jebkuras no tām aģents vairs nav aģents — tas kļūst par darbplūsmu, kas izpilda iepriekš uzrakstītu secību.",
+    agentic: [
+      ["Plānotājs", "process", "Izvēlas nākamo darbību izpildes laikā, balstoties uz mērķi un iepriekšējo soļu rezultātiem."],
+      ["Darba atmiņa", "insight", "Soļu vēsture un noskaidroto faktu pieraksts, ko aģents ņem vērā katrā nākamajā lēmumā."],
+      ["Rīku brokeris", "plug", "Rīku katalogs, kurā katram norādīts, vai darbība ir atgriezeniska. Nezināms rīks pēc noklusējuma tiek uzskatīts par neatgriezenisku."],
+      ["Aizsargmehānismi", "audit", "Pārbaude starp aģenta izvēli un tās izpildi: pilnvarojuma robežas, soļu ierobežojums, atkārtošanās atpazīšana un apstiprinājuma prasība."],
+      ["Lēmumu žurnāls", "document", "Katram solim tiek fiksēts ne tikai kas notika, bet arī kāpēc tieši šī darbība un kādas bija alternatīvas."],
+      ["MCP mezgls", "building", "Saskarne, caur kuru ar aģentu var sarunāties citas sistēmas un citi aģenti — AI LV Exchange mezgla formātā."],
+    ],
+
+    dmsTitle: "Reģistrs zem aģenta",
+    dmsBody:
+      "Aģentam ir arī pašam savs dokumentu reģistrs. Tas nav produkta galvenā daļa un neaizstāj iestādes lietvedības sistēmu — tas pastāv, lai aģents varētu strādāt arī tur, kur piekļuve esošajai sistēmai vēl nav atvērta, piemēram, pilotprojekta laikā.",
+    dms: [
+      ["Dokumentu reģistrs", "Ieraksti, reģistri, klasifikatori un dzīves cikla stāvokļi."],
+      ["Glabātuve", "Faili vietējā glabātuvē, S3 vai Azure Blob — pēc iestādes izvēles."],
+      ["Parakstīti notikumi", "Katra dzīves cikla maiņa tiek apliecināta ar verificējamu akreditāciju."],
+      ["Audita pieraksti", "Katrs izsaukums uz ārējo sistēmu tiek fiksēts ar rezultātu un kļūdas iemeslu."],
+    ],
+
+    connEyebrow: "SAVIENOJUMI",
+    connTitle: "Aģents pieslēdzas tam, kas iestādē jau strādā",
+    connBody:
+      "Savienotāju slānis ir vienveidīgs: katram savienojumam ir sava konfigurācija, atsevišķi šifrētas piekļuves datnes un veselības pārbaude. Jauna savienotāja pievienošana nemaina ne saskarni, ne procesus.",
+    connLive: "Darbojas",
+    connPrep: "Sagatavošanā",
+    connLiveItems: [
+      ["Jira Cloud", "Uzdevumu izveide, statusa maiņa un komentāri."],
+      ["E-pasts (IMAP/SMTP)", "Dokumentu saņemšana no koplietojamās pastkastes un atbilžu nosūtīšana."],
+    ],
+    connPrepItems: [
+      ["SAP", "Darījumu partneru un līgumu dati. Gaida saskarnes specifikāciju."],
+      ["Dokumentu vadības sistēmas", "Reģistrācijas ieraksta nodošana iestādes DVS. Gaida piekļuvi un saskarnes aprakstu."],
+    ],
+    connNote:
+      "Nesagatavotie savienotāji sistēmā ir redzami un izsaucami — tie atbild ar strukturētu atteikumu un uzskaita tieši to informāciju, kas vēl jāsaņem no sistēmas turētāja. Tas ir arī saraksts, ko sūtīt integrācijas sarunai.",
+
+    ifaceTitle: "Četri veidi, kā ar aģentu strādāt",
+    iface: [
+      ["Saruna", "Uzdodiet darbu ar vienu teikumu un sekojiet līdzi soļiem. Ja aģents virzās nepareizi, to var izlabot darba gaitā, negaidot beigas."],
+      ["Pārvaldības saskarne", "Savienojumi, uzvednes, klasifikatori, reģistri un audita pieraksti vienuviet."],
+      ["REST API", "Pilna piekļuve dokumentiem, procesiem un aģenta izpildēm ārējām sistēmām."],
+      ["MCP mezgls", "Citi aģenti var noskaidrot, kas šis mezgls ir, ko tas dara un ko tas par sevi neapgalvo."],
+    ],
+
+    trustEyebrow: "UZRAUDZĪBA",
+    trustTitle: "Kāpēc aģentam var uzticēties",
+    trust: [
+      ["Cilvēks izlemj to, kas nav atsaucams", "Neatgriezeniskas darbības tiek sagatavotas, parādītas kopā ar pamatojumu un izpildītas tikai pēc konkrēta cilvēka apstiprinājuma. Apstiprināt caur ārējo saskarni nav iespējams."],
+      ["Katrs lēmums ir izsekojams", "Lēmumu žurnālā redzams pamatojums, piedāvātās alternatīvas un aizsargmehānismu vērtējums. Secību aģents veido izpildes laikā, tāpēc pamatojums ir vienīgais pierādījums."],
+      ["Pilnvarojumu var atsaukt", "Katram savienojumam ir ieslēgšanas slēdzis. Izslēdzot to, aģenta darbības uz attiecīgo sistēmu apstājas ar nākamo izsaukumu."],
+      ["Atbilstība MI aktam", "Aģents ir aprakstāms reģistrā kā MI sistēma ar noteiktu nodrošinātāju un uzturētāju, cilvēka virsvadību un dokumentētu pilnvarojuma apjomu."],
+    ],
+
+    ctaTitle: "Sākam?",
+    ctaBody: "Ieejiet savā vidē vai izvietojiet aģentu savā infrastruktūrā.",
+    footNote: "Atvērtā pirmkoda programmatūra. Dati paliek iestādes infrastruktūrā.",
+  },
+
+  en: {
+    nav: { what: "What it does", parts: "Anatomy", connect: "Connections", trust: "Oversight", login: "Login" },
+    tagline: "Records management agent",
+    heroTitle: "An agent that takes on the routine of records management",
+    heroBody:
+      "The Document Management Agent decides for itself how to move a given document forward: it finds what relates, proposes a classification, and prepares the task for the responsible unit. Before anything it cannot take back, it stops and asks a person.",
+    heroNote:
+      "It works alongside the document management system your organisation already runs. The authoritative record stays exactly where it is today.",
+    ctaPrimary: "Login",
+    ctaSecondary: "View the source",
+
+    whatEyebrow: "WHAT THE AGENT DOES",
+    whatTitle: "Four things that separate it from a workflow",
+    what: [
+      ["It plans its own steps",
+       "The agent is not handed a sequence. It chooses each next action having seen what the previous one returned — the way a clerk checks the register first and only then decides what to do."],
+      ["It remembers its own work",
+       "Facts established during a task carry into later steps, and a conversation can be picked up after a break without losing its context."],
+      ["It acts through declared tools",
+       "A register search, a mailbox, a Jira task, a lookup in SAP — every tool is declared separately, and the agent chooses only from what it is permitted."],
+      ["It stops before the irreversible",
+       "Sending a letter or registering a document in an external system is not something it does alone. Those actions are prepared and wait for a named person to approve them."],
+    ],
+
+    partsEyebrow: "ANATOMY",
+    partsTitle: "The parts of the agent",
+    partsBody:
+      "Each part has one job, and without any of them the agent stops being an agent — it becomes a workflow executing a sequence somebody wrote in advance.",
+    agentic: [
+      ["Planner", "process", "Chooses the next action at runtime from the goal and the results so far."],
+      ["Working memory", "insight", "Step history and established facts, carried into every subsequent decision."],
+      ["Tool broker", "plug", "The tool catalogue, each entry marked reversible or not. Anything unclassified is treated as irreversible."],
+      ["Guardrails", "audit", "A check between the agent's choice and its execution: authority scope, step budget, loop detection and the approval requirement."],
+      ["Decision log", "document", "Every step records not only what happened but why that action and what the alternatives were."],
+      ["MCP node", "building", "The interface other systems and other agents use to talk to it, in AI LV Exchange node form."],
+    ],
+
+    dmsTitle: "The register underneath",
+    dmsBody:
+      "The agent also carries a document register of its own. It is not the main part of the product and does not replace the organisation's records system — it exists so the agent can work where access to the existing system is not yet open, during a pilot for instance.",
+    dms: [
+      ["Document register", "Records, registers, classifiers and lifecycle states."],
+      ["Storage", "Files on local storage, S3 or Azure Blob, as the organisation prefers."],
+      ["Signed events", "Each lifecycle change is attested with a verifiable credential."],
+      ["Audit records", "Every call to an external system is recorded with its result and failure reason."],
+    ],
+
+    connEyebrow: "CONNECTIONS",
+    connTitle: "It plugs into what already runs",
+    connBody:
+      "The connector layer is uniform: each connection has its own configuration, separately encrypted credentials and a health check. Adding a connector changes neither the interface nor the processes.",
+    connLive: "Working",
+    connPrep: "In preparation",
+    connLiveItems: [
+      ["Jira Cloud", "Creating issues, moving status and posting comments."],
+      ["Email (IMAP/SMTP)", "Taking documents in from a shared mailbox and sending replies."],
+    ],
+    connPrepItems: [
+      ["SAP", "Counterparty and contract data. Awaiting the interface specification."],
+      ["Document management systems", "Passing the registration into the organisation's own DMS. Awaiting access and an interface description."],
+    ],
+    connNote:
+      "Connectors that are not ready are still visible and callable — they answer with a structured refusal listing exactly what is still needed from the system owner. That list doubles as the agenda for the integration conversation.",
+
+    ifaceTitle: "Four ways to work with it",
+    iface: [
+      ["Conversation", "Give it work in a sentence and watch the steps. If it heads the wrong way you correct it mid-task, rather than after."],
+      ["Admin interface", "Connections, prompts, classifiers, registers and audit records in one place."],
+      ["REST API", "Full access to documents, processes and agent runs for external systems."],
+      ["MCP node", "Other agents can ask what this node is, what it does, and what it does not claim about itself."],
+    ],
+
+    trustEyebrow: "OVERSIGHT",
+    trustTitle: "Why it can be trusted",
+    trust: [
+      ["A person decides what cannot be undone", "Irreversible actions are prepared, shown with their reasoning, and executed only after a named person approves. They cannot be approved through the external interface."],
+      ["Every decision is traceable", "The log holds the reasoning, the alternatives offered and the guardrail verdict. The agent composes its sequence at runtime, so the reasoning is the only evidence there is."],
+      ["Authority can be withdrawn", "Every connection has an enable switch. Turn it off and the agent's actions against that system stop at the next call."],
+      ["Describable under the AI Act", "The agent can be entered in a register as an AI system with a named provider and deployer, human oversight, and a documented authority scope."],
+    ],
+
+    ctaTitle: "Ready to start?",
+    ctaBody: "Sign in to your workspace, or run the agent on your own infrastructure.",
+    footNote: "Open source. Data stays on the organisation's own infrastructure.",
+  },
+};
+
+const GH = "https://github.com/Veritrust-VC/OpenDMS";
+
+function Section({ id, children, className = "" }) {
+  return <section id={id} className={"px-6 py-16 sm:py-20 " + className}>
+    <div className="mx-auto max-w-6xl">{children}</div>
+  </section>;
+}
+
+function Eyebrow({ children, accent }) {
+  return <div className="text-2xs font-semibold tracking-widest mb-2" style={{ color: accent }}>{children}</div>;
 }
 
 export default function LandingPage({ brand, onLoginClick }) {
+  const [lang, setLang] = useState("lv");
+  const t = COPY[lang];
   const accent = brand?.brand_primary_color || "#0d7c66";
-  const name = brand?.brand_name || "OpenDMS";
-  const logo = brand?.brand_logo_url || "";
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  const Logo = () =>
-    logo ? (
-      <img src={logo} alt="" className="h-9 rounded" />
-    ) : (
-      <div className="w-9 h-9 rounded-lg text-white font-bold text-lg flex items-center justify-center shrink-0" style={{ background: accent }}>
-        {name.charAt(0).toUpperCase()}
-      </div>
-    );
+  const name = brand?.brand_name || "Dokumentu vadības aģents";
 
   return (
-    <div className="min-h-screen bg-white text-gray-800">
-      {/* Nav */}
-      <header className={`sticky top-0 z-30 transition-shadow ${scrolled ? "shadow-sm" : ""}`} style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(8px)" }}>
-        <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Logo />
-            <div className="leading-tight">
-              <div className="font-bold text-base">{name}</div>
-              <div className="text-[11px] text-gray-400 -mt-0.5">AI-native document management</div>
+    <div className="min-h-screen bg-white text-ink-800">
+      {/* ── nav ─────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-ink-100">
+        <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5 min-w-0">
+            {brand?.brand_logo_url
+              ? <img src={brand.brand_logo_url} className="h-9 w-9 rounded-md" alt="" />
+              : <BrandMark size={36} color={accent} className="rounded-md" />}
+            <div className="min-w-0">
+              <div className="font-semibold text-ink-900 leading-tight truncate">{name}</div>
+              <div className="text-2xs text-ink-400 leading-tight">{t.tagline}</div>
             </div>
           </div>
-          <nav className="flex items-center gap-2 sm:gap-5 text-sm">
-            <a href="#problem" className="hidden sm:inline text-gray-500 hover:text-gray-900">Why</a>
-            <a href="#architecture" className="hidden sm:inline text-gray-500 hover:text-gray-900">Architecture</a>
-            <a href="#run" className="hidden sm:inline text-gray-500 hover:text-gray-900">Run it</a>
-            <a href="https://github.com/Veritrust-VC/OpenDMS" target="_blank" rel="noreferrer" className="hidden sm:inline text-gray-500 hover:text-gray-900">GitHub</a>
-            <button onClick={onLoginClick} className="px-4 py-1.5 rounded-lg text-white text-sm font-medium hover:opacity-90 transition" style={{ background: accent }}>Login</button>
+          <nav className="flex items-center gap-5 text-sm">
+            <a href="#what" className="hidden md:inline text-ink-500 hover:text-ink-900 transition-colors">{t.nav.what}</a>
+            <a href="#parts" className="hidden md:inline text-ink-500 hover:text-ink-900 transition-colors">{t.nav.parts}</a>
+            <a href="#connect" className="hidden md:inline text-ink-500 hover:text-ink-900 transition-colors">{t.nav.connect}</a>
+            <a href="#trust" className="hidden md:inline text-ink-500 hover:text-ink-900 transition-colors">{t.nav.trust}</a>
+            <div className="flex rounded-md border border-ink-200 overflow-hidden" role="group" aria-label="Valoda / Language">
+              {["lv", "en"].map((l) => (
+                <button key={l} onClick={() => setLang(l)} aria-pressed={lang === l}
+                  className={"px-2 py-1 text-2xs font-semibold uppercase transition-colors cursor-pointer " +
+                    (lang === l ? "text-white" : "text-ink-500 hover:bg-ink-50")}
+                  style={lang === l ? { background: accent } : undefined}>{l}</button>
+              ))}
+            </div>
+            <button onClick={onLoginClick} className="btn-primary" style={{ background: accent }}>
+              {t.nav.login}
+            </button>
           </nav>
         </div>
       </header>
 
-      {/* Hero */}
-      <section style={{ background: `linear-gradient(180deg, ${hexToRgba(accent, 0.06)} 0%, rgba(255,255,255,0) 70%)` }}>
-        <div className="max-w-4xl mx-auto px-5 pt-20 pb-16 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium mb-6" style={{ background: hexToRgba(accent, 0.1), color: accent }}>
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: accent }} />
-            Open source · AI-native · Process-driven
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight">
-            Document management built around <span style={{ color: accent }}>processes and events</span> — not a database.
+      {/* ── hero ────────────────────────────────────────── */}
+      <Section className="pt-20 pb-14">
+        <div className="max-w-3xl">
+          <h1 className="text-3xl sm:text-[2.6rem] font-bold tracking-tight leading-[1.15] text-ink-900">
+            {t.heroTitle}
           </h1>
-          <p className="mt-6 text-lg text-gray-500 leading-relaxed">{DEFINITION}</p>
-          <div className="mt-8 flex items-center justify-center gap-3 flex-wrap">
-            <button onClick={onLoginClick} className="px-6 py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition shadow-sm" style={{ background: accent }}>Login to your instance</button>
-            <a href="https://github.com/Veritrust-VC/OpenDMS" target="_blank" rel="noreferrer" className="px-6 py-3 rounded-xl text-sm font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition">View on GitHub →</a>
+          <p className="mt-5 text-lg text-ink-600 leading-relaxed">{t.heroBody}</p>
+          <p className="mt-4 text-base text-ink-500 leading-relaxed border-l-2 pl-4"
+             style={{ borderColor: accent }}>
+            {t.heroNote}
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <button onClick={onLoginClick} className="btn-primary px-5 py-2.5" style={{ background: accent }}>
+              {t.ctaPrimary}
+            </button>
+            <a href={GH} target="_blank" rel="noreferrer" className="btn-quiet px-5 py-2.5">
+              {t.ctaSecondary} <Icon name="chevron" size={14} />
+            </a>
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* Problem */}
-      <section id="problem" className="max-w-5xl mx-auto px-5 py-20">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold tracking-tight">Conventional DMS are built around a database</h2>
-          <p className="mt-3 text-gray-500 max-w-2xl mx-auto">And that is now disqualifying for two reasons.</p>
-        </div>
-        <div className="grid md:grid-cols-2 gap-5">
-          <div className="rounded-2xl border border-gray-100 p-6">
-            <h3 className="font-semibold">They store what happened, not what it means</h3>
-            <p className="mt-2 text-sm text-gray-500 leading-relaxed">A row holds an id, a status, a date. Why it was classified that way, which rule applied, whether it was handled correctly — all implicit, living in a clerk's memory. Nothing for AI to reason over; nothing to audit but the records.</p>
-          </div>
-          <div className="rounded-2xl border border-gray-100 p-6">
-            <h3 className="font-semibold">Their processes are hardcoded</h3>
-            <p className="mt-2 text-sm text-gray-500 leading-relaxed">Routing, classification, and retention are compiled into the app. Changing a procedure means a ticket, a release, a redeploy — and the system can't be reused across organizations without forking the code.</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Architecture — USP */}
-      <section id="architecture" className="bg-gray-50 border-y border-gray-100">
-        <div className="max-w-5xl mx-auto px-5 py-20">
-          <div className="text-center mb-12">
-            <div className="text-xs font-semibold tracking-widest mb-2" style={{ color: accent }}>THE CORE IDEA</div>
-            <h2 className="text-3xl font-bold tracking-tight">Events and processes at the center</h2>
-            <p className="mt-3 text-gray-500 max-w-2xl mx-auto">Lifecycle events are first-class and signed; the processes that decide what happens to a document live outside the core. AI proposes, the process governs, a human approves, the event records.</p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              ["External process packs", "Machine-readable BPMN/DMN/CMMN (UAPF), loaded at runtime, swappable without redeploy."],
-              ["Signed event log", "Every transition recorded append-only and signed as a Verifiable Credential."],
-              ["Document registry", "Current state and classifications — heading toward a regenerable projection over the event log."],
-              ["Guardrailed AI", "Proposals are governed by the active process and reviewed by a human where required."],
-            ].map(([t, d], i) => (
-              <div key={t} className="rounded-2xl bg-white border border-gray-100 p-5">
-                <div className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center mb-3" style={{ background: accent }}>{i + 1}</div>
-                <div className="font-semibold text-sm">{t}</div>
-                <div className="mt-1.5 text-sm text-gray-500 leading-relaxed">{d}</div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-8 text-center text-sm text-gray-500 max-w-2xl mx-auto italic">Legacy systems store what happened; OpenDMS understands what it means — so audit becomes "check the reasoning," not "check the records."</p>
-        </div>
-      </section>
-
-      {/* Differentiator: external processes */}
-      <section className="max-w-5xl mx-auto px-5 py-20">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <div className="text-xs font-semibold tracking-widest mb-2" style={{ color: accent }}>THE DIFFERENTIATOR</div>
-            <h2 className="text-3xl font-bold tracking-tight">Change behavior without touching the system</h2>
-            <p className="mt-4 text-gray-500 leading-relaxed">How documents are analyzed, classified, routed, retained, and exchanged is not compiled into OpenDMS. It lives in external, machine-readable process &amp; classifier packs — Process-as-Code — that are versioned, signed, and loaded at runtime.</p>
-            <ul className="mt-6 space-y-3 text-sm">
-              {[
-                "Publish a new pack to change a procedure — no code change, no redeploy.",
-                "Reviewable, signed, version-tagged artifacts — not buried if-statements.",
-                "The engine is generic; the domain lives entirely in the packs.",
-                "Vendor- and model-neutral — nothing locked to one engine or AI model.",
-              ].map((t) => (
-                <li key={t} className="flex gap-3"><span className="mt-0.5" style={{ color: accent }}>✓</span><span className="text-gray-600">{t}</span></li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-2xl border border-gray-100 bg-gray-50 p-6 text-sm">
-            <div className="text-xs font-medium text-gray-400 mb-4">RUNTIME FLOW</div>
-            {[
-              ["Document event", "e.g. received"],
-              ["Matches a trigger", "fires a process pack"],
-              ["UAPF runtime walks it", "calls host capabilities"],
-              ["AI proposes · human approves", "guardrailed"],
-              ["Signed event recorded", "provenance"],
-            ].map(([a, b], i) => (
-              <div key={a}>
-                <div className="rounded-xl bg-white border border-gray-100 px-4 py-3 flex items-center justify-between">
-                  <span className="font-medium">{a}</span><span className="text-gray-400 text-xs">{b}</span>
-                </div>
-                {i < 4 && <div className="flex justify-center text-gray-300 leading-none">↓</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Two ways to run it */}
-      <section id="run" className="bg-gray-50 border-y border-gray-100">
-        <div className="max-w-5xl mx-auto px-5 py-20">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold tracking-tight">Two ways to run it</h2>
-            <p className="mt-3 text-gray-500 max-w-2xl mx-auto">The same product, standalone or networked. The central trust node is optional and additive.</p>
-          </div>
-          <div className="grid md:grid-cols-2 gap-5">
-            <div className="rounded-2xl bg-white border border-gray-100 p-6">
-              <h3 className="font-semibold">Standalone node</h3>
-              <p className="mt-2 text-sm text-gray-500 leading-relaxed">One self-contained instance. Full DMS, full AI pipeline, signed lifecycle events anchored to its own DID. No external dependency, no central server.</p>
-            </div>
-            <div className="rounded-2xl bg-white border border-gray-100 p-6">
-              <h3 className="font-semibold">Trust network</h3>
-              <p className="mt-2 text-sm text-gray-500 leading-relaxed">Several nodes register their organization DIDs with a shared, optional VeriDocs Register. Signed events resolve into one verifiable chain across nodes — each keeps its own data. Start standalone, add the Register later; no migration.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="max-w-6xl mx-auto px-5 py-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold tracking-tight">What you get</h2>
-        </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {FEATURES.map(([icon, title, body]) => (
-            <div key={title} className="rounded-2xl border border-gray-100 bg-white p-6 hover:shadow-md transition">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl mb-4" style={{ background: hexToRgba(accent, 0.1) }}>{icon}</div>
-              <h3 className="font-semibold text-[15px]">{title}</h3>
-              <p className="mt-2 text-sm text-gray-500 leading-relaxed">{body}</p>
+      {/* ── what it does ────────────────────────────────── */}
+      <Section id="what" className="bg-ink-50 border-y border-ink-100">
+        <Eyebrow accent={accent}>{t.whatEyebrow}</Eyebrow>
+        <h2 className="text-2xl font-bold tracking-tight text-ink-900">{t.whatTitle}</h2>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          {t.what.map(([h, b]) => (
+            <div key={h} className="card p-5">
+              <h3 className="font-semibold text-ink-900">{h}</h3>
+              <p className="mt-2 text-sm text-ink-600 leading-relaxed">{b}</p>
             </div>
           ))}
         </div>
-        <p className="mt-10 text-center text-sm text-gray-400">W3C DID / Verifiable Credentials · did:web over HTTPS · eIDAS 2.0 aligned · FastAPI · React · PostgreSQL · Redis · no lock-in</p>
-      </section>
+      </Section>
 
-      {/* CTA */}
-      <section className="border-t border-gray-100" style={{ background: `linear-gradient(180deg, rgba(255,255,255,0) 0%, ${hexToRgba(accent, 0.05)} 100%)` }}>
-        <div className="max-w-5xl mx-auto px-5 py-16 text-center">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Ready to sign in?</h2>
-          <p className="mt-3 text-gray-500">Access your {name} workspace, or spin up your own instance.</p>
-          <div className="mt-7 flex items-center justify-center gap-3 flex-wrap">
-            <button onClick={onLoginClick} className="px-6 py-3 rounded-xl text-white text-sm font-semibold hover:opacity-90 transition shadow-sm" style={{ background: accent }}>Login</button>
-            <a href="https://github.com/Veritrust-VC/OpenDMS#quick-start" target="_blank" rel="noreferrer" className="px-6 py-3 rounded-xl text-sm font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition">Self-host in 5 minutes</a>
+      {/* ── anatomy: agentic first, register subordinate ─── */}
+      <Section id="parts">
+        <Eyebrow accent={accent}>{t.partsEyebrow}</Eyebrow>
+        <h2 className="text-2xl font-bold tracking-tight text-ink-900">{t.partsTitle}</h2>
+        <p className="mt-3 text-ink-600 max-w-3xl leading-relaxed">{t.partsBody}</p>
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {t.agentic.map(([h, icon, b]) => (
+            <div key={h} className="card p-5">
+              <div className="w-9 h-9 rounded-md flex items-center justify-center mb-3"
+                   style={{ background: accent + "14", color: accent }}>
+                <Icon name={icon} size={19} />
+              </div>
+              <h3 className="font-semibold text-ink-900">{h}</h3>
+              <p className="mt-1.5 text-sm text-ink-600 leading-relaxed">{b}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* the register: visually secondary on purpose */}
+        <div className="mt-10 rounded-xl border border-ink-200 bg-ink-50 p-6">
+          <h3 className="font-semibold text-ink-900">{t.dmsTitle}</h3>
+          <p className="mt-2 text-sm text-ink-600 max-w-3xl leading-relaxed">{t.dmsBody}</p>
+          <div className="mt-5 grid gap-x-8 gap-y-3 sm:grid-cols-2">
+            {t.dms.map(([h, b]) => (
+              <div key={h} className="flex gap-3">
+                <span className="mt-1.5 h-1.5 w-1.5 rounded-full shrink-0" style={{ background: accent }} />
+                <div>
+                  <div className="text-sm font-medium text-ink-800">{h}</div>
+                  <div className="text-sm text-ink-500 leading-relaxed">{b}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      </section>
+      </Section>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-100">
-        <div className="max-w-6xl mx-auto px-5 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
-          <div className="flex items-center gap-2"><Logo /><span>© {new Date().getFullYear()} {name}</span></div>
-          <div className="flex items-center gap-5">
-            <a href="https://github.com/Veritrust-VC/OpenDMS" target="_blank" rel="noreferrer" className="hover:text-gray-700">OpenDMS</a>
-            <a href="https://github.com/Veritrust-VC/VeriDocs-SDK" target="_blank" rel="noreferrer" className="hover:text-gray-700">VeriDocs SDK</a>
-            <a href="https://github.com/Veritrust-VC/VeriDocs-Register" target="_blank" rel="noreferrer" className="hover:text-gray-700">Register</a>
-            <button onClick={onLoginClick} className="hover:text-gray-700">Login</button>
+      {/* ── connections ─────────────────────────────────── */}
+      <Section id="connect" className="bg-ink-50 border-y border-ink-100">
+        <Eyebrow accent={accent}>{t.connEyebrow}</Eyebrow>
+        <h2 className="text-2xl font-bold tracking-tight text-ink-900">{t.connTitle}</h2>
+        <p className="mt-3 text-ink-600 max-w-3xl leading-relaxed">{t.connBody}</p>
+
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          <div>
+            <div className="label-eyebrow mb-2" style={{ color: accent }}>{t.connLive}</div>
+            <div className="space-y-3">
+              {t.connLiveItems.map(([h, b]) => (
+                <div key={h} className="card p-4">
+                  <div className="font-medium text-ink-900 text-sm">{h}</div>
+                  <div className="text-sm text-ink-500 mt-1 leading-relaxed">{b}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="label-eyebrow mb-2 text-ink-400">{t.connPrep}</div>
+            <div className="space-y-3">
+              {t.connPrepItems.map(([h, b]) => (
+                <div key={h} className="rounded-lg border border-dashed border-ink-300 bg-white/60 p-4">
+                  <div className="font-medium text-ink-700 text-sm">{h}</div>
+                  <div className="text-sm text-ink-500 mt-1 leading-relaxed">{b}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p className="mt-6 text-sm text-ink-500 max-w-3xl leading-relaxed">{t.connNote}</p>
+      </Section>
+
+      {/* ── interfaces ──────────────────────────────────── */}
+      <Section>
+        <h2 className="text-2xl font-bold tracking-tight text-ink-900">{t.ifaceTitle}</h2>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {t.iface.map(([h, b]) => (
+            <div key={h} className="card p-5">
+              <h3 className="font-semibold text-ink-900 text-[15px]">{h}</h3>
+              <p className="mt-2 text-sm text-ink-600 leading-relaxed">{b}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* ── oversight ───────────────────────────────────── */}
+      <Section id="trust" className="bg-ink-50 border-y border-ink-100">
+        <Eyebrow accent={accent}>{t.trustEyebrow}</Eyebrow>
+        <h2 className="text-2xl font-bold tracking-tight text-ink-900">{t.trustTitle}</h2>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          {t.trust.map(([h, b]) => (
+            <div key={h} className="card p-5">
+              <h3 className="font-semibold text-ink-900">{h}</h3>
+              <p className="mt-2 text-sm text-ink-600 leading-relaxed">{b}</p>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* ── cta ─────────────────────────────────────────── */}
+      <Section className="text-center">
+        <h2 className="text-2xl font-bold tracking-tight text-ink-900">{t.ctaTitle}</h2>
+        <p className="mt-3 text-ink-600">{t.ctaBody}</p>
+        <div className="mt-6 flex flex-wrap gap-3 justify-center">
+          <button onClick={onLoginClick} className="btn-primary px-5 py-2.5" style={{ background: accent }}>
+            {t.nav.login}
+          </button>
+          <a href={GH} target="_blank" rel="noreferrer" className="btn-quiet px-5 py-2.5">{t.ctaSecondary}</a>
+        </div>
+        <p className="mt-8 text-xs text-ink-400">
+          W3C DID / Verifiable Credentials · did:web · MCP · UAPF · FastAPI · React · PostgreSQL
+        </p>
+      </Section>
+
+      <footer className="border-t border-ink-100 px-6 py-8">
+        <div className="mx-auto max-w-6xl flex flex-wrap items-center justify-between gap-4 text-sm text-ink-400">
+          <span>{t.footNote}</span>
+          <div className="flex gap-5">
+            <a href={GH} target="_blank" rel="noreferrer" className="hover:text-ink-700 transition-colors">OpenDMS</a>
+            <button onClick={onLoginClick} className="hover:text-ink-700 transition-colors cursor-pointer">{t.nav.login}</button>
           </div>
         </div>
       </footer>
