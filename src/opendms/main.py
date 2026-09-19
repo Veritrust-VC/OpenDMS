@@ -8,6 +8,7 @@ from opendms.config import get_settings
 from opendms.database import init_db, close_db
 from opendms.sdk_client import close as close_sdk
 from opendms.routers.auth import router as auth_router
+from opendms.routers.oidc import router as oidc_router
 from opendms.routers.users import router as users_router
 from opendms.routers.documents import router as documents_router
 from opendms.routers.structures import org_router, reg_router, cls_router
@@ -42,7 +43,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                        allow_methods=["*"], allow_headers=["*"])
 
-    for r in [auth_router, users_router, documents_router, org_router, reg_router,
+    for r in [auth_router, oidc_router, users_router, documents_router, org_router, reg_router,
               cls_router, archive_router, settings_router, health_router, ai_router, audit_router, intelligence_router,
               ai_instructions_router, org_tools_router, connections_router, agent_router,
               uapf_host_router, uapf_admin_router, mcp_router]:

@@ -274,7 +274,11 @@ export default function App() {
 
 function LoginPage({ onLogin, brand }) {
   const [email, setEmail] = useState(""); const [pw, setPw] = useState(""); const [err, setErr] = useState("");
-  const submit = async (e) => { e.preventDefault(); try { const r = await fetch(`${API}/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password:pw})}); const d = await r.json(); if(!r.ok) throw new Error(d.detail); onLogin(d.user, d.token); } catch(e) { setErr(e.message); }};
+    // Offer the organisation's identity provider first where one is configured.
+  const [oidc, setOidc] = useState(null);
+  useEffect(() => { fetch(`${API}/auth/oidc/config`).then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.enabled) setOidc(d); }).catch(() => {}); }, []);
+const submit = async (e) => { e.preventDefault(); try { const r = await fetch(`${API}/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password:pw})}); const d = await r.json(); if(!r.ok) throw new Error(d.detail); onLogin(d.user, d.token); } catch(e) { setErr(e.message); }};
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white rounded-xl shadow-lg p-8 w-96">
@@ -288,7 +292,7 @@ function LoginPage({ onLogin, brand }) {
           <input value={pw} onChange={e=>setPw(e.target.value)} placeholder="Password" type="password" className="w-full px-3 py-2 border rounded-lg text-sm" />
           {err && <div className="text-red-600 text-xs">{err}</div>}
           <button className="w-full py-2 text-white rounded-lg text-sm font-medium" style={{background:brand.brand_primary_color}}>Login</button>
-        </form>
+        {oidc && (<><div className="flex items-center gap-3 my-4"><div className="flex-1 h-px bg-gray-200"/><div className="text-xs text-gray-400">vai</div><div className="flex-1 h-px bg-gray-200"/></div><a href={`${API}/auth/oidc/login`} className="block w-full py-2 text-center rounded-lg text-sm font-medium border border-gray-300 hover:bg-gray-50">Pieteikties ar {oidc.label}</a></>)}</form>
       </div>
     </div>
   );
