@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:uapf="https://uapf.dev/bpmn-ext/v1"
+    id="Definitions_SemanticAnalysis"
+    targetNamespace="https://uapf.dev/processes/semantic-document-analysis">
+
+  <bpmn:process id="Process_SemanticDocumentAnalysis"
+                name="Semantic document analysis"
+                isExecutable="true">
+
+    <bpmn:startEvent id="Start" name="Document text received"/>
+
+    <bpmn:serviceTask id="Task_RedactPii"
+                      name="Redact personally identifiable information"
+                      uapf:capability="ai.redact@1">
+      <bpmn:documentation>
+        Calls ai.redact@1 to mask names, identifiers, addresses, financial
+        and health data before downstream extraction. Required by
+        resources/guardrails.yaml (GDPR Art. 5 minimisation).
+      </bpmn:documentation>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_ExtractSemantics"
+                      name="Extract semantic metadata"
+                      uapf:capability="ai.extract@1"
+                      uapf:schemaRef="resources/schemas/vdvc-semantic-summary.schema.json">
+      <bpmn:documentation>
+        Calls ai.extract@1 with the redacted text and the VDVC v1.1 output
+        schema (resources/schemas/vdvc-semantic-summary.schema.json). The
+        host's AI agent must produce output that validates against that
+        schema. Output records aiModelVersion + aiConfidenceScore per
+        EU AI Act Art. 13.
+      </bpmn:documentation>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="Task_EmitResultEvent"
+                      name="Emit semantic-analysis-completed event"
+                      uapf:capability="event.emit@1"
+                      uapf:eventType="document.semantic-analysis.completed.v1">
+      <bpmn:documentation>
+        Calls event.emit@1 to publish a CloudEvent containing the extracted
+        semantic summary. Downstream processes consume this event.
+      </bpmn:documentation>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="End" name="Semantic analysis complete"/>
+
+    <bpmn:sequenceFlow id="f1" sourceRef="Start"                 targetRef="Task_RedactPii"/>
+    <bpmn:sequenceFlow id="f2" sourceRef="Task_RedactPii"        targetRef="Task_ExtractSemantics"/>
+    <bpmn:sequenceFlow id="f3" sourceRef="Task_ExtractSemantics" targetRef="Task_EmitResultEvent"/>
+    <bpmn:sequenceFlow id="f4" sourceRef="Task_EmitResultEvent"  targetRef="End"/>
+
+  </bpmn:process>
+</bpmn:definitions>

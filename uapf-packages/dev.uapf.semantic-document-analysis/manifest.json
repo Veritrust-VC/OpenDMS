@@ -1,0 +1,45 @@
+{
+  "kind": "uapf.package",
+  "id": "dev.uapf.semantic-document-analysis",
+  "name": "Semantic Document Analysis (UAPF reference algorithm)",
+  "description": "Level-4 UAPF process for extracting VDVC-conformant semantic metadata\n(topic, summary, urgency, risk, sensitivity) from a free-text document.\n\nPortable across document management systems, intake portals, mailroom\nscanners, case-management platforms. Three BPMN service tasks invoke\nthe reserved UAPF-IP capabilities ai.redact@1, ai.extract@1, event.emit@1.\nThe host fulfils each capability with its own AI agent; this package\nsupplies the BPMN flow, the VDVC output JSON Schema, the guardrails,\nand the resource mapping contract.\n",
+  "level": 4,
+  "version": "1.0.0",
+  "includes": [],
+  "dependencies": {},
+  "cornerstones": {
+    "bpmn": true,
+    "dmn": false,
+    "cmmn": false,
+    "resources": true
+  },
+  "paths": {
+    "bpmn": "bpmn",
+    "dmn": "dmn",
+    "cmmn": "cmmn",
+    "resources": "resources",
+    "metadata": "metadata"
+  },
+  "exposure": {
+    "mcp": {
+      "enabled": true,
+      "runnable": true,
+      "exposedEntrypoints": [
+        "Process_SemanticDocumentAnalysis"
+      ],
+      "exposedArtifacts": [
+        "manifest",
+        "bpmn",
+        "docs"
+      ]
+    }
+  },
+  "owners": [
+    {
+      "type": "team",
+      "id": "uapf-stewards",
+      "contact": "stewards@uapf.dev"
+    }
+  ],
+  "lifecycle": "draft"
+}

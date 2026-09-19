@@ -1,0 +1,54 @@
+kind: uapf.resources.mapping
+
+targets:
+  - id: agent.semantic-extractor
+    type: ai_agent
+    name: Semantic Extraction AI Agent
+    description: |
+      Host-provided AI agent that fulfils ai.redact@1, ai.extract@1, and
+      event.emit@1 for this process. Implementation is the host's choice
+      (Claude, GPT, on-prem LLM, etc.); this package supplies the BPMN
+      flow, the output schema, and the guardrails.
+    capabilities:
+      - capability.ai.redact
+      - capability.ai.extract
+      - capability.event.emit
+
+bindings:
+  - source: { type: bpmn.serviceTask, ref: Task_RedactPii }
+    targetId: agent.semantic-extractor
+    mode: autonomous
+    contract:
+      input:
+        - { name: text,       type: string, required: true }
+        - { name: categories, type: array,  required: false, description: "Optional PII categories; defaults to host policy." }
+      output:
+        - { name: redactedText, type: string }
+        - { name: detections,   type: array }
+      timeout: "10s"
+    requiredCapabilities: [capability.ai.redact]
+
+  - source: { type: bpmn.serviceTask, ref: Task_ExtractSemantics }
+    targetId: agent.semantic-extractor
+    mode: autonomous
+    contract:
+      input:
+        - { name: text,   type: string, required: true,  description: "Redacted text from previous task." }
+        - { name: schema, type: object, required: true,  description: "VDVC v1.1 output schema. Reference: resources/schemas/vdvc-semantic-summary.schema.json" }
+      output:
+        - { name: extracted,  type: object, description: "Validates against resources/schemas/vdvc-semantic-summary.schema.json" }
+        - { name: confidence, type: number }
+        - { name: modelUsed,  type: string }
+      timeout: "30s"
+      retries: { maxAttempts: 2, backoffMs: 2000 }
+    requiredCapabilities: [capability.ai.extract]
+
+  - source: { type: bpmn.serviceTask, ref: Task_EmitResultEvent }
+    targetId: agent.semantic-extractor
+    mode: autonomous
+    contract:
+      input:
+        - { name: eventType, type: string, required: true }
+        - { name: payload,   type: object, required: true }
+      timeout: "5s"
+    requiredCapabilities: [capability.event.emit]

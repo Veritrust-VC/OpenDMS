@@ -1,0 +1,32 @@
+# Non-normative supplementary file. UAPF v1.1 does NOT cornerstone guardrails;
+# they live under resources/ as a host-readable policy snapshot.
+authority: dev.uapf.stewards
+version: "1.0.0"
+
+privacy:
+  forbidden_in_output:
+    - personal_name
+    - personal_id_number
+    - postal_address
+    - phone_number
+    - email_address
+    - bank_account
+    - iban
+    - health_record_value
+    - biometric_value
+  pii_handling:
+    - "Detected PII MUST be listed in sensitivityControl.detectedEntityTypes as TYPE names only, never values."
+    - "Set personalDataRisk according to detected types: NONE < LOW < MEDIUM < HIGH."
+
+eu_ai_act:
+  classification: "Annex III §5(a) and §8(a) — high-risk per Regulation 2024/1689"
+  required_transparency_fields:
+    - "semanticSummary.summarySource MUST be \"AI\""
+    - "semanticSummary.aiConfidenceScore MUST be 0.0–1.0"
+    - "semanticSummary.aiModelVersion MUST be the exact model identifier"
+  human_oversight: "humanValidationStatus MUST be PENDING or REQUIRED on completion; consuming higher-level process MUST surface to a human before any consequential action."
+
+accuracy:
+  - "Do not fabricate fields not supported by source text."
+  - "Set aiConfidenceScore below 0.3 when classification is uncertain."
+  - "If document is unreadable or too short, set humanValidationStatus to REQUIRED."

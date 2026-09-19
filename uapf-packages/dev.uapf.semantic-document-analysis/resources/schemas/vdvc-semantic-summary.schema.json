@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uapf.dev/schemas/vdvc/semantic-summary-v1.1.json",
+  "title": "VDVC Semantic Summary v1.1",
+  "description": "Output contract for ai.extract@1 when invoked by Process_SemanticDocumentAnalysis. The host's AI agent MUST produce output validating against this schema.",
+  "type": "object",
+  "required": ["semanticSummary", "sensitivityControl"],
+  "properties": {
+    "semanticSummary": {
+      "type": "object",
+      "required": ["primaryTopic", "summary", "summarySource", "aiConfidenceScore", "aiModelVersion", "humanValidationStatus"],
+      "properties": {
+        "primaryTopic":          { "type": "string", "maxLength": 200 },
+        "subTopics":             { "type": "array", "items": { "type": "string" } },
+        "summary":               { "type": "string", "maxLength": 4000 },
+        "documentPurpose":       { "type": "string", "maxLength": 200 },
+        "requestedAction":       { "type": "string", "maxLength": 200 },
+        "involvedPartyTypes":    { "type": "array", "items": { "type": "string" }, "description": "Party TYPES only, never names." },
+        "geographicScope":       { "type": "string" },
+        "sectorTags":            { "type": "array", "items": { "type": "string" } },
+        "legalDomain":           { "type": "string" },
+        "estimatedRiskLevel":    { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "urgencyLevel":          { "enum": ["LOW", "NORMAL", "HIGH", "URGENT"] },
+        "keywords":              { "type": "array", "maxItems": 20, "items": { "type": "string" } },
+        "detectedLanguage":      { "type": "string", "pattern": "^[a-z]{2}$" },
+        "summarySource":         { "const": "AI" },
+        "aiConfidenceScore":     { "type": "number", "minimum": 0, "maximum": 1 },
+        "aiModelVersion":        { "type": "string" },
+        "humanValidationStatus": { "enum": ["PENDING", "REQUIRED", "VALIDATED", "REJECTED"] },
+        "mentions_child":        { "type": "boolean" },
+        "ongoing_harm":          { "type": "boolean" },
+        "vulnerable_group":      { "type": "boolean" },
+        "criminal_indication":   { "type": "boolean" }
+      }
+    },
+    "sensitivityControl": {
+      "type": "object",
+      "required": ["personalDataRisk", "allowCentralization", "redactionLevel"],
+      "properties": {
+        "personalDataRisk":      { "enum": ["NONE", "LOW", "MEDIUM", "HIGH"] },
+        "allowCentralization":   { "type": "boolean" },
+        "redactionLevel":        { "enum": ["NONE", "PARTIAL", "FULL"] },
+        "accessRestrictionBasis":{ "type": "string" },
+        "classifiedInformation": { "type": "boolean" },
+        "detectedEntityTypes":   { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

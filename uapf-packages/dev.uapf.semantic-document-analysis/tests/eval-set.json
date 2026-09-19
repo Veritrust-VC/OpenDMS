@@ -1,0 +1,24 @@
+{
+  "algorithm": "Process_SemanticDocumentAnalysis",
+  "package_version": "1.0.0",
+  "cases": [
+    {
+      "id": "child-rights",
+      "input_fixture": "fixtures/child-rights-input.json",
+      "expected_facets": {
+        "mentions_child": true,
+        "vulnerable_group": true,
+        "humanValidationStatus": "PENDING"
+      }
+    },
+    {
+      "id": "discrimination-disability",
+      "input_fixture": "fixtures/discrimination-input.json",
+      "expected_facets": {
+        "vulnerable_group": true,
+        "humanValidationStatus": "PENDING"
+      }
+    }
+  ],
+  "success_criteria": { "min_pass_rate": 0.95, "max_p95_latency_ms": 15000 }
+}

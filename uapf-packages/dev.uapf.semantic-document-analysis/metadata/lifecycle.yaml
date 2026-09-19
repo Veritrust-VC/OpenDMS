@@ -1,0 +1,9 @@
+kind: uapf.metadata.lifecycle
+status: draft
+created: "2026-05-15T20:30:00Z"
+lastModified: "2026-05-15T20:30:00Z"
+changeHistory:
+  - version: "1.0.0"
+    date: "2026-05-15"
+    summary: "Initial release. Reusable UAPF v1.1 Level 4 process for VDVC semantic metadata extraction. Three reserved-namespace capabilities (ai.redact@1, ai.extract@1, event.emit@1). VDVC output schema in resources/schemas/."
+    author: "uapf-stewards"

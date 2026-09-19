@@ -1,0 +1,9 @@
+kind: uapf.metadata.ownership
+owners:
+  - type: team
+    id: uapf-stewards
+    name: UAPF Stewards
+    contact: stewards@uapf.dev
+    role: owner
+approvers:
+  - uapf-stewards
