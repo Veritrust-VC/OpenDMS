@@ -499,22 +499,8 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE INDEX IF NOT EXISTS idx_class_priority ON complaint_classifications(priority);
         CREATE INDEX IF NOT EXISTS idx_class_topic ON complaint_classifications(topic);
 
-        -- Seed: default Tiesibsargs complaint-classification trigger.
-        -- Fires for every DocumentReceived event. Tweak match_condition to
-        -- restrict (e.g. only documents in a specific register).
-        INSERT INTO process_triggers (name, description, package_id, process_id, trigger_event, match_condition)
-        SELECT
-            'Tiesibsargs iesniegums classification',
-            'Algorithmated topic classification + priority + department routing for Ombudsman complaints. Fires on every DocumentReceived event. Edit match_condition to restrict.',
-            'lv.tiesibsargs.iesnieguma-izskatisana',
-            'iesnieguma-izskatisana',
-            'document.received',
-            '{}'::jsonb
-        WHERE NOT EXISTS (
-            SELECT 1 FROM process_triggers
-            WHERE package_id = 'lv.tiesibsargs.iesnieguma-izskatisana'
-              AND trigger_event = 'document.received'
-        );
+        -- (No seeded triggers: each instance binds its own processes from
+        -- ProcessGit; a seeded default kept coming back after it was replaced.)
 
         -- ──────────────────────────────────────────────────────────
         -- Connectors: connections to external systems.
