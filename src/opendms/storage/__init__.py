@@ -20,6 +20,11 @@ class StorageBackend(ABC):
     async def delete(self, key: str) -> bool: ...
     @abstractmethod
     async def exists(self, key: str) -> bool: ...
+    @abstractmethod
+    async def list(self, prefix: str) -> dict:
+        """One level of the storage tree under ``prefix`` (a folder key, with or
+        without a trailing slash). Returns {"folders": [name, ...],
+        "files": [{"name", "size", "modified"}, ...]}, both sorted by name."""
 
 
 class LocalStorage(StorageBackend):
@@ -53,6 +58,21 @@ class LocalStorage(StorageBackend):
 
     async def exists(self, key: str) -> bool:
         return os.path.exists(self._path(key))
+
+    async def list(self, prefix: str) -> dict:
+        from datetime import datetime, timezone
+        folders, files = [], []
+        p = self._path(prefix.strip("/")) if prefix.strip("/") else self.base_path
+        if os.path.isdir(p):
+            with os.scandir(p) as it:
+                for e in it:
+                    if e.is_dir(follow_symlinks=False):
+                        folders.append(e.name)
+                    elif e.is_file(follow_symlinks=False):
+                        st = e.stat()
+                        files.append({"name": e.name, "size": st.st_size,
+                                      "modified": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()})
+        return {"folders": sorted(folders), "files": sorted(files, key=lambda f: f["name"])}
 
 
 class S3Storage(StorageBackend):
@@ -102,6 +122,19 @@ class S3Storage(StorageBackend):
         except Exception:
             return False
 
+    async def list(self, prefix: str) -> dict:
+        prefix = prefix.strip("/") + "/" if prefix.strip("/") else ""
+        folders, files = [], []
+        for page in self.client.get_paginator("list_objects_v2").paginate(
+                Bucket=self.bucket, Prefix=prefix, Delimiter="/"):
+            for cp in page.get("CommonPrefixes", []):
+                folders.append(cp["Prefix"][len(prefix):].rstrip("/"))
+            for o in page.get("Contents", []):
+                name = o["Key"][len(prefix):]
+                if name:
+                    files.append({"name": name, "size": o["Size"], "modified": o["LastModified"].isoformat()})
+        return {"folders": sorted(folders), "files": sorted(files, key=lambda f: f["name"])}
+
 
 class AzureStorage(StorageBackend):
     def __init__(self, connection_string: str, container: str):
@@ -142,6 +175,18 @@ class AzureStorage(StorageBackend):
             return True
         except Exception:
             return False
+
+    async def list(self, prefix: str) -> dict:
+        prefix = prefix.strip("/") + "/" if prefix.strip("/") else ""
+        folders, files = [], []
+        for item in self.container_client.walk_blobs(name_starts_with=prefix, delimiter="/"):
+            name = item.name[len(prefix):]
+            if name.endswith("/"):
+                folders.append(name.rstrip("/"))
+            elif name:
+                files.append({"name": name, "size": item.size,
+                              "modified": item.last_modified.isoformat() if item.last_modified else None})
+        return {"folders": sorted(folders), "files": sorted(files, key=lambda f: f["name"])}
 
 
 _storage: Optional[StorageBackend] = None

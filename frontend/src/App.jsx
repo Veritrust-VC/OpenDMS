@@ -4,6 +4,7 @@ import BpmnDiagram from "./components/BpmnDiagram.jsx";
 import LandingPage from "./LandingPage.jsx";
 import ConnectionsPage from "./ConnectionsPage.jsx";
 import AgentPage from "./AgentPage.jsx";
+import StoragePage from "./StoragePage.jsx";
 import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
 
@@ -162,6 +163,7 @@ export default function App() {
       { id:"agent",         label:"Aģents",           icon:"agent", roles:["superadmin","admin"] },
       { id:"dashboard",     label:"Pārskats",         icon:"dashboard" },
       { id:"documents",     label:"Dokumenti",        icon:"document" },
+      { id:"storage",       label:"Glabātuve",        icon:"folder" },
       { id:"intelligence",  label:"Analīze",          icon:"insight" },
     ]},
     { title: "Procesi", items: [
@@ -259,6 +261,7 @@ export default function App() {
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
         {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
         {page==="archive" && <ArchivePage notify={notify} />}
+        {page==="storage" && <StoragePage notify={notify} route={route} navigate={navigate} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="connections" && <ConnectionsPage notify={notify} />}
@@ -1043,7 +1046,11 @@ function StandardPackagePanel({ doc, notify }) {
       {listing && (
         <>
           <div className="font-mono text-xs bg-gray-50 rounded border">
-            <div className="px-2 py-1.5 border-b text-gray-600 break-all">📁 {listing.folder}/</div>
+            <div className="px-2 py-1.5 border-b text-gray-600 break-all flex items-center justify-between gap-2">
+              <span>📁 {listing.folder}/</span>
+              <button onClick={() => { window.history.pushState({}, "", "/storage/" + encodeURIComponent(listing.folder)); window.dispatchEvent(new PopStateEvent("popstate")); }}
+                className="font-sans text-[11px] text-sky-600 hover:underline shrink-0">atvērt glabātuvē →</button>
+            </div>
             {listing.files.map((f) => {
               const depth = f.path.includes("/") ? 2 : 1;
               const name = f.path.split("/").pop();

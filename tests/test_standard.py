@@ -146,3 +146,49 @@ def test_package_file_serves_only_listed_paths(monkeypatch):
     for bad in ["../../etc/passwd", "datnes/../metadati.xml", "other.xml"]:
         with pytest.raises(LookupError):
             asyncio.run(service.package_file(1, bad))
+
+
+# ── storage explorer ───────────────────────────────────────────────────────
+
+def test_local_storage_list(tmp_path):
+    import asyncio
+    from opendms.storage import LocalStorage
+    st = LocalStorage(str(tmp_path))
+    asyncio.run(st.put("pakotnes/A/metadati.xml", b"<x/>"))
+    asyncio.run(st.put("pakotnes/A/datnes/a.docx", b"12345"))
+    root = asyncio.run(st.list("pakotnes"))
+    assert root == {"folders": ["A"], "files": []}
+    a = asyncio.run(st.list("pakotnes/A/"))
+    assert a["folders"] == ["datnes"] and [f["name"] for f in a["files"]] == ["metadati.xml"]
+    assert a["files"][0]["size"] == 4
+    assert asyncio.run(st.list("pakotnes/missing")) == {"folders": [], "files": []}
+
+
+def test_browse_storage_shows_only_owned_folders(tmp_path, monkeypatch):
+    import asyncio
+    from opendms.standard import service
+    from opendms.storage import LocalStorage
+    st = LocalStorage(str(tmp_path))
+    for key in ["pakotnes/MINE/metadati.xml", "pakotnes/MINE/datnes/a.docx", "pakotnes/OTHER/metadati.xml",
+                "org/1/secret.bin"]:
+        asyncio.run(st.put(key, b"x"))
+
+    async def owned(org_id):
+        return {"MINE": {"documentId": 1, "title": "t"}}
+
+    monkeypatch.setattr(service, "_owned_folders", owned)
+    monkeypatch.setattr(service, "get_storage", lambda: st)
+    root = asyncio.run(service.browse_storage(1, ""))
+    assert [f["name"] for f in root["folders"]] == ["MINE"]
+    inside = asyncio.run(service.browse_storage(1, "MINE"))
+    assert [f["name"] for f in inside["folders"]] == ["datnes"]
+    assert [f["path"] for f in inside["files"]] == ["MINE/metadati.xml"]
+    assert inside["files"][0]["mediaType"] == "application/xml"
+    data, media = asyncio.run(service.read_storage_file(1, "MINE/datnes/a.docx"))
+    assert data == b"x" and media.endswith("wordprocessingml.document")
+    for bad in ["OTHER", "MINE/../OTHER", "../org/1", "MINE/./datnes"]:
+        with pytest.raises(LookupError):
+            asyncio.run(service.browse_storage(1, bad))
+    for bad in ["OTHER/metadati.xml", "MINE/../OTHER/metadati.xml", "MINE/../../org/1/secret.bin", "MINE"]:
+        with pytest.raises(LookupError):
+            asyncio.run(service.read_storage_file(1, bad))

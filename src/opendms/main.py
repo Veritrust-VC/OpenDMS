@@ -23,6 +23,7 @@ from opendms.routers.agent import router as agent_router
 from opendms.mcp import router as mcp_router
 from opendms.uapf import uapf_host_router
 from opendms.routers.uapf_admin import router as uapf_admin_router
+from opendms.routers.storage_browser import router as storage_router
 
 
 def create_app() -> FastAPI:
@@ -46,7 +47,7 @@ def create_app() -> FastAPI:
     for r in [auth_router, oidc_router, users_router, documents_router, org_router, reg_router,
               cls_router, archive_router, settings_router, health_router, ai_router, audit_router, intelligence_router,
               ai_instructions_router, org_tools_router, connections_router, agent_router,
-              uapf_host_router, uapf_admin_router, mcp_router]:
+              uapf_host_router, uapf_admin_router, storage_router, mcp_router]:
         app.include_router(r)
 
     return app

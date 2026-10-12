@@ -309,11 +309,13 @@ async def _package_info(doc_id: int) -> tuple[str, list[str]]:
 
 
 def _media_type(path: str) -> str:
-    if path.endswith(".xml"):
+    import mimetypes
+    name = path.rsplit("/", 1)[-1]
+    if name.endswith(".xml"):
         return "application/xml"
-    if path == "SHA256SUMS":
+    if name == "SHA256SUMS":
         return "text/plain"
-    return "application/octet-stream"
+    return mimetypes.guess_type(name)[0] or "application/octet-stream"
 
 
 async def package_files(doc_id: int) -> dict:
@@ -357,3 +359,67 @@ async def package_zip(doc_id: int) -> tuple[str, bytes]:
             if data is not None:
                 z.writestr(f"{folder}/{path}", data)
     return f"{folder}.zip", buf.getvalue()
+
+
+# ── storage explorer ──────────────────────────────────────────────────────
+# Read-only view of the package root in storage: pakotnes/<DokumentaID>/...
+# Only folders that belong to documents of the given organisation are shown,
+# and every path is checked segment by segment before it reaches storage.
+
+def _clean_path(path: str) -> list[str]:
+    parts = [p for p in (path or "").replace("\\", "/").split("/") if p != ""]
+    for p in parts:
+        if p in (".", "..") or "\x00" in p:
+            raise LookupError("Invalid path")
+    return parts
+
+
+async def _owned_folders(org_id: int) -> dict[str, dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, doc_uid, title, registration_number, status, created_at, metadata
+               FROM documents WHERE org_id = $1 AND doc_uid IS NOT NULL""", int(org_id))
+    out = {}
+    for r in rows:
+        info = _json(r["metadata"]).get("standartaPakotne") or {}
+        out[pkg.folder_name(r["doc_uid"])] = {
+            "documentId": r["id"], "docUid": r["doc_uid"], "title": r["title"],
+            "registrationNumber": r["registration_number"], "status": r["status"],
+            "created": r["created_at"].isoformat() if r["created_at"] else None,
+            "valid": info.get("derigs"), "packageBuilt": info.get("izveidots")}
+    return out
+
+
+async def browse_storage(org_id: int, path: str = "") -> dict:
+    """List one level of the package storage. ``path`` is relative to the
+    package root: "" lists the document folders, "<folder>[/sub]" lists inside one."""
+    parts = _clean_path(path)
+    owned = await _owned_folders(org_id)
+    storage = get_storage()
+    if not parts:
+        listing = await storage.list(PACKAGE_ROOT)
+        folders = [{"name": f, "path": f, "document": owned[f]} for f in listing["folders"] if f in owned]
+        return {"root": PACKAGE_ROOT, "path": "", "document": None, "folders": folders, "files": []}
+    if parts[0] not in owned:
+        raise LookupError("Folder not found")
+    rel = "/".join(parts)
+    listing = await storage.list(f"{PACKAGE_ROOT}/{rel}")
+    return {"root": PACKAGE_ROOT, "path": rel, "document": owned[parts[0]],
+            "folders": [{"name": f, "path": f"{rel}/{f}"} for f in listing["folders"]],
+            "files": [{**f, "path": f"{rel}/{f['name']}", "mediaType": _media_type(f["name"])}
+                      for f in listing["files"]]}
+
+
+async def read_storage_file(org_id: int, path: str) -> tuple[bytes, str]:
+    """One file under the package root, within a folder owned by the organisation."""
+    parts = _clean_path(path)
+    if len(parts) < 2:
+        raise LookupError("Not a file")
+    owned = await _owned_folders(org_id)
+    if parts[0] not in owned:
+        raise LookupError("Folder not found")
+    data = await get_storage().get(f"{PACKAGE_ROOT}/{'/'.join(parts)}")
+    if data is None:
+        raise LookupError("File not found")
+    return data, _media_type(parts[-1])
