@@ -98,6 +98,7 @@ services:
       REQUESTS_CA_BUNDLE: ${REQUESTS_CA_BUNDLE:-}
       OPENDMS_OPENDMS_HOST_DID: ${OPENDMS_HOST_DID:-did:web:opendms.local}
       OPENDMS_OPENDMS_HOST_BASE_URL: ${OPENDMS_HOST_BASE_URL:-http://api:8002}
+      OPENDMS_PROCESSGIT_TOKEN: ${PROCESSGIT_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
