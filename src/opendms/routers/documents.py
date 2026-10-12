@@ -722,6 +722,45 @@ async def download_standard_package(doc_id: int, user=Depends(get_current_user))
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+async def _require_owned(doc_id: int) -> None:
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        owned = await conn.fetchval(
+            "SELECT 1 FROM documents WHERE id = $1 AND org_id = $2", doc_id, default_org["id"])
+    if not owned:
+        raise HTTPException(404, "Document not found")
+
+
+@router.get("/{doc_id}/package/files")
+async def list_standard_package_files(doc_id: int, user=Depends(get_current_user)):
+    """Files of the document package: path, size, SHA-256, media type."""
+    from opendms.standard.service import package_files
+    await _require_owned(doc_id)
+    try:
+        return await package_files(doc_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.get("/{doc_id}/package/files/{path:path}")
+async def get_standard_package_file(doc_id: int, path: str, download: bool = False,
+                                    user=Depends(get_current_user)):
+    """One file of the document package (metadati.xml, izsekosana.xml, datnes/…, SHA256SUMS)."""
+    from fastapi.responses import Response
+    from opendms.standard.service import package_file
+    await _require_owned(doc_id)
+    try:
+        data, media = await package_file(doc_id, path)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    name = path.rsplit("/", 1)[-1]
+    disp = "attachment" if download else "inline"
+    from urllib.parse import quote
+    return Response(content=data, media_type=media,
+                    headers={"Content-Disposition": f"{disp}; filename*=UTF-8''{quote(name)}"})
+
+
 @router.get("/{doc_id}/export-metadata")
 async def export_metadata_xml(doc_id: int, user=Depends(get_current_user)):
     """Export full VDVC v1.1 XML metadata for a document."""

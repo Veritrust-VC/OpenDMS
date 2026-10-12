@@ -296,6 +296,50 @@ async def build_package(doc_id: int, rules: dict) -> dict:
     return result
 
 
+async def _package_info(doc_id: int) -> tuple[str, list[str]]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow("SELECT doc_uid, metadata FROM documents WHERE id = $1", int(doc_id))
+    if not doc or not doc["doc_uid"]:
+        raise LookupError("Document has no standard package yet")
+    info = _json(doc["metadata"]).get("standartaPakotne") or {}
+    if not info.get("datnes"):
+        raise LookupError("Document has no standard package yet")
+    return pkg.folder_name(doc["doc_uid"]), list(info["datnes"])
+
+
+def _media_type(path: str) -> str:
+    if path.endswith(".xml"):
+        return "application/xml"
+    if path == "SHA256SUMS":
+        return "text/plain"
+    return "application/octet-stream"
+
+
+async def package_files(doc_id: int) -> dict:
+    """List the files of the stored package with size and SHA-256."""
+    folder, paths = await _package_info(doc_id)
+    storage = get_storage()
+    files = []
+    for path in sorted(paths, key=lambda p: (p != "metadati.xml", p != "izsekosana.xml", p == "SHA256SUMS", p)):
+        data = await storage.get(f"{PACKAGE_ROOT}/{folder}/{path}")
+        files.append({"path": path, "size": len(data) if data is not None else None,
+                      "sha256": pkg.sha256_hex(data) if data is not None else None,
+                      "mediaType": _media_type(path), "missing": data is None})
+    return {"folder": folder, "files": files}
+
+
+async def package_file(doc_id: int, path: str) -> tuple[bytes, str]:
+    """One file of the stored package. Only paths recorded in the package are served."""
+    folder, paths = await _package_info(doc_id)
+    if path not in paths:
+        raise LookupError(f"Not in the package: {path}")
+    data = await get_storage().get(f"{PACKAGE_ROOT}/{folder}/{path}")
+    if data is None:
+        raise LookupError(f"Missing from storage: {path}")
+    return data, _media_type(path)
+
+
 async def package_zip(doc_id: int) -> tuple[str, bytes]:
     """Zip the stored package for download. Returns (zip name, bytes)."""
     pool = await get_pool()

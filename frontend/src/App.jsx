@@ -969,6 +969,121 @@ function DocumentProcessPanel({ doc, notify }) {
   );
 }
 
+// Document package of the Dokumentu metadatu standarts v2.0, shown as a small file browser.
+function StandardPackagePanel({ doc, notify }) {
+  const info = doc?.metadata?.standartaPakotne;
+  const [listing, setListing] = useState(null);
+  const [open, setOpen] = useState(null);      // { path, text }
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setListing(null); setOpen(null);
+    if (!info?.datnes?.length) return;
+    api(`/documents/${doc.id}/package/files`).then(setListing).catch(() => setListing(null));
+  }, [doc.id, info?.izveidots]);
+
+  const fetchFile = async (path, download = false) => {
+    const res = await fetch(`${API}/documents/${doc.id}/package/files/${path.split("/").map(encodeURIComponent).join("/")}${download ? "?download=true" : ""}`,
+      { headers: { Authorization: `Bearer ${authToken}` } });
+    if (!res.ok) throw new Error(`Neizdevās nolasīt ${path}`);
+    return res;
+  };
+
+  const view = async (f) => {
+    if (open?.path === f.path) { setOpen(null); return; }
+    if (!(f.mediaType.startsWith("text/") || f.mediaType.endsWith("xml"))) { download(f.path); return; }
+    try { setLoading(true); const r = await fetchFile(f.path); setOpen({ path: f.path, text: await r.text() }); }
+    catch (e) { notify(e.message, "error"); } finally { setLoading(false); }
+  };
+
+  const saveBlob = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); };
+
+  const download = async (path) => {
+    try { const r = await fetchFile(path, true); saveBlob(await r.blob(), path.split("/").pop()); }
+    catch (e) { notify(e.message, "error"); }
+  };
+
+  const downloadZip = async () => {
+    try {
+      const res = await fetch(`${API}/documents/${doc.id}/package`, { headers: { Authorization: `Bearer ${authToken}` } });
+      if (!res.ok) throw new Error("Pakotnes lejupielāde neizdevās");
+      saveBlob(await res.blob(), `${listing?.folder || doc.doc_uid}.zip`);
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const kb = (n) => n == null ? "—" : n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+
+  return (
+    <div className="border rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-gray-500">Standarta pakotne · Dokumentu metadatu standarts v2.0</div>
+        {info && (
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${info.derigs ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+            {info.derigs ? "✓ atbilst standartam" : "✗ neatbilst standartam"}
+          </span>
+        )}
+      </div>
+
+      {doc.doc_uid ? (
+        <div className="text-xs">
+          <span className="text-gray-400">Dokumenta ID:</span>{" "}
+          <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_uid}</code>
+          <button onClick={() => { navigator.clipboard?.writeText(doc.doc_uid); notify("ID nokopēts"); }} className="ml-2 text-[10px] text-sky-600 hover:underline">kopēt</button>
+        </div>
+      ) : (
+        <div className="text-xs text-gray-400">Vienotais identifikators vēl nav piešķirts. To piešķir process „Ienākošā dokumenta reģistrēšana”, kad dokumentam pievieno pirmo datni.</div>
+      )}
+
+      {info?.problemas?.length > 0 && (
+        <ul className="text-[11px] text-red-700 bg-red-50 rounded px-3 py-2 list-disc list-inside">
+          {info.problemas.map((p, i) => <li key={i}>{p}</li>)}
+        </ul>
+      )}
+
+      {listing && (
+        <>
+          <div className="font-mono text-xs bg-gray-50 rounded border">
+            <div className="px-2 py-1.5 border-b text-gray-600 break-all">📁 {listing.folder}/</div>
+            {listing.files.map((f) => {
+              const depth = f.path.includes("/") ? 2 : 1;
+              const name = f.path.split("/").pop();
+              return (
+                <div key={f.path}>
+                  {f.path.startsWith("datnes/") && f === listing.files.find((x) => x.path.startsWith("datnes/")) && (
+                    <div className="px-2 py-1 text-gray-600" style={{ paddingLeft: 20 }}>📁 datnes/</div>
+                  )}
+                  <div className={`flex items-center justify-between px-2 py-1 hover:bg-white cursor-pointer ${open?.path === f.path ? "bg-white" : ""}`}
+                       style={{ paddingLeft: depth * 20 }} onClick={() => view(f)}>
+                    <span className={f.missing ? "text-red-600" : "text-gray-800"}>{name.endsWith(".xml") ? "🗎" : "📄"} {name}</span>
+                    <span className="flex items-center gap-3 text-gray-400">
+                      <span>{kb(f.size)}</span>
+                      <button onClick={(e) => { e.stopPropagation(); download(f.path); }} className="text-sky-600 hover:underline">lejupielādēt</button>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {loading && <div className="text-xs text-gray-400">Ielādē…</div>}
+          {open && (
+            <div className="border rounded">
+              <div className="flex items-center justify-between px-2 py-1 bg-gray-50 border-b text-xs">
+                <span className="font-mono">{open.path}</span>
+                <button onClick={() => setOpen(null)} className="text-gray-400 hover:text-gray-700">aizvērt ✕</button>
+              </div>
+              <pre className="text-[11px] leading-snug p-2 overflow-auto max-h-96 whitespace-pre">{open.text}</pre>
+            </div>
+          )}
+          <div className="flex items-center justify-between text-[11px] text-gray-400">
+            <span>Izveidota: {info?.izveidots ? new Date(info.izveidots).toLocaleString("lv-LV") : "—"}</span>
+            <button onClick={downloadZip} className="text-xs px-2 py-1 bg-sky-600 text-white rounded">⬇ Lejupielādēt pakotni (ZIP)</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DocumentDetail({ doc, onAction, notify }) {
   const [sendDid, setSendDid] = useState("");
   const [assignId, setAssignId] = useState("");
@@ -1092,6 +1207,8 @@ function DocumentDetail({ doc, onAction, notify }) {
           )}
         </div>
       )}
+
+      <StandardPackagePanel doc={doc} notify={notify} />
 
       <div className="border rounded-lg p-3">
         <div className="flex items-center justify-between mb-2">

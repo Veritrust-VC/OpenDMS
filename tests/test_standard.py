@@ -124,3 +124,25 @@ def test_validation_catches_schema_error():
     package, _ = _package()
     package["metadati.xml"] = package["metadati.xml"].replace(b"05-0000", b"LV.0005.0000", 1)
     assert any(p.startswith("metadati.xml") for p in pkg.validate(package))
+
+
+# ── package file access ────────────────────────────────────────────────────
+
+def test_package_file_serves_only_listed_paths(monkeypatch):
+    import asyncio
+    from opendms.standard import service
+
+    async def fake_info(doc_id):
+        return "LV-DOK_05-0000_2026_x", ["metadati.xml", "datnes/a.docx", "SHA256SUMS"]
+
+    class Store:
+        async def get(self, key):
+            return b"<x/>" if key.endswith("metadati.xml") else None
+
+    monkeypatch.setattr(service, "_package_info", fake_info)
+    monkeypatch.setattr(service, "get_storage", lambda: Store())
+    data, media = asyncio.run(service.package_file(1, "metadati.xml"))
+    assert data == b"<x/>" and media == "application/xml"
+    for bad in ["../../etc/passwd", "datnes/../metadati.xml", "other.xml"]:
+        with pytest.raises(LookupError):
+            asyncio.run(service.package_file(1, bad))
