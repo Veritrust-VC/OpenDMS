@@ -1176,7 +1176,9 @@ function DocumentDetail({ doc, onAction, notify }) {
 
   return (
     <div className="p-4 space-y-3 overflow-auto max-h-[80vh]">
-        {doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
+        {doc?.metadata?.uapf_result
+          ? <ProcessResultCard doc={doc} notify={notify} />
+          : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
 
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">{doc.title}</h3>
@@ -2467,6 +2469,91 @@ function SettingsPage({ notify, brand, setBrand }) {
       </div>
     </div>
   </div>);
+}
+
+// Result of a ProcessGit process run on this document (whatever its DMN
+// tables decided) and — when a step waits for a person — the decision buttons.
+const RESULT_LABELS = {
+  topic: "Joma", confidence: "Pārliecība", jurisdiction: "Piekritība", reason: "Pamatojums",
+  priority: "Prioritāte", responseDays: "Atbildes termiņš (dienās)", outcome: "Virzības priekšlikums",
+  department: "Nodaļa", role: "Loma", klasifikacijasIndekss: "Klasifikācijas indekss",
+  klasifikacijasNosaukums: "Lieta", strukturvieniba: "Struktūrvienība", loma: "Loma",
+  plusma: "Plūsma", termins: "Termiņš (dienās)", glabasanasTermins: "Glabāšanas termiņš",
+};
+const VALUE_LABELS = {
+  "bernu-tiesibas": "Bērnu tiesības", "diskriminacijas-noversana": "Diskriminācijas novēršana",
+  "laba-parvaldiba": "Laba pārvaldība", "socialas-tiesibas": "Sociālās tiesības",
+  "civilas-tiesibas": "Civilās un politiskās tiesības", "neskaidrs": "Neskaidrs",
+  "piekritigs": "Piekritīgs", "nav-piekritigs": "Nav piekritīgs",
+  "steidzams": "Steidzams", "augsts": "Augsta", "parasts": "Parasta",
+  "virzit-izskatisanai": "Virzīt izskatīšanai", "uzsakt-parbaudi": "Uzsākt pārbaudi",
+  "parsutit-citai-iestadei": "Pārsūtīt citai iestādei", "atteikt": "Atteikt",
+  "manuala-izvertesana": "Manuāla izvērtēšana", "izpilde": "Izpildei", "iepazisanas": "Iepazīšanai",
+};
+const REVIEW_STATUS = {
+  gaida: { label: "Gaida darbinieka lēmumu", cls: "bg-amber-100 text-amber-800" },
+  apstiprinats: { label: "Apstiprināts", cls: "bg-green-100 text-green-800" },
+  labots: { label: "Labots un apstiprināts", cls: "bg-sky-100 text-sky-800" },
+  noraidits: { label: "Noraidīts — manuāla virzība", cls: "bg-gray-200 text-gray-700" },
+};
+
+function ProcessResultCard({ doc, notify }) {
+  const result = doc.metadata.uapf_result || {};
+  const [review, setReview] = useState(doc.metadata.uapf_review || null);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const rows = Object.keys(RESULT_LABELS).filter((k) => result[k] !== undefined && result[k] !== null);
+  const show = (k) => {
+    const v = result[k];
+    if (k === "confidence" && typeof v === "number") return `${Math.round(v * 100)}%`;
+    return VALUE_LABELS[v] || String(v);
+  };
+  const decide = async (decision) => {
+    setBusy(true);
+    try {
+      const r = await api(`/uapf/review/${doc.id}`, { method: "POST", body: JSON.stringify({ decision, comment: comment || null }) });
+      setReview(r.review);
+      notify?.(`Lēmums saglabāts; process: ${r.state}`);
+    } catch (e) { notify?.(e.message, "error"); }
+    setBusy(false);
+  };
+  const st = review ? (REVIEW_STATUS[review.status] || { label: review.status, cls: "bg-gray-100" }) : null;
+  return (
+    <div className="mt-3 bg-gradient-to-br from-emerald-50 to-white border-2 border-emerald-300 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-emerald-900">⚙️ Procesa rezultāts</h4>
+        {result.sessionId && <span className="text-xs text-gray-500 font-mono">{result.sessionId}</span>}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {rows.map((k) => (
+          <div key={k} className={k === "reason" || k === "klasifikacijasNosaukums" ? "col-span-2" : ""}>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">{RESULT_LABELS[k]}</dt>
+            <dd className="font-medium text-gray-900">{show(k)}</dd>
+          </div>
+        ))}
+      </dl>
+      {review && (
+        <div className="mt-3 pt-3 border-t border-emerald-200 space-y-2">
+          <span className={`text-xs px-2 py-0.5 rounded font-semibold ${st.cls}`}>{st.label}</span>
+          {review.status === "gaida" ? (
+            <div className="space-y-2">
+              <textarea className="w-full border rounded p-2 text-sm" rows={2} placeholder="Komentārs (nav obligāts)"
+                value={comment} onChange={(e) => setComment(e.target.value)} />
+              <div className="flex gap-2">
+                <button disabled={busy} onClick={() => decide("apstiprinats")} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm disabled:opacity-50">Apstiprināt</button>
+                <button disabled={busy} onClick={() => decide("noraidits")} className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm disabled:opacity-50">Noraidīt — manuāla virzība</button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600">
+              {review.decidedBy && <>Lēma: {review.decidedBy}</>}
+              {review.comment && <> · „{review.comment}”</>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UapfClassificationCard({ classification }) {

@@ -468,7 +468,7 @@ function ProcessInfoCard({ info }) {
   );
 
   // Pull source URL from manifest owners (if present) — best-effort
-  const sourceUrl = `https://processgit.org/AI_Sandbox/${proc.id || "iesnieguma-izskatisana"}`;
+  const sourceUrl = info.source_url || null;
 
   return (
     <div className="bg-gradient-to-br from-emerald-50 to-white rounded border border-emerald-200 p-4">
@@ -481,10 +481,16 @@ function ProcessInfoCard({ info }) {
             {m.name || proc.name || info.packageId}
           </h2>
         </div>
-        <a href={sourceUrl} target="_blank" rel="noopener"
-           className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-white shrink-0">
-          ↗ ProcessGit
-        </a>
+        {sourceUrl ? (
+          <a href={sourceUrl} target="_blank" rel="noopener"
+             className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-white shrink-0">
+            ↗ ProcessGit
+          </a>
+        ) : (
+          <span className="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 shrink-0">
+            nav sinhronizēts no ProcessGit
+          </span>
+        )}
       </div>
 
       {m.description && (
@@ -1303,7 +1309,7 @@ function PackagesTab({ notify, user }) {
       )}
 
       {showSync && (
-        <SyncFromProcessGitModal pkg={showSync}
+        <SyncFromProcessGitModal pkg={showSync} processgitUrl={data.processgit_url}
           onClose={() => setShowSync(null)}
           onDone={() => { setShowSync(null); load(); }}
           notify={notify}/>
@@ -1312,9 +1318,9 @@ function PackagesTab({ notify, user }) {
   );
 }
 
-function SyncFromProcessGitModal({ pkg, onClose, onDone, notify }) {
+function SyncFromProcessGitModal({ pkg, processgitUrl, onClose, onDone, notify }) {
   const defaultUrl = pkg.source_url ||
-    "https://processgit.org/AI_Sandbox/iesnieguma-izskatisana/archive/main.zip";
+    `${processgitUrl || "https://processgit.org"}/<organizācija>/<repozitorijs>/archive/main.zip`;
   const [url, setUrl] = useState(defaultUrl);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1344,7 +1350,7 @@ function SyncFromProcessGitModal({ pkg, onClose, onDone, notify }) {
         <input value={url} onChange={e => setUrl(e.target.value)}
           className="w-full mt-0.5 px-2 py-1.5 text-sm border border-gray-300 rounded font-mono focus:border-emerald-500 focus:outline-none"/>
         <div className="text-xs text-gray-400 mt-1">
-          ProcessGit archive URL piemērs: <code>https://processgit.org/owner/repo/archive/main.zip</code>
+          ProcessGit archive URL piemērs: <code>{processgitUrl || "https://processgit.org"}/owner/repo/archive/main.zip</code>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Atcelt</button>

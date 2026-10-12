@@ -32,6 +32,7 @@ _REVERSIBILITY: dict[str, str] = {
     "connector/sap.lookup-partner": READ_ONLY,
     "connector/sap.lookup-contract": READ_ONLY,
     "connector/medus.fetch-nomenclature": READ_ONLY,
+    "classification/lookup": READ_ONLY,
     # internal writes: undoable inside our own boundary
     "data/write": REVERSIBLE,
     "event/emit": REVERSIBLE,

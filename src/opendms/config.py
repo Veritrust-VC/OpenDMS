@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     opendms_host_base_url: str = "http://api:8002"
     # Read-only ProcessGit access token, sent when syncing UAPF packages from ProcessGit
     processgit_token: Optional[str] = None
+    # ProcessGit this instance takes its processes from (the sync dialog default).
+    processgit_url: str = "https://processgit.org"
 
     model_config = {"env_prefix": "OPENDMS_", "env_file": ".env"}
 

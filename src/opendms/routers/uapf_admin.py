@@ -359,6 +359,7 @@ async def list_packages(user=Depends(get_current_user)):
     return {
         "engine_alive": engine_alive,
         "engine_url": s.uapf_engine_url,
+        "processgit_url": s.processgit_url.rstrip("/"),
         "packages": enriched,
     }
 
@@ -514,6 +515,69 @@ async def run_now(
         # Trigger-based — same code path as automatic lifecycle hook
         await on_document_event(body.event_type, doc_id)
         return {"mode": "trigger", "event_type": body.event_type, "document_id": doc_id}
+
+
+class ReviewDecisionIn(BaseModel):
+    decision: str            # apstiprinats | labots | noraidits
+    comment: Optional[str] = None
+    changes: Optional[dict] = None   # fields the reviewer corrected (decision "labots")
+
+
+REVIEW_DECISIONS = ("apstiprinats", "labots", "noraidits")
+
+
+@router.post("/review/{doc_id}")
+async def decide_review(doc_id: int, body: ReviewDecisionIn, user=Depends(get_current_user)):
+    """The person's decision on a process step waiting for them (BPMN userTask).
+
+    Resumes the suspended engine session; the process continues from there
+    (e.g. emits the routing event or ends as handed over for manual work).
+    """
+    if body.decision not in REVIEW_DECISIONS:
+        raise HTTPException(400, f"decision must be one of {', '.join(REVIEW_DECISIONS)}")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
+    if meta is None:
+        raise HTTPException(404, "Document not found")
+    meta = json.loads(meta) if isinstance(meta, str) else meta
+    review = (meta or {}).get("uapf_review") or {}
+    if review.get("status") != "gaida" or not review.get("sessionId"):
+        raise HTTPException(409, "No process step is waiting for a decision on this document")
+
+    reviewer = user.get("email") or user.get("username") or str(user.get("id"))
+    output = {"decision": body.decision, "comment": body.comment, "reviewer": reviewer,
+              **(body.changes or {})}
+    s = get_settings()
+    client = UapfClient(s.uapf_engine_url, s.uapf_engine_auth_token)
+    try:
+        result = await client.resume_session(review["sessionId"], output)
+    except Exception as e:
+        raise HTTPException(502, f"Engine resume failed: {e}")
+
+    from datetime import datetime, timezone
+    review.update({"status": body.decision, "decidedBy": reviewer, "comment": body.comment,
+                   "decidedAt": datetime.now(timezone.utc).isoformat()})
+    state = result.get("state", "unknown")
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+            json.dumps({"uapf_review": review}), doc_id,
+        )
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'uapf.review.decided', $2, FALSE, $3)""",
+            doc_id, user.get("id"), json.dumps(review),
+        )
+        await conn.execute(
+            """UPDATE uapf_sessions SET state = $2,
+                   output_payload = COALESCE($3::jsonb, output_payload),
+                   completed_at = CASE WHEN $2 IN ('completed','failed','aborted') THEN NOW() ELSE completed_at END
+               WHERE session_id = $1""",
+            review["sessionId"], state,
+            json.dumps(result.get("output")) if result.get("output") is not None else None,
+        )
+    return {"sessionId": review["sessionId"], "state": state, "review": review}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -749,6 +813,8 @@ async def get_package_info(package_id: str, user=Depends(get_current_user)):
                 ORDER BY id""",
             package_id,
         )
+        src_row = await conn.fetchrow(
+            "SELECT source_url FROM uapf_package_sources WHERE package_id = $1", package_id)
         all_triggers = await conn.fetch(
             """SELECT id, name, trigger_event, package_id, process_id, is_active, match_condition
                  FROM process_triggers
@@ -757,6 +823,9 @@ async def get_package_info(package_id: str, user=Depends(get_current_user)):
             package_id,
         )
 
+    # Repository page (drop /archive/<ref>.zip) for the "↗ ProcessGit" link.
+    if src_row and src_row["source_url"]:
+        info["source_url"] = src_row["source_url"].split("/archive/")[0]
     info["triggers"] = {
         "active": [dict(t) for t in triggers],
         "all": [dict(t) for t in all_triggers],

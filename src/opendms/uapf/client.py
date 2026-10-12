@@ -76,6 +76,18 @@ class UapfClient:
             r.raise_for_status()
             return r.json()
 
+    async def resume_session(self, session_id: str, output: dict) -> dict:
+        """Continue a session suspended on a user task with the human's result."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            r = await client.post(
+                f"{self.engine_url}/uapf/sessions/{session_id}/resume",
+                headers=self._headers(),
+                json={"output": output},
+            )
+            if r.status_code >= 400:
+                raise RuntimeError(f"UAPF engine returned {r.status_code}: {r.text[:500]}")
+            return r.json()
+
     async def get_session(self, session_id: str) -> dict:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.get(

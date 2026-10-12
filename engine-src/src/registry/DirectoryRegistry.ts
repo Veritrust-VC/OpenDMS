@@ -74,6 +74,7 @@ function summarize(pkg: LoadedPackage, mode: RegistryMode): PackageSummary {
     requiredClaims: manifest.policies?.requiredClaims || pkg.policies?.requiredClaims,
     guardrails: pkg.guardrails,  // G7
     algorithmCards: pkg.algorithmCards,  // v2.4.0
+    mappings: pkg.mappings,
     source: { mode, location: pkg.sourcePath },
   };
 }

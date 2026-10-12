@@ -13,6 +13,7 @@ and return a dict that will be merged into the UAPF session variables.
 """
 
 import json
+from datetime import datetime, timezone
 import logging
 import os
 import subprocess
@@ -256,6 +257,14 @@ Respond ONLY with JSON in this exact shape, all booleans required:
   "vulnerablePerson": <bool>,
   "urgency": <bool>,
   "ongoingHarm": <bool>,
+  "mentionsChild": <bool>,
+  "discriminationGround": <bool>,
+  "socialRights": <bool>,
+  "civilPolitical": <bool>,
+  "publicAuthorityConduct": <bool>,
+  "respondentType": "iestade|privatpersona|tiesa|nav-zinams",
+  "courtPending": <bool>,
+  "competentAuthorityKnown": <bool>,
   "languageDetected": "lv|ru|en|..."
 }
 
@@ -272,8 +281,29 @@ Definitions:
   - vulnerablePerson: subject is a minor, elderly, disabled, prisoner, or otherwise dependent
   - urgency: text explicitly states urgency or time-sensitivity
   - ongoingHarm: harm is happening now, not historical
+  - mentionsChild: same as mentionsChildren
+  - discriminationGround: a protected ground (sex, race, disability, age, religion,
+    orientation ...) is named as the reason for unequal treatment
+  - socialRights: social, economic or cultural rights (benefits, housing, health care,
+    education, pensions, work)
+  - civilPolitical: civil and political rights (fair trial, privacy, expression,
+    assembly, liberty, property)
+  - publicAuthorityConduct: the complaint is about how a state or municipal body acted
+    or failed to act
+  - respondentType: who the complaint is against — "iestade" (state or municipal body),
+    "privatpersona" (private person or company), "tiesa" (a court or a court ruling),
+    "nav-zinams" (cannot tell)
+  - courtPending: the same matter is being heard in court now
+  - competentAuthorityKnown: another body clearly competent for the matter is named or obvious
 
 No markdown, no preamble, no commentary. Booleans must be true/false (not strings)."""
+
+
+P1_FALLBACK = {
+    "mentionsChild": False, "discriminationGround": False, "socialRights": False,
+    "civilPolitical": False, "publicAuthorityConduct": False,
+    "respondentType": "nav-zinams", "courtPending": False, "competentAuthorityKnown": False,
+}
 
 
 async def handle_ai_extract(ctx: dict) -> dict:
@@ -336,6 +366,7 @@ async def handle_ai_extract(ctx: dict) -> dict:
                 "mentionsHealth": False, "mentionsSocialServices": False,
                 "mentionsPrivacy": False, "mentionsPublicAdministration": False,
                 "vulnerablePerson": False, "urgency": False, "ongoingHarm": False,
+                **P1_FALLBACK,
                 "languageDetected": "und",
                 "_warning": "no text to extract from",
             }
@@ -354,6 +385,7 @@ async def handle_ai_extract(ctx: dict) -> dict:
                 "mentionsHealth": False, "mentionsSocialServices": False,
                 "mentionsPrivacy": False, "mentionsPublicAdministration": False,
                 "vulnerablePerson": False, "urgency": False, "ongoingHarm": False,
+                **P1_FALLBACK,
                 "languageDetected": "und",
                 "_warning": "AI extraction unavailable; conservative defaults applied",
             }
@@ -372,6 +404,25 @@ async def handle_ai_extract(ctx: dict) -> dict:
         if isinstance(v, str):
             v = v.lower() in ("true", "yes", "1")
         coerced[k] = bool(v)
+    # P1 facets (lv.tiesibsargs.iesnieguma-virzisana) — defaulted from the
+    # triage facets when the model leaves them out.
+    p1_defaults = {
+        "mentionsChild": coerced["mentionsChildren"],
+        "discriminationGround": coerced["mentionsDiscrimination"],
+        "socialRights": coerced["mentionsSocialServices"] or coerced["mentionsHealth"],
+        "civilPolitical": coerced["mentionsPrivacy"] or coerced["mentionsPolice"] or coerced["mentionsPrisons"],
+        "publicAuthorityConduct": coerced["mentionsPublicAdministration"],
+        "courtPending": False,
+        "competentAuthorityKnown": False,
+    }
+    for k, dflt in p1_defaults.items():
+        v = result.get(k)
+        if isinstance(v, str):
+            v = v.lower() in ("true", "yes", "1")
+        coerced[k] = bool(v) if v is not None else dflt
+    rt = str(result.get("respondentType") or "").strip().lower()
+    coerced["respondentType"] = rt if rt in ("iestade", "privatpersona", "tiesa", "nav-zinams") else (
+        "iestade" if coerced["publicAuthorityConduct"] else "nav-zinams")
     coerced["languageDetected"] = result.get("languageDetected") or "und"
     return {"output": coerced}
 
@@ -379,6 +430,19 @@ async def handle_ai_extract(ctx: dict) -> dict:
 # ─────────────────────────────────────────────────────────────
 # data.write@1
 # ─────────────────────────────────────────────────────────────
+
+# Decision outputs of the lab process packages, recorded as they come.
+PROCESS_RESULT_KEYS = (
+    # lv.tiesibsargs.iesnieguma-virzisana
+    "topic", "confidence", "topicConfidence", "jurisdiction", "reason", "priority",
+    "responseDays", "slaHours", "outcome", "department", "role", "reviewerRole",
+    # VDVC / RS incoming flows
+    "klasifikacijasIndekss", "klasifikacijasNosaukums", "strukturvieniba", "loma",
+    "plusma", "termins", "glabasanasTermins",
+    # human step
+    "decision", "comment",
+)
+
 
 async def handle_data_write(ctx: dict) -> dict:
     """
@@ -407,6 +471,17 @@ async def handle_data_write(ctx: dict) -> dict:
         ) if inp.get(k) is not None
     }
 
+    # Whatever the package's DMN tables decided, as plain fields — so a process
+    # changed in ProcessGit shows its new outputs without host changes.
+    decision_fields = {
+        k: inp.get(k) for k in PROCESS_RESULT_KEYS if inp.get(k) is not None
+    }
+    sla_hours = inp.get("slaHours")
+    if sla_hours is None and inp.get("responseDays") is not None:
+        sla_hours = int(float(inp.get("responseDays")) * 24)
+    reviewer_role = inp.get("reviewerRole") or inp.get("role") or inp.get("loma")
+    topic_conf = inp.get("topicConfidence") if inp.get("topicConfidence") is not None else inp.get("confidence")
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         # Pre-create uapf_sessions row to satisfy FK. The run-now handler in
@@ -432,9 +507,9 @@ async def handle_data_write(ctx: dict) -> dict:
                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                RETURNING id, created_at""",
             int(document_id), session_id,
-            inp.get("topic"), float(inp.get("topicConfidence") or 0.0),
-            inp.get("priority"), int(inp.get("slaHours") or 0),
-            inp.get("department"), inp.get("reviewerRole"),
+            inp.get("topic"), float(topic_conf or 0.0),
+            inp.get("priority"), int(sla_hours or 0),
+            inp.get("department"), reviewer_role,
             json.dumps(raw_facets),
         )
 
@@ -445,13 +520,19 @@ async def handle_data_write(ctx: dict) -> dict:
             json.dumps({
                 "uapf_classification": {
                     "topic": inp.get("topic"),
-                    "topicConfidence": inp.get("topicConfidence"),
+                    "topicConfidence": topic_conf,
                     "priority": inp.get("priority"),
-                    "slaHours": inp.get("slaHours"),
+                    "slaHours": sla_hours,
                     "department": inp.get("department"),
-                    "reviewerRole": inp.get("reviewerRole"),
+                    "reviewerRole": reviewer_role,
                     "sessionId": session_id,
-                }
+                },
+                "uapf_result": {
+                    **decision_fields,
+                    "sessionId": session_id,
+                    "stepId": ctx.get("step_id"),
+                    "recordedAt": datetime.now(timezone.utc).isoformat(),
+                },
             }),
             int(document_id),
         )
@@ -619,6 +700,61 @@ async def handle_document_list(ctx: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# task.request@1 — a human step (BPMN userTask)
+#
+# The host accepts the task and answers {status: "pending"}; the engine
+# suspends the session. The reviewer decides in OpenDMS, which resumes the
+# session with {decision, comment} (see routers/uapf_admin.py).
+# ─────────────────────────────────────────────────────────────
+
+async def handle_task_request(ctx: dict) -> dict:
+    inp = ctx.get("input") or {}
+    session_id = ctx.get("session_id")
+    step_id = ctx.get("step_id")
+    document_id = inp.get("documentId")
+    if not document_id:
+        raise ValueError("task.request requires documentId in input")
+
+    proposal = {k: inp.get(k) for k in PROCESS_RESULT_KEYS if inp.get(k) is not None}
+    review = {
+        "status": "gaida",
+        "sessionId": session_id,
+        "stepId": step_id,
+        "role": inp.get("role") or inp.get("loma") or inp.get("reviewerRole"),
+        "department": inp.get("department") or inp.get("strukturvieniba"),
+        "proposal": proposal,
+        "requestedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+            json.dumps({"uapf_review": review}), int(document_id),
+        )
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'uapf.review.requested', NULL, FALSE, $2)""",
+            int(document_id), json.dumps(review),
+        )
+    return {"output": {"status": "pending", "reviewTaskId": f"{session_id}:{step_id}"}}
+
+
+# ─────────────────────────────────────────────────────────────
+# classification.lookup@1 — SIMULATED until the real scheme is connected
+# ─────────────────────────────────────────────────────────────
+
+async def handle_classification_lookup(ctx: dict) -> dict:
+    from opendms.uapf.classification_sim import lookup
+
+    inp = ctx.get("input") or {}
+    parts = [inp.get("title") or "", inp.get("redactedContent") or inp.get("content") or ""]
+    summary = inp.get("semanticSummary")
+    if isinstance(summary, dict):
+        parts.append(str(summary.get("summary") or ""))
+    return {"output": lookup("\n".join(parts))}
+
+
+# ─────────────────────────────────────────────────────────────
 # Registry — maps capability ref → handler
 # ─────────────────────────────────────────────────────────────
 
@@ -634,6 +770,10 @@ HANDLERS = {
     "identifier/assign": (handle_identifier_assign, {"namespace": "identifier", "operation": "assign",  "version": 1}),
     "storage/prepare":   (handle_storage_prepare,   {"namespace": "storage",    "operation": "prepare", "version": 1}),
     "package/build":     (handle_package_build,     {"namespace": "package",    "operation": "build",   "version": 1}),
+    "task/request":      (handle_task_request,      {"namespace": "task",       "operation": "request", "version": 1,
+                                                     "summary": "Hand a step to a person; the session waits for their decision."}),
+    "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,
+                                                     "summary": "Find the classification scheme entry, unit and retention (SIMULATED scheme)."}),
 }
 
 

@@ -24,6 +24,7 @@ export interface PackageSummary {
   artifacts?: ArtifactRef[];
   requiredClaims?: string[];
   guardrails?: Record<string, unknown>;  // G7: package guardrails snapshot
+  mappings?: Record<string, unknown>;    // resources/mappings.* task bindings
   algorithmCards?: Record<string, AlgorithmCard>;  // v2.4.0: cards keyed by id
   source: { mode: RegistryMode; location: string };
 }
