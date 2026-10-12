@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import Icon from "./Icon.jsx";
+import StandardXmlView, { hasReadableView } from "./StandardXmlView.jsx";
 
 const token = () => localStorage.getItem("opendms_token") || "";
 
@@ -39,6 +40,7 @@ export default function StoragePage({ notify, route, navigate }) {
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);   // { file, text?, url?, kind }
   const [filter, setFilter] = useState("");
+  const [tab, setTab] = useState("readable");     // readable | raw — for metadati.xml / izsekosana.xml
 
   useEffect(() => {
     let alive = true;
@@ -66,6 +68,7 @@ export default function StoragePage({ notify, route, navigate }) {
         let text = await r.text();
         if (f.name.endsWith(".xml")) text = prettyXml(text);
         setPreview({ file: f, kind: "text", text });
+        setTab("readable");
       } else if (f.mediaType === "application/pdf") {
         setPreview({ file: f, kind: "pdf", url: URL.createObjectURL(await r.blob()) });
       } else if (isImage(f.mediaType)) {
@@ -210,7 +213,16 @@ export default function StoragePage({ notify, route, navigate }) {
                 <button onClick={closePreview} className="text-ink-400 hover:text-ink-700" aria-label="Aizvērt">✕</button>
               </div>
             </div>
-            {preview.kind === "text" && (
+            {preview.kind === "text" && hasReadableView(preview.file.name) && (
+              <div className="flex gap-1 px-3 pt-2 border-b text-xs">
+                {[["readable", "Pārskats"], ["raw", "XML"]].map(([id, lbl]) => (
+                  <button key={id} onClick={() => setTab(id)}
+                    className={`px-3 py-1.5 -mb-px border-b-2 ${tab === id ? "border-sky-600 text-sky-700 font-medium" : "border-transparent text-ink-500 hover:text-ink-800"}`}>{lbl}</button>
+                ))}
+              </div>
+            )}
+            {preview.kind === "text" && hasReadableView(preview.file.name) && tab === "readable" && <StandardXmlView xml={preview.text} />}
+            {preview.kind === "text" && !(hasReadableView(preview.file.name) && tab === "readable") && (
               <pre className="text-[11px] leading-snug p-3 overflow-auto max-h-[70vh] whitespace-pre">{preview.text}</pre>
             )}
             {preview.kind === "pdf" && <iframe title={preview.file.name} src={preview.url} className="w-full h-[70vh]" />}
