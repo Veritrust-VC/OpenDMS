@@ -53,3 +53,28 @@ def test_incoming_facets_contract_selected_by_schema_ref(monkeypatch):
 
 def test_vc_issue_is_offered():
     assert "vc/issue" in handlers.HANDLERS
+
+
+def test_verify_reports_missing_elements():
+    out = asyncio.run(handlers.handle_ai_verify({"input": {
+        "draftText": "Rekvizīti: …\nNormatīvā atsauce: …", "element": ["rekviziti", "normativa-atsauce", "parsudzibas-kartiba"]}}))["output"]
+    assert out["missingElements"] == ["parsudzibas-kartiba"] and out["elementsOk"] is False
+
+
+def test_template_fetch_selected_by_target(monkeypatch):
+    async def fake(inp):
+        return {"output": {"templateId": inp["templateId"]}}
+    monkeypatch.setattr(handlers, "_fetch_template", fake)
+    out = asyncio.run(handlers.handle_document_fetch({
+        "input": {"templateId": "TPL-ATTEIKT", "documentId": 1},
+        "target": {"id": "system.opendms-template-library"}}))["output"]
+    assert out == {"templateId": "TPL-ATTEIKT"}
+
+
+def test_seed_templates_cover_p2_outcomes():
+    from opendms.uapf.templates import SEED
+    ids = {t[0] for t in SEED}
+    assert {"TPL-ATTEIKT", "TPL-VIRZIT-IZSKATISANAI", "TPL-PIENEMSANA-BERNU",
+            "TPL-PARSUTIT-CITAI-IESTADEI", "TPL-UZSAKT-PARBAUDI"} <= ids
+    for _id, _title, body in SEED:
+        assert "SINTĒTISKA" in body and "Rekvizīti" in body

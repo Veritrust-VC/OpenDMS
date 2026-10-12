@@ -30,6 +30,21 @@ logger = logging.getLogger(__name__)
 # document.fetch@1
 # ─────────────────────────────────────────────────────────────
 
+async def _fetch_template(inp: dict) -> dict:
+    from opendms.uapf.templates import latest
+    tid = inp.get("templateId")
+    if not tid:
+        raise ValueError("template fetch needs templateId (from the SelectTemplate decision)")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        t = await latest(conn, tid)
+    if not t:
+        raise LookupError(f"Template not in the OpenDMS template library: {tid}")
+    return {"output": {"templateId": t["template_id"], "templateVersion": t["version"],
+                       "templateTitle": t["title"], "templateBody": t["body"],
+                       "templateSynthetic": t["synthetic"]}}
+
+
 async def handle_document_fetch(ctx: dict) -> dict:
     """
     Fetch a document's content + metadata.
@@ -40,6 +55,11 @@ async def handle_document_fetch(ctx: dict) -> dict:
     inp = ctx.get("input") or {}
     doc_did = inp.get("documentDid")
     doc_id = inp.get("documentId")
+
+    # The package bound this step to the template library: fetch the current
+    # version of the template the DMN picked, not the document.
+    if str((ctx.get("target") or {}).get("id", "")).endswith("template-library"):
+        return await _fetch_template(inp)
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -497,6 +517,8 @@ PROCESS_RESULT_KEYS = (
     # VDVC / RS incoming flows
     "klasifikacijasIndekss", "klasifikacijasNosaukums", "strukturvieniba", "loma",
     "plusma", "termins", "glabasanasTermins",
+    # P2 response draft
+    "templateId", "templateVersion", "missingElements",
     # human step
     "decision", "comment",
 )
@@ -572,6 +594,18 @@ async def handle_data_write(ctx: dict) -> dict:
               inp.get("department"), reviewer_role,
               json.dumps(raw_facets),
             )
+
+        if inp.get("draftText"):
+            await conn.execute(
+                "UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+                json.dumps({"uapf_draft": {
+                    "templateId": inp.get("templateId"), "templateVersion": inp.get("templateVersion"),
+                    "templateSynthetic": inp.get("templateSynthetic"),
+                    "text": inp.get("draftText"), "source": inp.get("draftSource"),
+                    "elementsChecked": inp.get("elementsChecked"),
+                    "missingElements": inp.get("missingElements"),
+                    "sessionId": session_id,
+                }}), int(document_id))
 
         # Mirror to document metadata for visibility in OpenDMS UI
         await conn.execute(
@@ -762,6 +796,83 @@ async def handle_document_list(ctx: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# ai.draft@1 / ai.verify@1 — response draft from a template (P2)
+# ─────────────────────────────────────────────────────────────
+
+class _Blank(dict):
+    def __missing__(self, key):
+        return "[…]"
+
+
+ELEMENT_MARKERS = {
+    "rekviziti": "Rekvizīti",
+    "normativa-atsauce": "Normatīvā atsauce",
+    "parsudzibas-kartiba": "Pārsūdzības kārtība",
+    "kompetenta-iestade": "Kompetentā iestāde",
+}
+
+VALUE_LV = {
+    "bernu-tiesibas": "bērnu tiesības", "diskriminacijas-noversana": "diskriminācijas novēršana",
+    "laba-parvaldiba": "laba pārvaldība", "socialas-tiesibas": "sociālās tiesības",
+    "civilas-tiesibas": "civilās un politiskās tiesības", "neskaidrs": "neskaidrs jautājums",
+}
+
+
+async def handle_ai_draft(ctx: dict) -> dict:
+    """Fill the template with the case facts; the model writes one neutral
+    sentence on the substance of the complaint (from redacted text only)."""
+    inp = ctx.get("input") or {}
+    body = inp.get("templateBody") or ""
+    if not body:
+        raise ValueError("ai.draft needs templateBody (from the template fetch step)")
+    values = _Blank(
+        datums=datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+        registracijas_nr=inp.get("registrationNumber") or "[…]",
+        joma=VALUE_LV.get(inp.get("topic"), inp.get("topic") or "[…]"),
+        nodala=inp.get("department") or "[…]",
+        termins=inp.get("responseDays") or "[…]",
+        pamatojums=(inp.get("reason") or "[…]").lower(),
+        kompetenta_iestade=inp.get("competentAuthority") or "[norādīt kompetento iestādi]",
+    )
+    draft = body.format_map(values)
+
+    substance, source = "", "veidne"
+    doc_id = inp.get("documentId")
+    if doc_id:
+        try:
+            fetched = (await handle_document_fetch({"input": {"documentId": doc_id}}))["output"]
+            red = (await handle_ai_redact({"input": {"content": fetched.get("content") or ""}}))["output"]
+            text = (red.get("redactedContent") or "")[:6000]
+            if text:
+                res = await _complete_json(
+                    "Tu raksti valsts iestādes atbildes projektu. Atbildi tikai ar JSON "
+                    '{"butiba": "<viens neitrāls teikums latviski par iesnieguma būtību, bez personas datiem>"}',
+                    f"--- IESNIEGUMS (personas dati aizklāti) ---\n{text}\n--- BEIGAS ---")
+                if res and res.get("butiba"):
+                    substance, source = str(res["butiba"])[:400], "veidne + valodas modelis"
+        except Exception as e:  # the draft still stands on the template alone
+            logger.warning("ai.draft: substance sentence skipped: %s", e)
+    if substance:
+        # after the Rekvizīti block (or at the end if the template has none)
+        at = draft.find("\n\n", max(draft.find("Rekvizīti"), 0))
+        line = f"\n\nIesnieguma būtība: {substance}"
+        draft = draft[:at] + line + draft[at:] if at >= 0 else draft + line
+    return {"output": {"draftText": draft, "draftSource": source}}
+
+
+async def handle_ai_verify(ctx: dict) -> dict:
+    """Deterministic check that the draft contains every required element."""
+    inp = ctx.get("input") or {}
+    draft = inp.get("draftText") or ""
+    required = inp.get("element") or []
+    if isinstance(required, str):
+        required = [required]
+    missing = [e for e in required if ELEMENT_MARKERS.get(e, e).lower() not in draft.lower()]
+    return {"output": {"elementsChecked": required, "missingElements": missing,
+                       "elementsOk": not missing}}
+
+
+# ─────────────────────────────────────────────────────────────
 # task.request@1 — a human step (BPMN userTask)
 #
 # The host accepts the task and answers {status: "pending"}; the engine
@@ -877,6 +988,10 @@ HANDLERS = {
     "package/build":     (handle_package_build,     {"namespace": "package",    "operation": "build",   "version": 1}),
     "vc/issue":          (handle_vc_issue,          {"namespace": "vc",         "operation": "issue",   "version": 1,
                                                      "summary": "Make sure the document's registration is attested in the document register (DID/VC)."}),
+    "ai/draft":          (handle_ai_draft,          {"namespace": "ai",         "operation": "draft",   "version": 1,
+                                                     "summary": "Draft a response from a library template and the case facts."}),
+    "ai/verify":         (handle_ai_verify,         {"namespace": "ai",         "operation": "verify",  "version": 1,
+                                                     "summary": "Check a draft contains the required elements."}),
     "task/request":      (handle_task_request,      {"namespace": "task",       "operation": "request", "version": 1,
                                                      "summary": "Hand a step to a person; the session waits for their decision."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,

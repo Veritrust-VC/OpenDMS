@@ -2484,6 +2484,7 @@ const RESULT_LABELS = {
   department: "Nodaļa", role: "Loma", klasifikacijasIndekss: "Klasifikācijas indekss",
   klasifikacijasNosaukums: "Lieta", strukturvieniba: "Struktūrvienība", loma: "Loma",
   plusma: "Plūsma", termins: "Termiņš (dienās)", glabasanasTermins: "Glabāšanas termiņš",
+  templateId: "Atbildes veidne",
 };
 const VALUE_LABELS = {
   "bernu-tiesibas": "Bērnu tiesības", "diskriminacijas-noversana": "Diskriminācijas novēršana",
@@ -2523,6 +2524,7 @@ function ProcessResultCard({ doc, notify }) {
     setBusy(false);
   };
   const st = review ? (REVIEW_STATUS[review.status] || { label: review.status, cls: "bg-gray-100" }) : null;
+  const draft = doc.metadata.uapf_draft;
   return (
     <div className="mt-3 bg-gradient-to-br from-emerald-50 to-white border-2 border-emerald-300 rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
@@ -2537,6 +2539,21 @@ function ProcessResultCard({ doc, notify }) {
           </div>
         ))}
       </dl>
+      {draft && (
+        <div className="mt-3 pt-3 border-t border-emerald-200">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs uppercase tracking-wide text-gray-500">
+              Atbildes projekts · {draft.templateId} v{draft.templateVersion}{draft.templateSynthetic ? " (sintētiska veidne)" : ""}
+            </span>
+            {Array.isArray(draft.missingElements) && (
+              <span className={`text-xs px-2 py-0.5 rounded ${draft.missingElements.length ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                {draft.missingElements.length ? `Trūkst: ${draft.missingElements.join(", ")}` : "Obligātie elementi ir"}
+              </span>
+            )}
+          </div>
+          <pre className="whitespace-pre-wrap text-sm bg-white border rounded p-3 font-sans">{draft.text}</pre>
+        </div>
+      )}
       {review && (
         <div className="mt-3 pt-3 border-t border-emerald-200 space-y-2">
           <span className={`text-xs px-2 py-0.5 rounded font-semibold ${st.cls}`}>{st.label}</span>

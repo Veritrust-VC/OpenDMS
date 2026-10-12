@@ -577,6 +577,13 @@ async def decide_review(doc_id: int, body: ReviewDecisionIn, user=Depends(get_cu
             review["sessionId"], state,
             json.dumps(result.get("output")) if result.get("output") is not None else None,
         )
+    # An approved proposal is a decision on the document: processes waiting for
+    # 'document.decided' (e.g. the response draft) start now.
+    if body.decision in ("apstiprinats", "labots") and state == "completed":
+        async with pool.acquire() as conn:
+            finished_pkg = await conn.fetchval(
+                "SELECT package_id FROM uapf_sessions WHERE session_id = $1", review["sessionId"])
+        await on_document_event("document.decided", doc_id, exclude_package=finished_pkg)
     return {"sessionId": review["sessionId"], "state": state, "review": review}
 
 

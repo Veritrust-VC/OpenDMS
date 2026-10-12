@@ -22,6 +22,8 @@ async def init_db():
     _pool = await asyncpg.create_pool(s.database_url, min_size=s.db_pool_min, max_size=s.db_pool_max)
     async with _pool.acquire() as conn:
         await _create_schema(conn)
+        from opendms.uapf.templates import seed as _seed_templates
+        await _seed_templates(conn)
     # Ensure superadmin exists
     await _ensure_superadmin()
     logger.info("Database initialized")
@@ -652,6 +654,20 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             ON agent_messages(run_id, id);
         CREATE INDEX IF NOT EXISTS idx_agent_messages_pending
             ON agent_messages(run_id) WHERE consumed_at IS NULL AND role = 'user';
+
+        -- Versioned response templates (Darba uzdevums: templates live in the
+        -- DMS; the process DMN only returns a template ID).
+        CREATE TABLE IF NOT EXISTS response_templates (
+            id BIGSERIAL PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            synthetic BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (template_id, version)
+        );
 
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
