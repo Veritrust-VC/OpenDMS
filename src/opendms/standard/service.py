@@ -260,8 +260,12 @@ async def build_package(doc_id: int, rules: dict) -> dict:
         contents[f["file_name"]] = data
 
     now = datetime.now(timezone.utc)
-    system = {"name": "OpenDMS", "instance": (s.opendms_host_base_url or "").split("//")[-1].split("/")[0] or None,
-              "environment": "TEST"}
+    # Public name of this DVS: the did:web host when configured (the base URL is
+    # the engine's internal callback address, e.g. http://api:8002).
+    host_did = s.opendms_host_did or ""
+    instance = host_did[len("did:web:"):] if host_did.startswith("did:web:") and "localhost" not in host_did \
+        and host_did != "did:web:opendms.local" else None
+    system = {"name": "OpenDMS", "instance": instance, "environment": "TEST"}
     document = {**doc, "sdk_did": doc.get("doc_did")}
     meta_xml = pkg.build_metadata_xml(org=org, document=document, files=files, rules=rules,
                                       creator=users.get(doc.get("created_by")), system=system,
