@@ -688,3 +688,34 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE TRIGGER trg_agent_runs_updated BEFORE UPDATE ON agent_runs
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
     """)
+    await _create_standard_schema(conn)
+
+
+async def _create_standard_schema(conn):
+    """Columns and tables for the Dokumentu metadatu standarts v2.0 (opendms.standard)."""
+    await conn.execute("""
+        -- Authoritative organisation code: VPK ID, ATVK code or UR registration number
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS std_code TEXT;
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS reg_number TEXT;
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS e_address TEXT;
+
+        -- Standard identifiers: LV-DOK / LV-DATNE / LV-NOT
+        ALTER TABLE documents       ADD COLUMN IF NOT EXISTS doc_uid TEXT;
+        ALTER TABLE document_files  ADD COLUMN IF NOT EXISTS std_id TEXT;
+        ALTER TABLE document_events ADD COLUMN IF NOT EXISTS std_id TEXT;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_uid ON documents(doc_uid) WHERE doc_uid IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_document_files_std_id ON document_files(std_id) WHERE std_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_document_events_std_id ON document_events(std_id) WHERE std_id IS NOT NULL;
+
+        -- LV-LIETA: one identifier per nomenclature case and year
+        CREATE TABLE IF NOT EXISTS standard_cases (
+            id BIGSERIAL PRIMARY KEY,
+            org_id BIGINT NOT NULL REFERENCES organizations(id),
+            case_index TEXT NOT NULL,
+            case_year INTEGER NOT NULL,
+            case_id TEXT UNIQUE NOT NULL,
+            case_name TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (org_id, case_index, case_year)
+        );
+    """)

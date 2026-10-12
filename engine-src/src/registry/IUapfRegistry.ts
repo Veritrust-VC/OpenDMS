@@ -68,6 +68,7 @@ export interface IUapfRegistry {
     sourceUrl: string;
     packageId?: string;
     filename?: string;
+    authToken?: string;
   }): Promise<{ filename: string; packageId: string; version?: string }>;
   /**
    * Resolve the L0-L4 cross-package reference graph rooted at a package,

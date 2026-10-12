@@ -699,6 +699,29 @@ async def generate_metadata(doc_id: int, correlation_id: str = "", user=Depends(
     }
 
 
+@router.get("/{doc_id}/package")
+async def download_standard_package(doc_id: int, user=Depends(get_current_user)):
+    """Download the document package of the Dokumentu metadatu standarts v2.0
+    (metadati.xml, izsekosana.xml, datnes/, SHA256SUMS) as a ZIP. The package
+    is produced by a UAPF process through the package.build capability."""
+    from fastapi.responses import Response
+    from opendms.standard.service import package_zip
+
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        owned = await conn.fetchval(
+            "SELECT 1 FROM documents WHERE id = $1 AND org_id = $2", doc_id, default_org["id"])
+    if not owned:
+        raise HTTPException(404, "Document not found")
+    try:
+        name, data = await package_zip(doc_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    return Response(content=data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @router.get("/{doc_id}/export-metadata")
 async def export_metadata_xml(doc_id: int, user=Depends(get_current_user)):
     """Export full VDVC v1.1 XML metadata for a document."""

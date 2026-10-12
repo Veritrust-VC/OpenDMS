@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dokumentu metadatu standarts v2.0
+  Dokumenta izsekošanas (aprites) shēma
+
+  Dokumenta dzīves cikla notikumi (2. slānis): izveide, reģistrācija,
+  aprite starp organizācijām, apstrāde, izpilde, arhivēšana. Katrs notikums
+  ir veidots pēc W3C VC Data Model v2.0 struktūras:
+    NotikumaID      -> VC id
+    NotikumaTips    -> VC type
+    Izdevejs        -> VC issuer (organizācijas DID)
+    NotikumaLaiks   -> VC validFrom
+    pārējie lauki   -> VC credentialSubject (subjekts = dokuments)
+    Pieradijums     -> VC proof
+
+  Stabilie dokumenta metadati ir shēmā dokumenta-metadati-v2.xsd.
+  Lietotāju darbības (skatījumi, piekļuves tiesības) šeit netiek glabātas;
+  tās pieder DVS audita žurnālam (3. slānis).
+
+  Identifikatori: specifikacija/identifikatori.md
+  Notikumu tipi un obligātie lauki: specifikacija/notikumi.md
+
+  Vārdtelpa: urn:lv:vdvc:dokumentu-izsekosana:2.0
+  Autors:    PPPA
+  Versija:   2.0.0-uzmetums
+-->
+<xs:schema
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:di="urn:lv:vdvc:dokumentu-izsekosana:2.0"
+    xmlns:dm="urn:lv:vdvc:dokumentu-metadati:2.0"
+    targetNamespace="urn:lv:vdvc:dokumentu-izsekosana:2.0"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified"
+    version="2.0.0">
+
+  <!-- Kopīgie vienkāršie tipi (identifikatori, kodi) no metadatu shēmas -->
+  <xs:import namespace="urn:lv:vdvc:dokumentu-metadati:2.0"
+             schemaLocation="dokumenta-metadati-v2.xsd"/>
+
+  <!-- =====================================================================
+       SAKNES ELEMENTS
+       ===================================================================== -->
+  <xs:element name="Izsekosana" type="di:IzsekosanaType"/>
+
+  <xs:complexType name="IzsekosanaType">
+    <xs:annotation>
+      <xs:documentation>
+        Viena vai vairāku dokumentu notikumu vēsture. Pakotnē — viena
+        DokumentaVesture katram dokumentam no metadati.xml.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="DokumentaVesture" type="di:DokumentaVestureType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="shemasVersija" type="xs:string" use="required" fixed="2.0"/>
+    <xs:attribute name="izveidotsUz" type="xs:dateTime" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="DokumentaVestureType">
+    <xs:sequence>
+      <xs:element name="DokumentaAtsauce" type="di:DokumentaAtsauceType"/>
+      <xs:element name="Notikums" type="di:NotikumsType" maxOccurs="unbounded">
+        <xs:annotation><xs:documentation>Notikumi hronoloģiskā secībā.</xs:documentation></xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DokumentaAtsauceType">
+    <xs:sequence>
+      <xs:element name="DokumentaID" type="dm:DokumentaIDType"/>
+      <xs:element name="DokumentaDID" type="dm:DokumentaDIDType" minOccurs="0"/>
+      <xs:element name="Virsraksts" type="dm:NetuksTeksts"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- =====================================================================
+       NOTIKUMS (VC)
+       ===================================================================== -->
+  <xs:complexType name="NotikumsType">
+    <xs:sequence>
+      <xs:element name="NotikumaID" type="di:NotikumaIDType"/>
+      <xs:element name="NotikumaTips" type="di:NotikumaTipsType"/>
+      <xs:element name="NotikumaLaiks" type="xs:dateTime"/>
+      <xs:element name="Izdevejs" type="di:OrganizacijaType">
+        <xs:annotation><xs:documentation>Organizācija, kuras DVS notikums noticis un kura to apliecina.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="Darbinieks" type="di:DarbinieksType" minOccurs="0"/>
+      <xs:element name="LokalaisRegistracijasNumurs" type="dm:NetuksTeksts" minOccurs="0">
+        <xs:annotation><xs:documentation>Izdevēja DVS piešķirtais reģistrācijas numurs (notikumiem DokumentsRegistrets, DokumentsSanemts).</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="StatusaMaina" type="di:StatusaMainaType" minOccurs="0"/>
+      <xs:element name="Aprite" type="di:ApriteType" minOccurs="0">
+        <xs:annotation><xs:documentation>Notikumiem DokumentsNosutits, DokumentsSanemts, DokumentsParsutits, DokumentsAtgriezts, DokumentsNodotsArhivam.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="Izpilde" type="di:IzpildeType" minOccurs="0">
+        <xs:annotation><xs:documentation>Notikumam DokumentsPieskirtsIzpildei.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="SaistitaisDokuments" type="di:SaistitaisDokumentsType" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="Datnes" type="di:DatnuAtsaucesType" minOccurs="0"/>
+      <xs:element name="Piezime" type="xs:string" minOccurs="0"/>
+      <xs:element name="Pieradijums" type="di:PieradijumsType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="NotikumaTipsType">
+    <xs:annotation>
+      <xs:documentation>
+        17 dzīves cikla notikumu tipi (SSOT 3. princips: izveide → reģistrācija →
+        apstrāde → izpilde → glabāšana → arhivēšana vai iznīcināšana).
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <!-- Izveide -->
+      <xs:enumeration value="DokumentsIzveidots"/>
+      <xs:enumeration value="DokumentsRegistrets"/>
+      <xs:enumeration value="PavadvestuleIzveidota"/>
+      <!-- Aprite -->
+      <xs:enumeration value="DokumentsNosutits"/>
+      <xs:enumeration value="DokumentsSanemts"/>
+      <xs:enumeration value="DokumentsParsutits"/>
+      <xs:enumeration value="DokumentsPieskirtsIzpildei"/>
+      <!-- Apstrāde -->
+      <xs:enumeration value="DokumentsIzskatisana"/>
+      <xs:enumeration value="DokumentsVizets"/>
+      <xs:enumeration value="DokumentsParakstits"/>
+      <xs:enumeration value="DokumentsLemums"/>
+      <!-- Izpilde -->
+      <xs:enumeration value="DokumentsIzpildits"/>
+      <xs:enumeration value="DokumentsAtgriezts"/>
+      <xs:enumeration value="DokumentsSlegts"/>
+      <!-- Glabāšana un arhivēšana -->
+      <xs:enumeration value="DokumentsNodotsArhivam"/>
+      <xs:enumeration value="DokumentsArhivets"/>
+      <xs:enumeration value="DokumentsIznicinats"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Statuss =========================================================== -->
+
+  <xs:complexType name="StatusaMainaType">
+    <xs:sequence>
+      <xs:element name="NoStatusa" type="di:DokumentaStatussType" minOccurs="0"/>
+      <xs:element name="UzStatusu" type="di:DokumentaStatussType"/>
+      <xs:element name="Iemesls" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="DokumentaStatussType">
+    <xs:annotation><xs:documentation>Vienotie dokumenta statusi visās DVS.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Projekts"/>
+      <xs:enumeration value="Registrets"/>
+      <xs:enumeration value="Izpilde"/>
+      <xs:enumeration value="Izskatisana"/>
+      <xs:enumeration value="Izpildits"/>
+      <xs:enumeration value="Slegts"/>
+      <xs:enumeration value="NodotsArhivam"/>
+      <xs:enumeration value="Arhivets"/>
+      <xs:enumeration value="Iznicinats"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Aprite ============================================================= -->
+
+  <xs:complexType name="ApriteType">
+    <xs:sequence>
+      <xs:element name="Sutitajs" type="di:OrganizacijaType"/>
+      <xs:element name="Sanemejs" type="di:OrganizacijaType" maxOccurs="unbounded"/>
+      <xs:element name="Kanals" type="dm:KanalsType"/>
+      <xs:element name="TransportaID" type="dm:NetuksTeksts" minOccurs="0">
+        <xs:annotation><xs:documentation>Sūtījuma identifikators kanālā, piem., e-adreses SenderRefNumber.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="Merkis" type="di:ApritesMerkisType" minOccurs="0"/>
+      <xs:element name="AtbildesTermins" type="xs:date" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="ApritesMerkisType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Zinasanai"/>
+      <xs:enumeration value="Izpildei"/>
+      <xs:enumeration value="ViedoklaSniegsanai"/>
+      <xs:enumeration value="Saskanosanai"/>
+      <xs:enumeration value="Atbilde"/>
+      <xs:enumeration value="PecPiekritibas"/>
+      <xs:enumeration value="Arhivesanai"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Izpilde ============================================================ -->
+
+  <xs:complexType name="IzpildeType">
+    <xs:sequence>
+      <xs:element name="Izpilditajs" type="di:DarbinieksType"/>
+      <xs:element name="IzpildesTermins" type="xs:date" minOccurs="0"/>
+      <xs:element name="Uzdevums" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Saistītie dokumenti un datnes ====================================== -->
+
+  <xs:complexType name="SaistitaisDokumentsType">
+    <xs:sequence>
+      <xs:element name="DokumentaID" type="dm:DokumentaIDType"/>
+    </xs:sequence>
+    <xs:attribute name="loma" type="dm:SaistibasTipsType" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="DatnuAtsaucesType">
+    <xs:sequence>
+      <xs:element name="Datne" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="DatnesID" type="dm:DatnesIDType"/>
+            <xs:element name="DatnesNosaukums" type="dm:NetuksTeksts" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Dalībnieki ========================================================= -->
+
+  <xs:complexType name="OrganizacijaType">
+    <xs:sequence>
+      <xs:element name="OrgKods" type="dm:OrgKodsType"/>
+      <xs:element name="OrgNosaukums" type="dm:NetuksTeksts"/>
+      <xs:element name="OrgDID" type="dm:OrgDIDType" minOccurs="0"/>
+      <xs:element name="EAdrese" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DarbinieksType">
+    <xs:annotation><xs:documentation>Darbinieks vai MI aģents, kas veica darbību. Personas kodu neiekļauj.</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="LietotajaID" type="dm:NetuksTeksts" minOccurs="0"/>
+      <xs:element name="VardsUzvards" type="dm:NetuksTeksts"/>
+      <xs:element name="Amats" type="xs:string" minOccurs="0"/>
+      <xs:element name="Strukturvieniba" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="veids" type="di:DarbiniekaVeidsType" default="Persona"/>
+  </xs:complexType>
+
+  <xs:simpleType name="DarbiniekaVeidsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Persona"/>
+      <xs:enumeration value="Sistema"/>
+      <xs:enumeration value="MIAgents"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Pierādījums (VC proof) ============================================= -->
+
+  <xs:complexType name="PieradijumsType">
+    <xs:annotation>
+      <xs:documentation>
+        Izdevēja paraksts. Publisko atslēgu iegūst no izdevēja DID dokumenta
+        (did:web:{org}.pac.kis.gov.lv). Var tikt pievienots vēlāk (piem., kad
+        notikumu iesniedz centrālajam dokumentu reģistram).
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="PieradijumaTips" type="dm:NetuksTeksts">
+        <xs:annotation><xs:documentation>Piem., "DataIntegrityProof" (eddsa-rdfc-2022) vai "JsonWebSignature2020".</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="VerifikacijasMetode" type="di:VerifikacijasMetodeType"/>
+      <xs:element name="Izveidots" type="xs:dateTime"/>
+      <xs:element name="ParakstaVertiba" type="dm:NetuksTeksts"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="VerifikacijasMetodeType">
+    <xs:annotation><xs:documentation>Organizācijas DID ar atslēgas fragmentu, piem., did:web:vrm.pac.kis.gov.lv#key-1.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kis\.gov\.lv#[A-Za-z0-9._\-]+"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Identifikators ===================================================== -->
+
+  <xs:simpleType name="NotikumaIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV-NOT:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

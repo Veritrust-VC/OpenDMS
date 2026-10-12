@@ -382,7 +382,8 @@ async def sync_package(
     async with httpx.AsyncClient(timeout=120.0) as hc:
         r = await hc.post(
             f"{s.uapf_engine_url.rstrip('/')}/uapf/admin/install-from-url",
-            json={"sourceUrl": body.source_url, "packageId": body.package_id},
+            json={"sourceUrl": body.source_url, "packageId": body.package_id,
+                  **({"authToken": s.processgit_token} if s.processgit_token else {})},
         )
         if r.status_code >= 400:
             raise HTTPException(502, f"Engine install failed: {r.text[:400]}")

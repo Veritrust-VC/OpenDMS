@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     uapf_engine_auth_token: Optional[str] = None
     opendms_host_did: str = "did:web:opendms.local"
     opendms_host_base_url: str = "http://api:8002"
+    # Read-only ProcessGit access token, sent when syncing UAPF packages from ProcessGit
+    processgit_token: Optional[str] = None
 
     model_config = {"env_prefix": "OPENDMS_", "env_file": ".env"}
 

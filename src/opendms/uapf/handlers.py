@@ -515,6 +515,64 @@ async def handle_event_emit(ctx: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# Dokumentu metadatu standarts v2.0 — identifier, storage, package
+#
+# The rules (document type, nomenclature case, retention, access) come from
+# the process package — typically its DMN tables — as session variables. The
+# host only applies the standard: identifier format, package layout, schemas.
+# ─────────────────────────────────────────────────────────────
+
+def _document_id(ctx: dict) -> int:
+    inp = ctx.get("input") or {}
+    doc_id = inp.get("documentId")
+    if doc_id is None:
+        raise ValueError("documentId is required (it is in the session input of every trigger)")
+    return int(doc_id)
+
+
+async def handle_identifier_assign(ctx: dict) -> dict:
+    """
+    identifier.assign@1 — give the document its LV-DOK identifier and each
+    file its LV-DATNE identifier; record DokumentsRegistrets. Idempotent.
+
+    Input:  { documentId }
+    Output: { dokumentaId, datnuId[], jaunsIdentifikators, orgKods }
+    """
+    from opendms.standard.service import assign_identifiers
+    return {"output": await assign_identifiers(_document_id(ctx))}
+
+
+async def handle_storage_prepare(ctx: dict) -> dict:
+    """
+    storage.prepare@1 — create the package folder in document storage and
+    copy the document's files into its datnes/ folder.
+
+    Input:  { documentId }
+    Output: { pakotnesMape, pakotnesAtslega, datnes[] }
+    """
+    from opendms.standard.service import prepare_storage
+    return {"output": await prepare_storage(_document_id(ctx))}
+
+
+async def handle_package_build(ctx: dict) -> dict:
+    """
+    package.build@1 — write metadati.xml, izsekosana.xml and SHA256SUMS,
+    validate the package against the standard's schemas and file checksums.
+    Fails the step if the package does not conform.
+
+    Input:  { documentId, plus rule variables from the process:
+              dokumentaVeidaKods, dokumentaVeidaNosaukums, lietasIndekss,
+              lietasNosaukums, glabasanasTerminsGadi, glabasanasPastavigi,
+              glabasanasTriggeris, iznicinasanasDarbiba, informacijasStatuss,
+              saturPersonasDatus, piekluvesPamatojums, nomenklaturasShemasId }
+    Output: { pakotnesMape, dokumentaId, datnes[], derigs, problemas[] }
+    """
+    from opendms.standard.service import build_package, rules_from_variables
+    inp = ctx.get("input") or {}
+    return {"output": await build_package(_document_id(ctx), rules_from_variables(inp))}
+
+
+# ─────────────────────────────────────────────────────────────
 # Registry — maps capability ref → handler
 # ─────────────────────────────────────────────────────────────
 
@@ -524,6 +582,9 @@ HANDLERS = {
     "ai/extract":     (handle_ai_extract,     {"namespace": "ai",       "operation": "extract","version": 1}),
     "data/write":     (handle_data_write,     {"namespace": "data",     "operation": "write",  "version": 1}),
     "event/emit":     (handle_event_emit,     {"namespace": "event",    "operation": "emit",   "version": 1}),
+    "identifier/assign": (handle_identifier_assign, {"namespace": "identifier", "operation": "assign",  "version": 1}),
+    "storage/prepare":   (handle_storage_prepare,   {"namespace": "storage",    "operation": "prepare", "version": 1}),
+    "package/build":     (handle_package_build,     {"namespace": "package",    "operation": "build",   "version": 1}),
 }
 
 

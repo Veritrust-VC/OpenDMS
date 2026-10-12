@@ -131,6 +131,18 @@ OpenDMS is a **host** in the [UAPF Integration Protocol](https://github.com/UAPF
 | `data.write@1` | Writes the structured result and mirrors it to `documents.metadata` |
 | `event.emit@1` | Appends a typed event to the document event log |
 
+**Dokumentu metadatu standarts v2.0** (`src/opendms/standard/`). Three further capabilities let a process register a document under the Latvian public-sector document metadata standard (ProcessGit `vdvc/dokumentu-metadatu-standarts`):
+
+| Capability | Implementation |
+|---|---|
+| `identifier.assign@1` | Gives the document its `LV-DOK:{ORG}:{YEAR}:{UUIDv7}` identifier and each file an `LV-DATNE` identifier; records `DokumentsRegistrets`. `ORG` is the organisation's `std_code` (VPK ID, ATVK code or UR registration number). Idempotent. |
+| `storage.prepare@1` | Creates the package folder `pakotnes/LV-DOK_…/` in document storage and copies the files into `datnes/` |
+| `package.build@1` | Writes `metadati.xml`, `izsekosana.xml` and `SHA256SUMS`, validates them against the standard's XSDs and checksums, and fails the step if the package does not conform. Rules (document type, nomenclature case, retention, access status) arrive as process variables, normally from the package's DMN tables. |
+
+The package is downloadable at `GET /api/documents/{id}/package`. The organisation's code is set in `organizations.std_code`; without it the process stops with a clear error rather than inventing an identifier.
+
+`OPENDMS_PROCESSGIT_TOKEN` (optional): a read-only ProcessGit token sent with package syncs, for ProcessGit instances that require sign-in.
+
 **Adding a process:**
 1. Drop a `.uapf` package into `./uapf-packages/`.
 2. `docker compose restart uapf-engine`.
