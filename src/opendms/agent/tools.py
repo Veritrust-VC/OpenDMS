@@ -24,6 +24,7 @@ IRREVERSIBLE = "irreversible"
 # Explicit classification. Keyed on the UAPF capability reference.
 _REVERSIBILITY: dict[str, str] = {
     # reads
+    "document/list": READ_ONLY,
     "document/fetch": READ_ONLY,
     "ai/extract": READ_ONLY,
     "ai/redact": READ_ONLY,
@@ -88,3 +89,32 @@ def describe_for_prompt(tools: list[dict[str, Any]]) -> str:
         note = "" if t["implemented"] else "  (not implemented - will refuse)"
         lines.append(f"- {t['capability']}  [{mark}]  {t['summary']}{note}")
     return "\n".join(lines)
+
+
+async def execute(capability: str, inputs: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Run a tool the planner chose and return a uniform observation.
+
+    Built-in host capabilities (document/*, ai/*, ...) and connector
+    capabilities are both in HANDLERS, so one dispatch covers both. The
+    connector runtime alone only knows connectors: routing everything through
+    it made every built-in tool fail with "no connector implements ...".
+
+    The observation always carries "ok". A failure is an observation with
+    ok=false and a reason, never an empty result, so the planner cannot mistake
+    "could not check" for "nothing there".
+    """
+    from opendms.uapf.handlers import HANDLERS
+
+    entry = HANDLERS.get(capability)
+    if entry is None:
+        return {"ok": False, "reason": f"unknown capability '{capability}'"}
+    fn, _ref = entry
+    try:
+        out = await fn({"input": inputs or {}, "session_id": ctx.get("trace_id"),
+                        "step_id": ctx.get("step_id"), "source": ctx.get("source")})
+    except Exception as exc:  # the planner gets the reason and can adapt
+        return {"ok": False, "reason": f"{exc.__class__.__name__}: {exc}"}
+    output = out.get("output", out) if isinstance(out, dict) else {"value": out}
+    if isinstance(output, dict) and "ok" in output:
+        return output
+    return {"ok": True, **(output if isinstance(output, dict) else {"value": output})}

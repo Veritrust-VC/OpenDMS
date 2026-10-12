@@ -572,12 +572,61 @@ async def handle_package_build(ctx: dict) -> dict:
     return {"output": await build_package(_document_id(ctx), rules_from_variables(inp))}
 
 
+async def handle_document_list(ctx: dict) -> dict:
+    """
+    Recent documents of this organisation, newest first. Read-only.
+
+    Input:  { limit?: int (1-50, default 10), status?: str, query?: str (title contains),
+              sinceDays?: int }
+    Output: { total, returned, documents: [{ documentId, registrationNumber, title, status,
+              createdAt, documentUid, sender, files }] }
+    """
+    from opendms.org_context import get_default_org
+
+    inp = ctx.get("input") or {}
+    try:
+        limit = max(1, min(50, int(inp.get("limit") or 10)))
+    except (TypeError, ValueError):
+        limit = 10
+    org = await get_default_org()
+    where, args = [], []
+    if org:
+        args.append(org["id"]); where.append(f"d.org_id = ${len(args)}")
+    if inp.get("status"):
+        args.append(str(inp["status"])); where.append(f"d.status = ${len(args)}")
+    if inp.get("query"):
+        args.append(f"%{inp['query']}%"); where.append(f"d.title ILIKE ${len(args)}")
+    if inp.get("sinceDays"):
+        args.append(int(inp["sinceDays"])); where.append(f"d.created_at >= NOW() - make_interval(days => ${len(args)})")
+    cond = ("WHERE " + " AND ".join(where)) if where else ""
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM documents d {cond}", *args)
+        rows = await conn.fetch(
+            f"""SELECT d.id, d.registration_number, d.title, d.status, d.created_at, d.doc_uid,
+                       d.metadata->'sender'->>'name' AS sender,
+                       (SELECT COUNT(*) FROM document_files f WHERE f.document_id = d.id) AS files
+                  FROM documents d {cond}
+                 ORDER BY d.created_at DESC, d.id DESC
+                 LIMIT {limit}""", *args)
+    docs = [{
+        "documentId": r["id"], "registrationNumber": r["registration_number"], "title": r["title"],
+        "status": r["status"], "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
+        "documentUid": r["doc_uid"], "sender": r["sender"], "files": r["files"],
+    } for r in rows]
+    return {"output": {"total": total, "returned": len(docs), "documents": docs}}
+
+
 # ─────────────────────────────────────────────────────────────
 # Registry — maps capability ref → handler
 # ─────────────────────────────────────────────────────────────
 
 HANDLERS = {
-    "document/fetch": (handle_document_fetch, {"namespace": "document", "operation": "fetch", "version": 1}),
+    "document/list":  (handle_document_list,  {"namespace": "document", "operation": "list",  "version": 1,
+                                               "summary": "List this organisation's recent documents (number, title, status, date, sender). Use to answer what is new."}),
+    "document/fetch": (handle_document_fetch, {"namespace": "document", "operation": "fetch", "version": 1,
+                                               "summary": "Read one document's metadata and text by documentId."}),
     "ai/redact":      (handle_ai_redact,      {"namespace": "ai",       "operation": "redact", "version": 1}),
     "ai/extract":     (handle_ai_extract,     {"namespace": "ai",       "operation": "extract","version": 1}),
     "data/write":     (handle_data_write,     {"namespace": "data",     "operation": "write",  "version": 1}),
