@@ -169,6 +169,14 @@ async def archive_document(doc_did: str, ref: str = "", trace_id: Optional[str] 
     return await _request("POST", f"/api/documents/{doc_did}/archive", json_body={"archiveReference": ref}, trace_id=trace_id, actor=actor)
 
 
+async def submit_metadata(doc_did: str, metadata: Dict, scope: str, sha256: str,
+                          trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+    """Send the privacy-filtered metadata projection to the register (signed VC)."""
+    return await _request("POST", f"/api/documents/{doc_did}/metadata",
+                          json_body={"metadata": metadata, "scope": scope, "metadataSha256": sha256},
+                          trace_id=trace_id, actor=actor, include_error_payload=True)
+
+
 async def track_document(doc_did: str, trace_id: Optional[str] = None, actor: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
     return await _request("GET", f"/api/documents/{doc_did}/track", trace_id=trace_id, actor=actor)
 

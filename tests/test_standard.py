@@ -1,3 +1,4 @@
+import json
 """Tests for opendms.standard — identifiers and document packages."""
 
 from datetime import datetime, timezone
@@ -192,3 +193,32 @@ def test_browse_storage_shows_only_owned_folders(tmp_path, monkeypatch):
     for bad in ["OTHER/metadati.xml", "MINE/../OTHER/metadati.xml", "MINE/../../org/1/secret.bin", "MINE"]:
         with pytest.raises(LookupError):
             asyncio.run(service.read_storage_file(1, bad))
+
+
+# ── Central register projection ───────────────────────────────────────────
+
+def test_register_projection_has_no_personal_data():
+    from opendms.standard.central import project
+    package, _ = _package()
+    p = project(package["metadati.xml"], "pilns")
+    text = json.dumps(p["metadata"], ensure_ascii=False)
+    for secret in ("Anna Paraudziņa", "anna@example.lv", "lietvede@tiesibsargs.lv", "Lietvede Paraugs", "iesniegums.txt"):
+        assert secret not in text
+    assert {"Iesniedzejs", "Izveidotajs", "DatnesNosaukums"} <= set(p["removed"])
+    d = p["metadata"]["Dokuments"]
+    assert d["Klasifikacija"]["KlasifikacijasLieta"]["LietasIndekss"] == "1-12"
+    assert d["Apraksts"] == "Izdomāts iesniegums"
+    assert len(p["sha256"]) == 64
+
+
+def test_register_projection_masks_and_drops_description():
+    from opendms.standard.central import mask, project
+    assert mask("zvanīt 26123456 vai 010190-12345")[0] == "zvanīt [tālrunis] vai [personas kods]"
+    package, _ = _package()
+    p = project(package["metadati.xml"], "bez-apraksta")
+    assert "Apraksts" not in p["metadata"]["Dokuments"] and "Apraksts" in p["removed"]
+
+
+def test_register_projection_keeps_numeric_fields():
+    from opendms.standard.central import mask
+    assert mask("25000000") == ("25000000", 0)

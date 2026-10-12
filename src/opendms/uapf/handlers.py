@@ -956,6 +956,60 @@ async def handle_vc_issue(ctx: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# register.submit@1 — metadata to the central register, without personal data
+# ─────────────────────────────────────────────────────────────
+
+async def handle_register_submit(ctx: dict) -> dict:
+    """
+    Input:  { documentId, nodosanasApjoms: "pilns" | "bez-apraksta" (from the
+              process decision), pakotnesAtslega (from package.build) }
+    Output: { nodots, apjoms, izņemtieLauki, aizklatasVertibas, registrs }
+    """
+    from opendms import sdk_client
+    from opendms.standard.central import project
+    from opendms.storage import get_storage
+
+    inp = ctx.get("input") or {}
+    doc_id = _document_id(ctx)
+    scope = inp.get("nodosanasApjoms") or "bez-apraksta"
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow("SELECT doc_did, metadata FROM documents WHERE id = $1", doc_id)
+    meta = doc["metadata"] if doc else None
+    meta = json.loads(meta) if isinstance(meta, str) else (meta or {})
+    prefix = inp.get("pakotnesAtslega") or (meta.get("standartaPakotne") or {}).get("pakotnesAtslega")
+    if not prefix:
+        raise ValueError("register.submit needs the built package (run package.build first)")
+    xml = await get_storage().get(f"{prefix}/metadati.xml")
+    if xml is None:
+        raise LookupError(f"metadati.xml not found in {prefix}")
+    if not doc or not doc["doc_did"]:
+        return {"output": {"nodots": False, "_warning": "document has no register DID (not registered with dokregistrs)"}}
+
+    p = project(xml, scope)
+    res = await sdk_client.submit_metadata(doc["doc_did"], p["metadata"], scope, p["sha256"],
+                                           trace_id=ctx.get("session_id"))
+    status = (res or {}).get("_meta", {}).get("status_code", 502)
+    ok = status in (200, 201)
+    registry = (res or {}).get("registry") or {}
+    out = {"nodots": ok, "apjoms": scope, "izņemtieLauki": p["removed"], "aizklatasVertibas": p["masked"],
+           "metadatuSha256": p["sha256"],
+           "registrs": {"statuss": registry.get("status"), "eventId": registry.get("event_id")} if ok
+                       else {"kluda": (res or {}).get("detail") or (res or {}).get("error") or f"HTTP {status}"}}
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+                           json.dumps({"registraNodosana": {**out, "sessionId": ctx.get("session_id"),
+                                       "laiks": datetime.now(timezone.utc).isoformat()}}), doc_id)
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'DocumentMetadataSubmitted', NULL, $2, $3)""",
+            doc_id, ok, json.dumps(out, ensure_ascii=False))
+    if not ok:
+        raise RuntimeError(f"Register refused the metadata: {out['registrs'].get('kluda')}")
+    return {"output": out}
+
+
+# ─────────────────────────────────────────────────────────────
 # classification.lookup@1 — SIMULATED until the real scheme is connected
 # ─────────────────────────────────────────────────────────────
 
@@ -992,6 +1046,8 @@ HANDLERS = {
                                                      "summary": "Draft a response from a library template and the case facts."}),
     "ai/verify":         (handle_ai_verify,         {"namespace": "ai",         "operation": "verify",  "version": 1,
                                                      "summary": "Check a draft contains the required elements."}),
+    "register/submit":   (handle_register_submit,   {"namespace": "register",   "operation": "submit",  "version": 1,
+                                                     "summary": "Send the document's metadata, without personal data, to the central register."}),
     "task/request":      (handle_task_request,      {"namespace": "task",       "operation": "request", "version": 1,
                                                      "summary": "Hand a step to a person; the session waits for their decision."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,
