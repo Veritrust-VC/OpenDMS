@@ -126,7 +126,12 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [auditFilters, setAuditFilters] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
+  // Accepts notify("text", "error") and notify({ t: "error", m: "text" }) — the
+  // UAPF pages use the object form; rendering that object blanked the page.
+  const notify = (m, t="success") => {
+    if (m && typeof m === "object") { t = m.t === "ok" ? "success" : (m.t || t); m = m.m; }
+    setToast({ m: String(m ?? ""), t }); setTimeout(()=>setToast(null),4000);
+  };
 
   useEffect(() => {
     const onPop = () => setRoute(window.location.pathname.split("/").filter(Boolean));
