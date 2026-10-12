@@ -299,6 +299,60 @@ Definitions:
 No markdown, no preamble, no commentary. Booleans must be true/false (not strings)."""
 
 
+INCOMING_FACETS_PROMPT = """You read a document received by a Latvian public institution
+(already PII-redacted) and answer a few yes/no questions about it.
+
+Respond ONLY with JSON:
+{
+  "prasaAtbildi": <bool>,            // the sender asks for an answer, decision or action
+  "irZinojums": <bool>,              // it is only for information (notice, report, FYI)
+  "irTermins": <bool>,               // the text sets or mentions a deadline for the institution
+  "terminsDokumenta": <bool>,        // the deadline is given in the document itself
+  "iesniegumsNoFiziskasPersonas": <bool>, // the sender is a private individual (iesniegums)
+  "kopsavilkums": "<one sentence in Latvian>"
+}
+No markdown, no commentary."""
+
+INCOMING_BOOL_KEYS = ("prasaAtbildi", "irZinojums", "irTermins", "terminsDokumenta",
+                      "iesniegumsNoFiziskasPersonas")
+
+
+def _incoming_facets_by_keywords(text: str) -> dict:
+    """Deterministic fallback when the model is unavailable."""
+    t = (text or "").lower()
+    no_answer = any(k in t for k in ("atbilde nav nepieciešama", "atbilde nav vajadzīga", "informācijai", "zināšanai"))
+    asks = (not no_answer) and any(k in t for k in ("lūdzam", "lūdzu", "sniegt atbildi", "izvērtēšanai", "izskatīt"))
+    deadline = any(k in t for k in ("līdz ", "termiņ"))
+    return {
+        "prasaAtbildi": asks,
+        "irZinojums": no_answer or "paziņojum" in t,
+        "irTermins": deadline,
+        "terminsDokumenta": deadline,
+        "iesniegumsNoFiziskasPersonas": "iesniegum" in t and "iestāde" not in t,
+        "kopsavilkums": "",
+        "_faktiAvots": "atslēgvārdi (valodas modelis nav pieejams)",
+    }
+
+
+async def _incoming_document_facets(text: str) -> dict:
+    if not text:
+        out = _incoming_facets_by_keywords("")
+        out["_warning"] = "no text to extract from"
+        return out
+    result = await _complete_json(INCOMING_FACETS_PROMPT, f"--- DOKUMENTS ---\n{text}\n--- BEIGAS ---")
+    if not result:
+        return _incoming_facets_by_keywords(text)
+    out = {}
+    for k in INCOMING_BOOL_KEYS:
+        v = result.get(k)
+        if isinstance(v, str):
+            v = v.lower() in ("true", "yes", "1", "jā")
+        out[k] = bool(v)
+    out["kopsavilkums"] = str(result.get("kopsavilkums") or "")[:400]
+    out["_faktiAvots"] = "valodas modelis"
+    return out
+
+
 P1_FALLBACK = {
     "mentionsChild": False, "discriminationGround": False, "socialRights": False,
     "civilPolitical": False, "publicAuthorityConduct": False,
@@ -356,6 +410,10 @@ async def handle_ai_extract(ctx: dict) -> dict:
             "outputPiiErrorCount": len(_pii_errs),
             "detectedLanguage": _ss.get("detectedLanguage") or "und",
         }}
+
+    # ---- Incoming-document facets for the DVS flows (VDVC/RS sanemto) ----
+    if "ienakosa-dokumenta-pazimes" in schema_ref:
+        return {"output": await _incoming_document_facets(text)}
 
     # ---- Tiesibsargs triage facets (default contract) ----
     if not text:
@@ -500,18 +558,20 @@ async def handle_data_write(ctx: dict) -> dict:
                 session_id, int(document_id),
             )
 
-        row = await conn.fetchrow(
-            """INSERT INTO complaint_classifications (
-                   document_id, session_id, topic, topic_confidence,
-                   priority, sla_hours, department, reviewer_role, raw_facets
-               ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-               RETURNING id, created_at""",
-            int(document_id), session_id,
-            inp.get("topic"), float(topic_conf or 0.0),
-            inp.get("priority"), int(sla_hours or 0),
-            inp.get("department"), reviewer_role,
-            json.dumps(raw_facets),
-        )
+        row = None
+        if inp.get("topic") and inp.get("priority"):
+            row = await conn.fetchrow(
+              """INSERT INTO complaint_classifications (
+                     document_id, session_id, topic, topic_confidence,
+                     priority, sla_hours, department, reviewer_role, raw_facets
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                 RETURNING id, created_at""",
+              int(document_id), session_id,
+              inp.get("topic"), float(topic_conf or 0.0),
+              inp.get("priority"), int(sla_hours or 0),
+              inp.get("department"), reviewer_role,
+              json.dumps(raw_facets),
+            )
 
         # Mirror to document metadata for visibility in OpenDMS UI
         await conn.execute(
@@ -539,8 +599,8 @@ async def handle_data_write(ctx: dict) -> dict:
 
     return {
         "output": {
-            "recordId": row["id"],
-            "persistedAt": row["created_at"].isoformat(),
+            "recordId": row["id"] if row else None,
+            "persistedAt": (row["created_at"] if row else datetime.now(timezone.utc)).isoformat(),
         }
     }
 
@@ -560,7 +620,8 @@ async def handle_event_emit(ctx: dict) -> dict:
     """
     inp = ctx.get("input") or {}
     document_id = inp.get("documentId")
-    event_type = inp.get("eventType") or "iesniegums.classified"
+    step = ctx.get("step_id")
+    event_type = inp.get("eventType") or (f"uapf.{step}" if step else "iesniegums.classified")
     session_id = ctx.get("session_id")
 
     if not document_id:
@@ -574,6 +635,7 @@ async def handle_event_emit(ctx: dict) -> dict:
         "slaHours": inp.get("slaHours"),
         "department": inp.get("department"),
         "reviewerRole": inp.get("reviewerRole"),
+        **{k: inp.get(k) for k in PROCESS_RESULT_KEYS if inp.get(k) is not None},
         "sessionId": session_id,
     }
 
@@ -740,6 +802,49 @@ async def handle_task_request(ctx: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# vc.issue@1 — attest the document's registration in the register
+#
+# A document created through OpenDMS is normally already in the register
+# (DocumentCreated VC, did:web:dokregistrs…:doc:<uuid>). Then this step only
+# confirms it. If it is not, the SDK registers it now.
+# ─────────────────────────────────────────────────────────────
+
+async def handle_vc_issue(ctx: dict) -> dict:
+    inp = ctx.get("input") or {}
+    document_id = inp.get("documentId")
+    if not document_id:
+        raise ValueError("vc.issue requires documentId in input")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            "SELECT id, title, registration_number, doc_did, metadata FROM documents WHERE id = $1",
+            int(document_id))
+    if not doc:
+        raise LookupError(f"Document not found: {document_id}")
+    if doc["doc_did"]:
+        return {"output": {"documentDid": doc["doc_did"], "vcIssued": True, "vcEvent": "DocumentCreated",
+                           "jauns": False}}
+
+    from opendms import sdk_client
+    res = await sdk_client.create_document(
+        title=doc["title"], classification=str(inp.get("klasifikacijasIndekss") or ""),
+        reg_number=doc["registration_number"] or "", metadata={}, trace_id=ctx.get("session_id"),
+        include_error_payload=True)
+    status = (res or {}).get("_meta", {}).get("status_code", 502)
+    did = (res or {}).get("docDid") if status in (200, 201) else None
+    if not did:
+        return {"output": {"documentDid": None, "vcIssued": False,
+                           "_warning": f"register did not accept the document (HTTP {status})"}}
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE documents SET doc_did = $1 WHERE id = $2", did, int(document_id))
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'DocumentCreated', NULL, TRUE, $2)""",
+            int(document_id), json.dumps({"sdk_did": did, "sessionId": ctx.get("session_id")}))
+    return {"output": {"documentDid": did, "vcIssued": True, "vcEvent": "DocumentCreated", "jauns": True}}
+
+
+# ─────────────────────────────────────────────────────────────
 # classification.lookup@1 — SIMULATED until the real scheme is connected
 # ─────────────────────────────────────────────────────────────
 
@@ -770,6 +875,8 @@ HANDLERS = {
     "identifier/assign": (handle_identifier_assign, {"namespace": "identifier", "operation": "assign",  "version": 1}),
     "storage/prepare":   (handle_storage_prepare,   {"namespace": "storage",    "operation": "prepare", "version": 1}),
     "package/build":     (handle_package_build,     {"namespace": "package",    "operation": "build",   "version": 1}),
+    "vc/issue":          (handle_vc_issue,          {"namespace": "vc",         "operation": "issue",   "version": 1,
+                                                     "summary": "Make sure the document's registration is attested in the document register (DID/VC)."}),
     "task/request":      (handle_task_request,      {"namespace": "task",       "operation": "request", "version": 1,
                                                      "summary": "Hand a step to a person; the session waits for their decision."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,

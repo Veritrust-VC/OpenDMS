@@ -291,7 +291,7 @@ export class RealExecutionEngine implements IExecutionEngine {
           capability: cap,
           input: vars,
           guardrails: session.guardrails,
-          schemaRef: node.schemaRef,
+          schemaRef: node.schemaRef ?? binding?.schemaRef,
         });
 
         this.audit.emit({
@@ -387,7 +387,7 @@ export class RealExecutionEngine implements IExecutionEngine {
           capability: cap,
           input: vars,
           guardrails: session.guardrails,
-          schemaRef: node.schemaRef,
+          schemaRef: node.schemaRef ?? binding?.schemaRef,
         });
 
         // The host may accept the task and answer later: { status: "pending" }.

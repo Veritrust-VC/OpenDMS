@@ -38,3 +38,18 @@ def test_extract_fallback_has_p1_keys(monkeypatch):
 def test_task_and_classification_are_offered():
     assert "task/request" in handlers.HANDLERS
     assert "classification/lookup" in handlers.HANDLERS
+
+
+def test_incoming_facets_contract_selected_by_schema_ref(monkeypatch):
+    async def none(_s, _u):
+        return None
+    monkeypatch.setattr(handlers, "_complete_json", none)
+    out = asyncio.run(handlers.handle_ai_extract({
+        "input": {"content": "Informatīvs paziņojums. Atbilde nav nepieciešama."},
+        "schema_ref": "uapf:schema/dvs-ienakosa-dokumenta-pazimes"}))["output"]
+    assert out["prasaAtbildi"] is False and out["irZinojums"] is True
+    assert "mentionsChildren" not in out
+
+
+def test_vc_issue_is_offered():
+    assert "vc/issue" in handlers.HANDLERS
