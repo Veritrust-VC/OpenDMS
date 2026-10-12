@@ -825,7 +825,8 @@ async def get_package_info(package_id: str, user=Depends(get_current_user)):
 
     # Repository page (drop /archive/<ref>.zip) for the "↗ ProcessGit" link.
     if src_row and src_row["source_url"]:
-        info["source_url"] = src_row["source_url"].split("/archive/")[0]
+        info["source_url"] = (src_row["source_url"].split("/archive/")[0]
+                              .replace("/api/v1/repos/", "/"))
     info["triggers"] = {
         "active": [dict(t) for t in triggers],
         "all": [dict(t) for t in all_triggers],

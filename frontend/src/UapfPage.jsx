@@ -1320,7 +1320,7 @@ function PackagesTab({ notify, user }) {
 
 function SyncFromProcessGitModal({ pkg, processgitUrl, onClose, onDone, notify }) {
   const defaultUrl = pkg.source_url ||
-    `${processgitUrl || "https://processgit.org"}/<organizācija>/<repozitorijs>/archive/main.zip`;
+    `${processgitUrl || "https://processgit.org"}/api/v1/repos/<organizācija>/<repozitorijs>/archive/main.zip`;
   const [url, setUrl] = useState(defaultUrl);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1350,7 +1350,7 @@ function SyncFromProcessGitModal({ pkg, processgitUrl, onClose, onDone, notify }
         <input value={url} onChange={e => setUrl(e.target.value)}
           className="w-full mt-0.5 px-2 py-1.5 text-sm border border-gray-300 rounded font-mono focus:border-emerald-500 focus:outline-none"/>
         <div className="text-xs text-gray-400 mt-1">
-          ProcessGit archive URL piemērs: <code>{processgitUrl || "https://processgit.org"}/owner/repo/archive/main.zip</code>
+          ProcessGit archive URL piemērs: <code>{processgitUrl || "https://processgit.org"}/api/v1/repos/owner/repo/archive/main.zip</code>
         </div>
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800">Atcelt</button>
