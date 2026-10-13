@@ -335,8 +335,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
 
         await conn.execute(
             "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,$2,$3,$4,$5)",
-            row["id"], "DocumentCreated", user["id"], doc_did is not None,
-            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "sdk_error": sdk_error, "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
+            row["id"], "DocumentCreated", user["id"], doc_did is not None and not req.register_did,
+            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "sdk_error": sdk_error, "registraDokumentsSanemts": bool(req.register_did), "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
 
     await log_integration_event(
         trace_id=trace_id,
