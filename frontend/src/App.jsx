@@ -1249,12 +1249,28 @@ function DocumentDetail({ doc, onAction, notify }) {
       .catch(() => setSimilar([]));
   }, [doc.id, doc.doc_did, doc.sensitivity_control?.allowCentralization]);
 
+  // Processes run after the upload in the background (redaction, classification,
+  // description take a minute): refresh until a step waits for a person.
+  const recent = doc.created_at && (Date.now() - new Date(doc.created_at).getTime()) < 15 * 60 * 1000;
+  const processing = recent && (doc.files?.length || doc.file_name) && !doc.metadata?.uapf_review;
+  useEffect(() => {
+    if (!processing) return;
+    const t = setInterval(() => onAction(), 5000);
+    return () => clearInterval(t);
+  }, [processing, doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const source = doc.semantic_summary?.summarySource || "HUMAN";
   const hasFiles = files.length > 0 || doc.file_name;
   const hasMeta = !!doc.semantic_summary;
 
   return (
     <div className="p-4 space-y-3 overflow-auto max-h-[80vh]">
+        {processing && (
+          <div className="text-sm bg-sky-50 border border-sky-200 text-sky-900 rounded p-3 flex items-center gap-2">
+            <span className="inline-block w-3 h-3 rounded-full border-2 border-sky-600 border-t-transparent animate-spin" />
+            Process darbojas: personas datu aizklāšana, klasifikācija, semantiskais apraksts. Lapa atjaunojas pati (~1 min).
+          </div>
+        )}
         {doc?.metadata?.uapf_result
           ? <ProcessResultCard doc={doc} notify={notify} />
           : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
