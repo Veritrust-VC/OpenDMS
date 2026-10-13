@@ -9,7 +9,7 @@ un pēc tam dokumentu apstrādā tie paši uzstādītie procesi neatkarīgi no k
 |---|---|---|---|
 | Manuāla augšupielāde | `DVSLietotajs` | lietotājs DVS saskarnē izveido dokumentu un pievieno datni | vienmēr ieslēgts |
 | E-pasts | `EPasts` | IMAP pastkastes aptauja; atbilde ar SMTP | `ievade.yaml`, `veids: epasts` |
-| Tiešsaistes forma | `Portals` | publiska lapa `/iesniegt/<kanāls>` bez pieteikšanās | `ievade.yaml`, `veids: tiessaistes-forma` |
+| Tiešsaistes forma | `Portals` | publiska strukturēta veidlapa `/iesniegt/<kanāls>`; lauki = datu shēmas lauki | `ievade.yaml`, `veids: tiessaistes-forma`, `shema:` |
 
 Konfigurācijas saskarnes nav — kanālus apraksta YAML datnē (`OPENDMS_INTAKE_CONFIG`,
 noklusēti `/etc/opendms/ievade.yaml`). Datni pārlasa, kad tā mainās. Paroles datnē nav:
@@ -37,6 +37,29 @@ Apstiprinājumā: reģistrācijas numurs, dokumenta identifikators (LV-DOK), sai
 centrālā reģistra publisko izsekošanu (`/track/<kods>`; meklēt var arī pēc LV-DOK) un
 eDoc parakstu kopsavilkums. Formai apstiprinājums tiek sūtīts caur norādīto e-pasta
 kanālu, ja iesniedzējs norādīja e-pastu; lapa pati rāda statusu.
+
+## Strukturētā veidlapa
+
+Veidlapa nav brīva teksta lauks. Tās lauki ir iestādes iesnieguma datu shēmas lauki
+(Tiesībsargam: `tiesibsargs/iesnieguma-virzisana`, `ievade/iesniegums-1.0.xsd`). Serveris:
+
+1. no laukiem shēmas secībā uzraksta XML (galveni un pielikumu sarakstu ar SHA-256 nosaka serveris);
+2. pārbauda ar XSD, Schematron noteikumiem un publicēto tēmu klasifikatoru (kods pastāv,
+   ir izvēlams, pieder jomai); kļūdas atgriež iesniedzējam latviski;
+3. saglabā `iesniegums.xml` kā dokumentu (primārā datne), pielikumus — kā pierādījumus;
+4. iesniedzēja izvēlētais kods klasifikācijā tiek izmantots tieši (`klasifikacijasAvots: iesniedzejs`),
+   bez modeļa; ja izvēlēta tikai joma, modelis izvēlas kodu tikai šajā jomā.
+
+Brīvais teksts ir ierobežots ar shēmu: apraksts ≤ 2000 zīmes, lūgums ≤ 500.
+
+```yaml
+  - id: forma
+    veids: tiessaistes-forma
+    shema:
+      xsd: tiesibsargs/iesnieguma-virzisana/ievade/iesniegums-1.0.xsd
+      noteikumi: tiesibsargs/iesnieguma-virzisana/ievade/iesniegums-1.0.sch
+      klasifikators: tiesibsargs/temu-klasifikators/klasifikators.xml
+```
 
 ## eDoc
 

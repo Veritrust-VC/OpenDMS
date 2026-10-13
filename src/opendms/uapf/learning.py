@@ -280,6 +280,19 @@ async def _package_of(session_id: Optional[str]) -> Optional[str]:
     return None if not pkg or pkg == "<pending>" else pkg
 
 
+async def _structured_choice(doc_id, session_id) -> Optional[dict]:
+    """metadata.ievade.strukturets of the session's document, if it came from a structured form."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if not doc_id and session_id:
+            doc_id = await conn.fetchval("SELECT document_id FROM uapf_sessions WHERE session_id = $1", session_id)
+        if not doc_id:
+            return None
+        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", int(doc_id))
+    meta = json.loads(meta) if isinstance(meta, str) else (meta or {})
+    return (meta.get("ievade") or {}).get("strukturets")
+
+
 async def handle_ai_classify(ctx: dict) -> dict:
     from opendms.ai import _complete_json
 
@@ -292,6 +305,20 @@ async def handle_ai_classify(ctx: dict) -> dict:
     package_id = await _package_of(ctx.get("session_id"))
     precedents = await similar_precedents(package_id, text, kind="klasifikacija")
     base = {"klasifikatorsVersija": klas["versija"], "precedenti": [p["id"] for p in precedents]}
+
+    # 0) a structured iesniegums carries the submitter's own choice — validated
+    #    against this classifier at intake. It is used as given, without a model.
+    st = await _structured_choice(inp.get("documentId"), ctx.get("session_id"))
+    if st and st.get("kods"):
+        res = _result_from_code(klas, st["kods"])
+        if res:
+            return {"output": {**base, **res, "confidence": 1.0, "klasifikacijasAvots": "iesniedzejs",
+                               "klasifikacijasPamatojums": "Tēmu iesniedzējs izvēlējās strukturētajā veidlapā "
+                                                           f"({st.get('shema') or 'iesnieguma shēma'})."}}
+    if st and st.get("joma"):
+        # Only the joma was chosen: the model picks a code inside that joma.
+        klas = {**klas, "kodi": [c for c in klas["kodi"] if c["joma"] == st["joma"]]}
+        base["jomaNoIesniedzeja"] = st["joma"]
 
     # 1) a near-identical earlier correction is applied as it is
     top = precedents[0] if precedents else None

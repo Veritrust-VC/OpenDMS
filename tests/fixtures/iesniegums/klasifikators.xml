@@ -1,0 +1,1026 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Klasifikators xmlns="urn:lv:tiesibsargs:klasifikators:1.0" versija="2.0">
+  <Metadati>
+    <Uzturetajs>Tiesībsarga birojs</Uzturetajs>
+    <Redakcija>2.0-projekts</Redakcija>
+    <Publicets>2026-10-13</Publicets>
+    <IepriekseraRedakcija>2026.1</IepriekseraRedakcija>
+  </Metadati>
+  <Joma kods="BT" spekaNo="2027-01-01">
+    <Nosaukums>Bērnu tiesības</Nosaukums>
+    <Kategorija kods="23" bloks="grupu-statuss" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Bērna tiesības</Nosaukums>
+      <Apakskategorija kods="23.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna tiesības uz identitāti</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.B" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Bērna tiesības uzaugt ģimenē</Nosaukums>
+        <Tema kods="23.B.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Adopcija</Nosaukums>
+        </Tema>
+        <Tema kods="23.B.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Aizgādības tiesību pārtraukšana, atņemšana, atjaunošana</Nosaukums>
+        </Tema>
+        <Tema kods="23.B.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — bērna tiesības uzaugt ģimenē</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="23.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Uzturlīdzekļu piedziņa bērniem</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.D" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Bāreņu un bez vecāku gādības palikušu bērnu tiesības</Nosaukums>
+        <Tema kods="23.D.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Brāļu/māsu šķiršana</Nosaukums>
+        </Tema>
+        <Tema kods="23.D.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Ārpusģimenes aprūpes veida izvēle</Nosaukums>
+        </Tema>
+        <Tema kods="23.D.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sociālās garantijas</Nosaukums>
+        </Tema>
+        <Tema kods="23.D.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — bāreņu un bez vecāku gādības palikušu bērnu tiesības</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="23.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna tiesības tikt uzklausītam</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna tiesības uz atpūtu un brīvo laiku</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna prettiesiska pārvietošana pāri robežai</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna un likumiskā pārstāvja vai likumisko pārstāvju domstarpības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērnu administratīvā atbildība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna tiesības būt aizsargātam no kaitīga satura</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.K" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="23.L" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna mantisko tiesību īstenošana</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+  </Joma>
+  <Joma kods="PPT" spekaNo="2027-01-01">
+    <Nosaukums>Pilsoniskās un politiskās tiesības</Nosaukums>
+    <Kategorija kods="1" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz dzīvību</Nosaukums>
+      <Apakskategorija kods="1.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesību un dzīvību apdraudējums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="1.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Nelikumīga dzīvības atņemšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="1.C" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Draudi dzīvībai</Nosaukums>
+        <Tema kods="1.C.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Draudi dzīvībai reālajā vidē</Nosaukums>
+        </Tema>
+        <Tema kods="1.C.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Draudi dzīvībai internetā</Nosaukums>
+        </Tema>
+        <Tema kods="1.C.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — draudi dzīvībai</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="1.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — tiesības uz dzīvību</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="2" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Spīdzināšanas, necilvēcīgas un pazemojošas apiešanās un sodīšanas aizliegums</Nosaukums>
+      <Apakskategorija kods="2.A" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Necilvēcīga izturēšanās</Nosaukums>
+        <Tema kods="2.A.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Necilvēcīga izturēšanās policijas iestādēs</Nosaukums>
+        </Tema>
+        <Tema kods="2.A.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Darbinieku prettiesiska rīcība</Nosaukums>
+        </Tema>
+        <Tema kods="2.A.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Necilvēcīga izturēšanās ārzemnieku un patvēruma meklētāju aizturēšanas/izmitināšanas vietās</Nosaukums>
+        </Tema>
+        <Tema kods="2.A.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Necilvēcīga izturēšanās psihoneiroloģiskajās slimnīcās</Nosaukums>
+        </Tema>
+        <Tema kods="2.A.E" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Necilvēcīga izturēšanās citās slēgta tipa iestādēm pielīdzinātās iestādēs (piemēram VSAC)</Nosaukums>
+        </Tema>
+        <Tema kods="2.A.F" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Cilvēktirdzniecība</Nosaukums>
+        </Tema>
+        <Tema kods="2.A.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — necilvēcīga izturēšanās</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="2.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bērna seksuāla izmantošana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="2.C" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Sūdzības par apstākļiem brīvības ierobežošanas iestādē</Nosaukums>
+        <Tema kods="2.C.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sūdzības par apstākļiem ĪAV</Nosaukums>
+        </Tema>
+        <Tema kods="2.C.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sūdzības par apstākļiem cietumos</Nosaukums>
+        </Tema>
+        <Tema kods="2.C.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sūdzības par apstākļiem ārzemnieku un patvēruma meklētāju aizturēšanas/izmitināšanas vietās</Nosaukums>
+        </Tema>
+        <Tema kods="2.C.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sūdzības par apstākļiem psihoneiroloģiskajās slimnīcās</Nosaukums>
+        </Tema>
+        <Tema kods="2.C.E" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sūdzības par apstākļiem citās slēgta tipa iestādēm pielīdzinātās iestādēs (piemēram VSAC)</Nosaukums>
+        </Tema>
+        <Tema kods="2.C.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — sūdzības par apstākļiem brīvības ierobežošanas iestādē</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="2.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Vardarbība ģimenē</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="2.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Vardarbība izglītības iestādēs</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="2.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Vardarbība pret bērnu no citām personām</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="2.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — spīdzināšanas, necilvēcīgas un pazemojošas apiešanās un sodīšanas aizliegums</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="3" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz brīvību un drošību</Nosaukums>
+      <Apakskategorija kods="3.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Piespiedu atvešana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Personas aizturēšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.C" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības uz brīvību un drošību. Aizturēšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Apcietinājuma piemērošana pēc pirmās instances tiesas nolēmuma</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Piespiedu ievietošana psihoneiroloģiskajā slimnīcā</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.G" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Ievietošana nelegālo imigrantu nometnē</Nosaukums>
+        <Tema kods="3.G.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Ārzemnieku aizturēšana</Nosaukums>
+        </Tema>
+        <Tema kods="3.G.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Patvēruma meklētāju aizturēšana</Nosaukums>
+        </Tema>
+        <Tema kods="3.G.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — ievietošana nelegālo imigrantu nometnē</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="3.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Ievietošana sociālās korekcijas iestādē</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.I" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Brīvības atņemšana iestādēs, kurās likums neparedz atņemt brīvību</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="3.K" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="4" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz taisnīgu tiesu</Nosaukums>
+      <Apakskategorija kods="4.A" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Pirmstiesas izmeklēšana</Nosaukums>
+        <Tema kods="4.A.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pirmstiesas procesa virzītāja rīcība/bezdarbība</Nosaukums>
+        </Tema>
+        <Tema kods="4.A.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pirmstiesas procesa virzītāja lēmumu pamatojums un pārsūdzēšana</Nosaukums>
+        </Tema>
+        <Tema kods="4.A.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pirmstiesas procesa novilcināšana</Nosaukums>
+        </Tema>
+        <Tema kods="4.A.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pirmstiesas procesā citi pārkāpumi</Nosaukums>
+        </Tema>
+        <Tema kods="4.A.E" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pirmstiesas procesā prettiesiskas izmeklēšanas metodes</Nosaukums>
+        </Tema>
+        <Tema kods="4.A.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — pirmstiesas izmeklēšana</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="4.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Neatkarīga, objektīva ar likumu noteikta tiesa</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pieeja tiesai</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Lietas izskatīšana saprātīgā termiņā</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pušu līdztiesības princips</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Taisnīga lietas izskatīšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Atklāta lietas izskatīšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Nevainīguma prezumpcija</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Informācijas pieejamība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pietiekams laiks un līdzekļi aizstāvības sagatavošanai</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.K" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Tiesības uz aizstāvību</Nosaukums>
+        <Tema kods="4.K.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Advokāta rīcība</Nosaukums>
+        </Tema>
+        <Tema kods="4.K.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Valsts nodrošinātā juridiskā palīdzība</Nosaukums>
+        </Tema>
+        <Tema kods="4.K.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — tiesības uz aizstāvību</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="4.L" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Liecinieku nopratināšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.M" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības uz bezmaksas tulku</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.N" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Nolēmuma izpilde</Nosaukums>
+        <Tema kods="4.N.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Nolēmuma izpilde aizgādības un saskarsmes lietās</Nosaukums>
+        </Tema>
+        <Tema kods="4.N.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — nolēmuma izpilde</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="4.O" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Nolēmuma pamatojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.P" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Zvērinātu tiesu izpildītāju lēmumi un rīcība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.Q" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.R" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesneša rīcība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.S" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pagaidu aizsardzība pret vardarbību</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.T" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Medicīniska rakstura piespiedu līdzekļa noteikšana, izpilde, pārskatīšana, atcelšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="4.U" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Rīcībspējas ierobežošana</Nosaukums>
+        <Tema kods="4.U.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Rīcībspējas ierobežojuma noteikšana, pārskatīšana, atcelšana</Nosaukums>
+        </Tema>
+        <Tema kods="4.U.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="4.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — tiesības uz taisnīgu tiesu</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="5" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz privātās un ģimenes dzīves neaizskaramību</Nosaukums>
+      <Apakskategorija kods="5.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Ģimenes dzīves neaizskaramība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="5.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Korespondences noslēpums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="5.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Mājokļa neaizskaramība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="5.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Privātās dzīves neaizskaramība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="5.E" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Personas goda un cieņas aizskaršana</Nosaukums>
+        <Tema kods="5.E.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Personas goda un cieņas aizskaršana</Nosaukums>
+        </Tema>
+        <Tema kods="5.E.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Personas goda un cieņas aizskaršana internetā un sociālajos tīklos</Nosaukums>
+        </Tema>
+        <Tema kods="5.E.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — personas goda un cieņas aizskaršana</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="5.F" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Personas datu aizsardzība</Nosaukums>
+        <Tema kods="5.F.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Personas datu aizsardzība</Nosaukums>
+        </Tema>
+        <Tema kods="5.F.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Īpašo kategoriju (sensitīvu) personas datu un sodāmības datu apstrāde</Nosaukums>
+        </Tema>
+        <Tema kods="5.F.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — personas datu aizsardzība</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="5.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Saskarsmes tiesību īstenošana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="5.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — tiesības uz privātās un ģimenes dzīves neaizskaramību</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="6" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības brīvi pārvietoties valsts teritorijā</Nosaukums>
+    </Kategorija>
+    <Kategorija kods="7" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības brīvi izbraukt no valsts un tajā atgriezties</Nosaukums>
+    </Kategorija>
+    <Kategorija kods="8" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Personas tiesiskais statuss</Nosaukums>
+      <Apakskategorija kods="8.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pilsonības piešķiršana un atņemšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Nepilsoņu legalizācija vai statusa atņemšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Ārvalstnieku tiesības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bezvalstnieku tiesības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bēgļu vai patvēruma meklētāju statuss</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Personas bez tiesiskā statusa legalizācija</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Patvēruma meklētāju un patvērumu ieguvušo personu tiesības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Nepilngadīgo ārvalstnieku bez pavadības tiesības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="8.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="9" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz domu, apziņas un reliģijas brīvību</Nosaukums>
+    </Kategorija>
+    <Kategorija kods="10" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Vārda un izteiksmes brīvība</Nosaukums>
+      <Apakskategorija kods="10.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības brīvi paust uzskatus</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības brīvi saņemt un izplatīt informāciju</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Preses brīvība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Naida runa</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Agresija internetā</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Neslavas celšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Dezinformācija</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Vēršanās pret demokrātiskajām institūcijām</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="10.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — vārda un izteiksmes brīvība</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="11" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Biedrošanās brīvība</Nosaukums>
+    </Kategorija>
+    <Kategorija kods="12" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Pulcēšanās brīvība</Nosaukums>
+    </Kategorija>
+    <Kategorija kods="13" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Līdzdalība valsts pārvaldē un tiesības vēlēt</Nosaukums>
+      <Apakskategorija kods="13.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības vēlēt</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="13.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības tikt ievēlētam</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="13.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Līdzdalība pašvaldību darbā</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="13.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Līdzdalība valsts darbā</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="13.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">NVO sektors</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="13.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Sabiedriskās apspriešanas</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="13.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — līdzdalība valsts pārvaldē un tiesības vēlēt</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="14" bloks="ECPAK" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības pildīt valsts dienestu</Nosaukums>
+    </Kategorija>
+    <Kategorija kods="25" bloks="grupu-statuss" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Ieslodzīto tiesības</Nosaukums>
+      <Apakskategorija kods="25.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Ar soda izpildi saistīti jautājumi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="25.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Ar apcietinājuma izpildi saistītie jautājumi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="25.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — ieslodzīto tiesības</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="27" bloks="procesuals" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Labas pārvaldības princips</Nosaukums>
+      <Apakskategorija kods="27.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pieklājība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pienākums vienkāršot procedūras</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pieejamība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesiskā paļāvība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Objektivitāte</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Lietas izskatīšana saprātīgā termiņā</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības tikt uzklausītam</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības iepazīties ar lietas materiāliem</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Lēmuma pamatojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi procesuāli pārkāpumi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.K" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Materiālo tiesību normu pārkāpums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.L" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi labas pārvaldības principa pārkāpumi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.M" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības saņemt atbildi pēc būtības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.N" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesībsargājošo iestāžu rīcība un lēmumi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="27.O" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">nesniegšana termiņā</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="32" bloks="procesuals" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz efektīvu aizsardzības nodrošinājumu</Nosaukums>
+    </Kategorija>
+  </Joma>
+  <Joma kods="SEK" spekaNo="2027-01-01">
+    <Nosaukums>Sociālās, ekonomiskās un kultūras tiesības</Nosaukums>
+    <Kategorija kods="15" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz darbu</Nosaukums>
+      <Apakskategorija kods="15.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības brīvi izvēlēties nodarbošanos</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības uz atbilstošu darba samaksu</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības uz atpūtu un brīvo laiku</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības uz drošiem un veselībai nekaitīgiem darba apstākļiem</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Arodbiedrību brīvība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesības streikot</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Darba tiesisko attiecību izbeigšanās</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Mobings, bosings</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="15.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Trauksmes cēlēja aizsardzība</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="16" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz īpašumu</Nosaukums>
+      <Apakskategorija kods="16.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Īpašuma atsavināšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="16.B" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Tiesību uz īpašumu ierobežošana</Nosaukums>
+        <Tema kods="16.B.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pienākums kopt piegulošo teritoriju</Nosaukums>
+        </Tema>
+        <Tema kods="16.B.B" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+          <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+        </Tema>
+        <Tema kods="16.B.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Piekļuve īpašumam</Nosaukums>
+        </Tema>
+        <Tema kods="16.B.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — tiesību uz īpašumu ierobežošana</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="16.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesību uz īpašumu aizsardzība, kad tiesības ierobežo cita persona</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="16.D" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Nodokļi</Nosaukums>
+        <Tema kods="16.D.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">IIN</Nosaukums>
+        </Tema>
+        <Tema kods="16.D.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">NĪN</Nosaukums>
+        </Tema>
+        <Tema kods="16.D.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="16.E" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="16.F" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="16.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="17" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz sociālo nodrošinājumu</Nosaukums>
+      <Apakskategorija kods="17.A" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Valsts sociālā apdrošināšana</Nosaukums>
+        <Tema kods="17.A.A" spekaNo="2027-01-01" izvelams="false">
+          <Nosaukums valoda="lv">Pensijas</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Apdrošināšana pret bezdarbu</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Darba negadījumu apdrošināšana</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.D" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+          <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.E" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Slimības apdrošināšana</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.F" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Maternitātes apdrošināšana</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.G" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Paternitātes apdoršināšana</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.H" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Vecāku apdrošināšana</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.I" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Valsts sociālās apdrošināšanas iemaksas</Nosaukums>
+        </Tema>
+        <Tema kods="17.A.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — valsts sociālā apdrošināšana</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="17.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Valsts sociālie pabalsti</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="17.C" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Pašvaldības sociālie pakalpojumi</Nosaukums>
+        <Tema kods="17.C.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Sabiedrībā balstīti pakalpojumi</Nosaukums>
+        </Tema>
+        <Tema kods="17.C.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Aprūpe mājās</Nosaukums>
+        </Tema>
+        <Tema kods="17.C.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Asistenta pakalpojums</Nosaukums>
+        </Tema>
+        <Tema kods="17.C.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — pašvaldības sociālie pakalpojumi</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="17.D" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Pašvaldības sociālie pabalsti</Nosaukums>
+        <Tema kods="17.D.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">GMI pabalsts</Nosaukums>
+        </Tema>
+        <Tema kods="17.D.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Mājokļa pabalsts</Nosaukums>
+        </Tema>
+        <Tema kods="17.D.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pabalsts veselības aprūpei</Nosaukums>
+        </Tema>
+        <Tema kods="17.D.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — pašvaldības sociālie pabalsti</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="17.E" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Ilgstošas sociālās aprūpes un sociālās rehabilitācijas pakalpojums</Nosaukums>
+        <Tema kods="17.E.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Valsts sociālās aprūpes centra pakalpojums</Nosaukums>
+        </Tema>
+        <Tema kods="17.E.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pašvaldības / privāts sociālās aprūpes centra pakalpojums</Nosaukums>
+        </Tema>
+        <Tema kods="17.E.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — ilgstošas sociālās aprūpes un sociālās rehabilitācijas pakalpojums</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="17.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Sociālā rehabilitācija</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="17.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="17.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Paliatīvā aprūpe, hospisa pakalpojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="17.I" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Pensijas</Nosaukums>
+        <Tema kods="17.I.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Vecuma pensija</Nosaukums>
+        </Tema>
+        <Tema kods="17.I.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Apgādnieka zaudējuma pensija</Nosaukums>
+        </Tema>
+        <Tema kods="17.I.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Izdienas pensija</Nosaukums>
+        </Tema>
+        <Tema kods="17.I.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Invaliditātes apdrošināšana, invaliditātes pensija</Nosaukums>
+        </Tema>
+        <Tema kods="17.I.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — pensijas</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="18" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz mājokli</Nosaukums>
+      <Apakskategorija kods="18.A" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Palīdzība mājokļa jautājuma risināšanā</Nosaukums>
+        <Tema kods="18.A.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Reģistrēšana palīdzības saņemšanai</Nosaukums>
+        </Tema>
+        <Tema kods="18.A.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Dzīvojamās telpas piedāvāšanas un izīrēšanas kārtība</Nosaukums>
+        </Tema>
+        <Tema kods="18.A.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Piedāvātā mājokļa kvalitāte</Nosaukums>
+        </Tema>
+        <Tema kods="18.A.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Izslēgšana no palīdzības reģistra</Nosaukums>
+        </Tema>
+        <Tema kods="18.A.E" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Palīdzības izbeigšanas pamatotība</Nosaukums>
+        </Tema>
+        <Tema kods="18.A.F" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="18.B" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Izlikšana no mājokļa</Nosaukums>
+        <Tema kods="18.B.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Izlikšanas tiesiskais regulējums</Nosaukums>
+        </Tema>
+        <Tema kods="18.B.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Tiesas nolēmuma izpilde</Nosaukums>
+        </Tema>
+        <Tema kods="18.B.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Patvarīga izlikšana</Nosaukums>
+        </Tema>
+        <Tema kods="18.B.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="18.C" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Izīrētāja un īrnieka tiesiskās attiecības</Nosaukums>
+        <Tema kods="18.C.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pašvaldības īres līgumu pārslēgšana</Nosaukums>
+        </Tema>
+        <Tema kods="18.C.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Denacionalizēto namu īrnieku tiesības</Nosaukums>
+        </Tema>
+        <Tema kods="18.C.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Īres līguma nosacījumi</Nosaukums>
+        </Tema>
+        <Tema kods="18.C.D" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Pakalpojumu nodrošināšana</Nosaukums>
+        </Tema>
+        <Tema kods="18.C.E" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="18.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Apsaimniekošana, pārvaldīšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="18.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Bezpajumtniecība (mājokļa atstumtība)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="18.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — tiesības uz mājokli</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="19" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz veselības aizsardzību</Nosaukums>
+      <Apakskategorija kods="19.A" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Ārstniecības personas (iestādes) attieksme</Nosaukums>
+        <Tema kods="19.A.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Ārstniecības personas (iestādes) rīcība</Nosaukums>
+        </Tema>
+        <Tema kods="19.A.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — ārstniecības personas (iestādes) attieksme</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="19.B" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Veselības aprūpes pakalpojumu pieejamība un apjoms</Nosaukums>
+        <Tema kods="19.B.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Zāļu pieejamība un apjoms</Nosaukums>
+        </Tema>
+        <Tema kods="19.B.B" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Medicīnisko preču pieejamība un apjoms</Nosaukums>
+        </Tema>
+        <Tema kods="19.B.C" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Teritoriālā pieejamība</Nosaukums>
+        </Tema>
+        <Tema kods="19.B.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — veselības aprūpes pakalpojumu pieejamība un apjoms</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="19.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Medicīniskās informācijas pieejamība un konfidencialitāte</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tiesību ierobežojums no citas personas puses</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Onkoloģija</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Covid-19</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Informētā piekrišana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Kaitējuma atlīdzība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="19.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Medicīniskā rehabilitācija</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="20" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz izglītību</Nosaukums>
+      <Apakskategorija kods="20.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pirmsskolas izglītība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="20.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Pamatizglītība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="20.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Vidējā izglītība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="20.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Augstākā izglītība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="20.E" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Speciālā izglītība</Nosaukums>
+        <Tema kods="20.E.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Iekļaujošā izglītība</Nosaukums>
+        </Tema>
+        <Tema kods="20.E.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — speciālā izglītība</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="20.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Profesionālā izglītība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="20.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="20.H" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Interešu izglītība</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="21" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Jaunrades brīvība un kultūras tiesības</Nosaukums>
+      <Apakskategorija kods="21.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Zinātniskās, mākslinieciskās un citādas jaunrades brīvība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="21.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Kultūras tiesības</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="21.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — jaunrades brīvība un kultūras tiesības</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="22" bloks="Satversme-VIII" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesības uz labvēlīgu vidi</Nosaukums>
+      <Apakskategorija kods="22.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Teritoriālais plānojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="22.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Trokšņu piesārņojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="22.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Gaisa piesārņojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="22.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Zemes un ūdens piesārņojums</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="22.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Atkritumu apsaimniekošana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="22.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="22.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Atjaunojamā enerģija</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="24" bloks="grupu-statuss" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Personas ar invaliditāti tiesības</Nosaukums>
+      <Apakskategorija kods="24.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Invaliditātes piešķiršana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Aizgādnība - aizgādņa iecelšana, aizgādņa darbība un tās pārraudzība</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.C" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Vides piekļūstamība - fiziskā vide, transports, informācija un sakari - tostarp tehnoloģijas</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.E" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Riska situācijas un ārkārtas humānās situācijas</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.G" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.H" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.I" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.J" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.K" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.L" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.M" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.N" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Tehniskie palīglīdzekļi</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.O" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.P" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.Q" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.R" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.S" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.T" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.U" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.V" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.W" spekaNo="2026-01-01" statuss="atsaukts" izvelams="false">
+        <Nosaukums valoda="lv">(atsaukts)</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.X" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Līdzdalība kultūras dzīvē, atpūta, brīvā laika pavadīšana</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="24.Y" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+  </Joma>
+  <Joma kods="TV" spekaNo="2027-01-01">
+    <Nosaukums>Tiesiskā vienlīdzība un diskriminācijas novēršana</Nosaukums>
+    <Kategorija kods="26" bloks="procesuals" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Diskriminācija</Nosaukums>
+      <Apakskategorija kods="26.A" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz rases, nacionālā, etniskā pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.B" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Dzimumu diskriminācija</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.C" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz vecuma pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.D" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz valodas pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.E" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz reliģiskās pārliecības pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.F" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz sociālās izcelšanas vai mantiskā stāvokļa pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.G" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz seksuālās orientācijas pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.H" spekaNo="2027-01-01" izvelams="false">
+        <Nosaukums valoda="lv">Diskriminācija uz veselības stāvokļa pamata</Nosaukums>
+        <Tema kods="26.H.A" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Diskriminācija invaliditātes dēļ</Nosaukums>
+        </Tema>
+        <Tema kods="26.H.Z" spekaNo="2027-01-01" izvelams="true">
+          <Nosaukums valoda="lv">Citi — diskriminācija uz veselības stāvokļa pamata</Nosaukums>
+        </Tema>
+      </Apakskategorija>
+      <Apakskategorija kods="26.I" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz politiskās vai citas pārliecības pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.J" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Diskriminācija uz cita pamata</Nosaukums>
+      </Apakskategorija>
+      <Apakskategorija kods="26.Z" spekaNo="2027-01-01" izvelams="true">
+        <Nosaukums valoda="lv">Citi — diskriminācija</Nosaukums>
+      </Apakskategorija>
+    </Kategorija>
+    <Kategorija kods="33" bloks="procesuals" spekaNo="2027-01-01" izvelams="false">
+      <Nosaukums valoda="lv">Tiesiskā vienlīdzība</Nosaukums>
+    </Kategorija>
+  </Joma>
+</Klasifikators>

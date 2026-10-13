@@ -103,7 +103,7 @@ def expand(attachments: list[dict], body: str = "") -> tuple[list[dict], list[di
 
 async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str, body: str,
                  attachments: list[dict], received_at: Optional[str] = None,
-                 extra: Optional[dict] = None) -> dict:
+                 extra: Optional[dict] = None, primary: Optional[dict] = None) -> dict:
     """Register one received item as a DVS document. Idempotent per (channel, external_ref)."""
     from opendms.routers.documents import DocumentCreate, add_file, create_document
 
@@ -117,6 +117,8 @@ async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str
         return {"dublikats": True, "intakeId": seen["id"], "documentId": seen["document_id"], "status": seen["status"]}
 
     files, edocs = expand(attachments, body)
+    if primary:  # a structured iesniegums: the XML is the document, everything else is evidence
+        files.insert(0, primary)
     if not files:
         raise ValueError("nav ne pielikumu, ne teksta")
     user = await system_user()

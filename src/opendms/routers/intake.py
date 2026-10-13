@@ -96,52 +96,92 @@ def _form_channel(cid: str) -> dict:
     return ch
 
 
+def _shema(ch: dict) -> dict:
+    sh = ch.get("shema") or {}
+    if not sh.get("xsd"):
+        raise HTTPException(503, "Formai nav norādīta datu shēma")
+    return sh
+
+
 @router.get("/forma/{cid}")
 async def form_info(cid: str):
-    ch = _form_channel(cid)
+    """Form description: what the schema allows, plus the classifier choices."""
+    from opendms.intake import structured
     from opendms.org_context import get_default_org
+    ch = _form_channel(cid)
+    sh = _shema(ch)
     org = await get_default_org() or {}
+    jomas, kodi = [], []
+    try:
+        klas = await structured.classifier(sh)
+    except Exception:
+        klas = None
+    if klas:
+        seen = {}
+        for c in klas["kodi"]:
+            seen.setdefault(c["joma"], c["jomasNosaukums"])
+            if c["izvelams"]:
+                kodi.append({"kods": c["kods"], "joma": c["joma"], "nosaukums": c["nosaukums"], "cels": c["cels"]})
+        jomas = [{"kods": k, "nosaukums": n} for k, n in seen.items()]
     return {"id": ch["id"], "nosaukums": ch.get("nosaukums") or "Iesniegums", "iestade": org.get("name"),
-            "maxMb": ch.get("max_mb", 20), "apraksts": ch.get("apraksts")}
+            "maxMb": ch.get("max_mb", 20), "apraksts": ch.get("apraksts"),
+            "shema": sh.get("xsd"), "noteikumi": sh.get("noteikumi"),
+            "klasifikatorsVersija": (klas or {}).get("versija"), "jomas": jomas, "kodi": kodi}
 
 
 @router.post("/forma/{cid}")
-async def form_submit(cid: str, request: Request,
-                      vards: str = Form(...), epasts: str = Form(""), temats: str = Form(""),
-                      teksts: str = Form(""), web: str = Form(""),
-                      datnes: Optional[list[UploadFile]] = File(None)):
+async def form_submit(cid: str, request: Request, iesniegums: str = Form(...), web: str = Form(""),
+                      apraksti: str = Form("[]"), datnes: Optional[list[UploadFile]] = File(None)):
+    """Field values (JSON, schema names) + evidence files -> schema-valid XML -> DVS document.
+
+    Nothing is interpreted: the XML is written from the fields, validated with the
+    schema, the rules and the classifier, and stored as the document itself."""
+    from opendms.intake import structured
     ch = _form_channel(cid)
+    sh = _shema(ch)
     if web:  # honeypot field, hidden from people
         raise HTTPException(400, "neizdevās")
     ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "")).split(",")[0].strip()
     if not _rate_ok(ip):
         raise HTTPException(429, "Pārāk daudz iesniegumu. Mēģiniet vēlāk.")
-    vards = vards.strip()[:200]
-    epasts = epasts.strip()[:200]
-    if not vards:
-        raise HTTPException(422, "Norādiet vārdu un uzvārdu vai nosaukumu")
-    if epasts and ("@" not in epasts or " " in epasts):
-        raise HTTPException(422, "Nederīga e-pasta adrese")
+    try:
+        fields = json.loads(iesniegums)
+        notes = json.loads(apraksti or "[]")
+        assert isinstance(fields, dict) and isinstance(notes, list)
+    except Exception:
+        raise HTTPException(422, {"kludas": ["Nederīgi veidlapas dati."]})
     limit = int(float(ch.get("max_mb", 20)) * 1024 * 1024)
     atts, total = [], 0
-    for f in datnes or []:
+    for idx, f in enumerate(datnes or []):
         if not f or not f.filename:
             continue
         data = await f.read()
         total += len(data)
         if total > limit:
-            raise HTTPException(413, f"Datnes kopā pārsniedz {ch.get('max_mb', 20)} MB")
-        atts.append({"file_name": f.filename, "mime_type": f.content_type or "application/octet-stream", "data": data})
-    if not atts and len(teksts.strip()) < 20:
-        raise HTTPException(422, "Pievienojiet datni vai uzrakstiet iesnieguma tekstu")
+            raise HTTPException(413, {"kludas": [f"Datnes kopā pārsniedz {ch.get('max_mb', 20)} MB."]})
+        atts.append({"file_name": f.filename, "mime_type": f.content_type or "application/octet-stream", "data": data,
+                     "apraksts": str(notes[idx])[:200] if idx < len(notes) and notes[idx] else None})
+    if len(atts) > 10:
+        raise HTTPException(422, {"kludas": ["Ne vairāk kā 10 pielikumi."]})
+
+    xml = structured.build(fields, kanals="Portals", attachments=atts)
+    try:
+        info = await structured.validate(xml, sh, await structured.classifier(sh))
+    except structured.InvalidSubmission as exc:
+        raise HTTPException(422, {"kludas": exc.errors})
 
     token = secrets.token_urlsafe(16)
-    r = await service.ingest(ch, external_ref=token,
-                             sender={"name": vards, "email": epasts.lower() or None, "type": "FiziskaPersona"},
-                             subject=temats.strip()[:300], body=teksts[:100000], attachments=atts)
-    return {"registracijasNr": r.get("registrationNumber"), "statusaKods": token,
-            "datnes": r.get("datnes"), "edoc": [{"konteiners": e.get("konteiners"), "paraksti": e.get("parakstuSkaits"),
-                                                 "integritate": e.get("integritateVisiem")} for e in r.get("edoc") or []]}
+    label = info["joma"] + (f" {info['kods']}" if info.get("kods") else "")
+    r = await service.ingest(
+        ch, external_ref=token, sender={k: v for k, v in info["sender"].items() if v},
+        subject=f"Iesniegums ({label})", body="",
+        attachments=[{k: a[k] for k in ("file_name", "mime_type", "data")} for a in atts],
+        primary={"file_name": "iesniegums.xml", "mime_type": "application/xml", "data": xml,
+                 "avots": f"strukturēta veidlapa ({sh.get('xsd')})"},
+        extra={"strukturets": {k: v for k, v in info.items() if k != "sender"}})
+    return {"registracijasNr": r.get("registrationNumber"), "statusaKods": token, "datnes": r.get("datnes"),
+            "edoc": [{"konteiners": e.get("konteiners"), "paraksti": e.get("parakstuSkaits"),
+                      "integritate": e.get("integritateVisiem")} for e in r.get("edoc") or []]}
 
 
 @router.get("/statuss/{token}")

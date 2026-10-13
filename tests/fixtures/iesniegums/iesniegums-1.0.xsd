@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  iesniegums-1.0.xsd
+  Iesniegums Tiesībsargam — strukturēta veidlapa.
+
+  Datu shēma ir iesnieguma forma: tiešsaistes veidlapa sagatavo šīs shēmas
+  instanci, un DVS to pieņem kā ir — bez teksta atpazīšanas vai MI pārveides.
+  XSD nosaka, kas ir katrs lauks; noteikumus starp laukiem nosaka
+  iesniegums-1.0.sch. Abus izpilda gan veidlapa, gan DVS ievade.
+
+  Brīvais teksts ir ierobežots: Apraksts līdz 2000 zīmēm, Lūgums līdz 500.
+  Pielikumi ir pierādījumi, nevis iesniegums.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:i="urn:lv:tiesibsargs:iesniegums:1.0"
+           targetNamespace="urn:lv:tiesibsargs:iesniegums:1.0"
+           elementFormDefault="qualified"
+           version="1.0">
+
+  <!-- ===== Vienkāršie tipi ===== -->
+
+  <xs:simpleType name="Teksts200">
+    <xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="200"/></xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="Teksts500">
+    <xs:restriction base="xs:string"><xs:minLength value="1"/><xs:maxLength value="500"/></xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="Teksts2000">
+    <xs:restriction base="xs:string"><xs:minLength value="20"/><xs:maxLength value="2000"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Kanals">
+    <xs:annotation><xs:documentation xml:lang="lv">Kā iesniegums saņemts (metadatu standarta SanemsanasKanals vērtības).</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="Portals"/><xs:enumeration value="EPasts"/><xs:enumeration value="EAdrese"/>
+      <xs:enumeration value="Klatiene"/><xs:enumeration value="Pasts"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Valoda">
+    <xs:restriction base="xs:token"><xs:pattern value="[a-z]{2}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PusesTips">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="FiziskaPersona"/><xs:enumeration value="JuridiskaPersona"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RegistracijasNr">
+    <xs:restriction base="xs:token"><xs:pattern value="[0-9]{11}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Epasts">
+    <xs:restriction base="xs:token"><xs:maxLength value="200"/><xs:pattern value="[^@\s]+@[^@\s]+\.[^@\s]+"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Talrunis">
+    <xs:restriction base="xs:token"><xs:pattern value="\+?[0-9 ]{8,16}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AtbildesVeids">
+    <xs:annotation><xs:documentation xml:lang="lv">Kā iesniedzējs vēlas saņemt atbildi.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="EPasts"/><xs:enumeration value="EAdrese"/><xs:enumeration value="Pasts"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ParstavibasPamats">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="Pilnvara"/><xs:enumeration value="LikumiskaisParstavis"/><xs:enumeration value="Cits"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Joma">
+    <xs:annotation><xs:documentation xml:lang="lv">Tiesībsarga tēmu klasifikatora joma
+      (tiesibsargs/temu-klasifikators): BT bērnu tiesības; PPT pilsoniskās un politiskās
+      tiesības; SEK sociālās, ekonomiskās un kultūras tiesības; TV tiesiskā vienlīdzība un
+      diskriminācijas novēršana.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="BT"/><xs:enumeration value="PPT"/><xs:enumeration value="SEK"/><xs:enumeration value="TV"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="KlasifikatoraKods">
+    <xs:annotation><xs:documentation xml:lang="lv">Kods tēmu klasifikatorā. Formu pārbauda
+      shēma; vai kods pastāv, ir izvēlams un pieder norādītajai jomai, pārbauda DVS ievade pret
+      publicēto klasifikatoru.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:token"><xs:pattern value="[1-9][0-9]?(\.[A-Z]{1,3}){0,2}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Tiesvediba">
+    <xs:annotation><xs:documentation xml:lang="lv">Vai jautājums tiek vai ir ticis izskatīts tiesā.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="Ne"/><xs:enumeration value="Ja"/><xs:enumeration value="NavZinams"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Sha256">
+    <xs:restriction base="xs:token"><xs:pattern value="[0-9a-f]{64}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Apstiprinats">
+    <xs:restriction base="xs:boolean"><xs:pattern value="true"/></xs:restriction>
+  </xs:simpleType>
+
+  <!-- ===== Saliktie tipi ===== -->
+
+  <xs:complexType name="Galvene">
+    <xs:sequence>
+      <xs:element name="FormasVersija" type="xs:token" fixed="1.0"/>
+      <xs:element name="Kanals" type="i:Kanals"/>
+      <xs:element name="Valoda" type="i:Valoda" default="lv"/>
+      <xs:element name="SagatavotsUz" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Kontakti">
+    <xs:sequence>
+      <xs:element name="Epasts" type="i:Epasts" minOccurs="0"/>
+      <xs:element name="Talrunis" type="i:Talrunis" minOccurs="0"/>
+      <xs:element name="EAdrese" type="i:Teksts200" minOccurs="0">
+        <xs:annotation><xs:documentation xml:lang="lv">Oficiālās elektroniskās adreses konta identifikators.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="PastaAdrese" type="i:Teksts200" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Persona">
+    <xs:annotation><xs:documentation xml:lang="lv">Fiziskai personai — Vards un Uzvards;
+      juridiskai — Nosaukums un RegistracijasNr (noteikums P1, P2).</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="PusesTips" type="i:PusesTips"/>
+      <xs:element name="Vards" type="i:Teksts200" minOccurs="0"/>
+      <xs:element name="Uzvards" type="i:Teksts200" minOccurs="0"/>
+      <xs:element name="Nosaukums" type="i:Teksts200" minOccurs="0"/>
+      <xs:element name="RegistracijasNr" type="i:RegistracijasNr" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Iesniedzejs">
+    <xs:complexContent>
+      <xs:extension base="i:Persona">
+        <xs:sequence>
+          <xs:element name="Kontakti" type="i:Kontakti"/>
+          <xs:element name="AtbildesVeids" type="i:AtbildesVeids"/>
+        </xs:sequence>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="Parstavis">
+    <xs:annotation><xs:documentation xml:lang="lv">Aizpilda, ja iesniegums iesniegts citas personas interesēs.</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="ParstavamaPersona" type="i:Persona"/>
+      <xs:element name="Pamats" type="i:ParstavibasPamats"/>
+      <xs:element name="PamatsApraksts" type="i:Teksts500" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Iestade">
+    <xs:sequence>
+      <xs:element name="Nosaukums" type="i:Teksts200"/>
+      <xs:element name="Kods" type="xs:token" minOccurs="0">
+        <xs:annotation><xs:documentation xml:lang="lv">Ja zināms: VPK ID, ATVK kods vai reģistrācijas numurs.</xs:documentation></xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Jautajums">
+    <xs:sequence>
+      <xs:element name="Joma" type="i:Joma"/>
+      <xs:element name="Kods" type="i:KlasifikatoraKods" minOccurs="0"/>
+      <xs:element name="Iestade" type="i:Iestade" minOccurs="0" maxOccurs="3">
+        <xs:annotation><xs:documentation xml:lang="lv">Iestāde vai persona, kuras rīcība vai bezdarbība ir iesnieguma priekšmets.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:choice minOccurs="0">
+        <xs:element name="NotikumaDatums" type="xs:date"/>
+        <xs:element name="NotikumaMenesis" type="xs:gYearMonth"/>
+      </xs:choice>
+      <xs:element name="Apraksts" type="i:Teksts2000"/>
+      <xs:element name="Lugums" type="i:Teksts500">
+        <xs:annotation><xs:documentation xml:lang="lv">Ko iesniedzējs lūdz Tiesībsargam.</xs:documentation></xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="IeprieksejieSoli">
+    <xs:sequence>
+      <xs:element name="VersiesIestade" type="xs:boolean"/>
+      <xs:element name="VersanasDatums" type="xs:date" minOccurs="0"/>
+      <xs:element name="AtbildeSanemta" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="AtbildesKopsavilkums" type="i:Teksts500" minOccurs="0"/>
+      <xs:element name="Tiesvediba" type="i:Tiesvediba"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Pielikums">
+    <xs:sequence>
+      <xs:element name="DatnesNosaukums" type="i:Teksts200"/>
+      <xs:element name="Apraksts" type="i:Teksts200" minOccurs="0"/>
+      <xs:element name="Sha256" type="i:Sha256" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Pielikumi">
+    <xs:sequence>
+      <xs:element name="Pielikums" type="i:Pielikums" maxOccurs="10"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Apliecinajumi">
+    <xs:sequence>
+      <xs:element name="InformacijaPatiesa" type="i:Apstiprinats"/>
+      <xs:element name="IepaziniesArDatuApstradi" type="i:Apstiprinats"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ===== Sakne ===== -->
+
+  <xs:element name="Iesniegums">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Galvene" type="i:Galvene"/>
+        <xs:element name="Iesniedzejs" type="i:Iesniedzejs"/>
+        <xs:element name="Parstavis" type="i:Parstavis" minOccurs="0"/>
+        <xs:element name="Jautajums" type="i:Jautajums"/>
+        <xs:element name="IeprieksejieSoli" type="i:IeprieksejieSoli"/>
+        <xs:element name="Pielikumi" type="i:Pielikumi" minOccurs="0"/>
+        <xs:element name="Apliecinajumi" type="i:Apliecinajumi"/>
+      </xs:sequence>
+      <xs:attribute name="versija" type="xs:token" fixed="1.0" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>
