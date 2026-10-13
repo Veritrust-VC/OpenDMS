@@ -655,6 +655,26 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             UNIQUE (template_id, version)
         );
 
+        -- Reviewer corrections kept as precedents for the classifier
+        -- (uapf/learning.py). Stays in this DVS; nothing here is sent out.
+        CREATE TABLE IF NOT EXISTS uapf_precedents (
+            id BIGSERIAL PRIMARY KEY,
+            package_id TEXT,
+            document_id BIGINT,
+            session_id TEXT,
+            kind TEXT NOT NULL,              -- klasifikacija | marsrutesana
+            excerpt TEXT,
+            stems TEXT[],
+            predicted JSONB,
+            corrected JSONB,
+            reason TEXT,
+            reviewer TEXT,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            applied_count INTEGER NOT NULL DEFAULT 0,
+            last_applied_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
         CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);

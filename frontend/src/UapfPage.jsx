@@ -67,7 +67,7 @@ const PRIORITY_STYLE = {
 // ═══════════════════════════════════════════════════════════════
 
 export default function UapfPage({ notify, user, route, navigate }) {
-  const TAB_IDS = ["system", "demo", "triggers", "sessions", "packages"];
+  const TAB_IDS = ["system", "demo", "triggers", "sessions", "packages", "learning"];
   const tab = TAB_IDS.includes(route && route[1]) ? route[1] : "system";
   const itemId = route && route[2] ? decodeURIComponent(route[2]) : null;
   const setTab = (id) => navigate("/uapf/" + id);
@@ -78,6 +78,7 @@ export default function UapfPage({ notify, user, route, navigate }) {
     { id: "triggers", label: "Trigeri",       icon: "⚙"  },
     { id: "sessions", label: "Sesijas",       icon: "📜" },
     { id: "packages", label: "Pakešu bibliotēka", icon: "📦" },
+    { id: "learning", label: "Mācīšanās no labojumiem", icon: "🎓" },
   ];
 
   return (
@@ -109,6 +110,7 @@ export default function UapfPage({ notify, user, route, navigate }) {
       {tab === "triggers" && <TriggersTab notify={notify} />}
       {tab === "sessions" && <SessionsTab notify={notify} navigate={navigate} selectedId={itemId} />}
       {tab === "packages" && <PackagesTab notify={notify} user={user} />}
+      {tab === "learning" && <LearningTab notify={notify} />}
     </div>
   );
 }
@@ -1360,6 +1362,60 @@ function SyncFromProcessGitModal({ pkg, processgitUrl, onClose, onDone, notify }
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// Learning — reviewer corrections kept as precedents
+// ═══════════════════════════════════════════════════════════════
+
+function LearningTab({ notify }) {
+  const [rows, setRows] = useState(null);
+  const load = useCallback(async () => {
+    try { setRows(await uapfApi("/uapf/precedents")); } catch (e) { notify?.(e.message, "error"); }
+  }, [notify]);
+  useEffect(() => { load(); }, [load]);
+  const toggle = async (p) => {
+    try {
+      await uapfApi(`/uapf/precedents/${p.id}/active`, { method: "POST", body: JSON.stringify({ active: !p.active }) });
+      load();
+    } catch (e) { notify?.(e.message, "error"); }
+  };
+  if (!rows) return <div className="text-sm text-gray-500">Ielādē…</div>;
+  const KIND = { klasifikacija: "Tēma", marsrutesana: "Nodaļa" };
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-gray-600">
+        Katrs darbinieka labojums ir precedents. Klasifikators saņem līdzīgākos precedentus kopā ar jaunu dokumentu;
+        gandrīz identiskam dokumentam precedentu piemēro uzreiz. Nepareizu labojumu var izslēgt.
+        Labojumi paliek šajā DVS; centrālajā reģistrā tie netiek sūtīti.
+      </p>
+      {rows.length === 0 && <div className="text-sm text-gray-500">Labojumu vēl nav.</div>}
+      {rows.length > 0 && (
+        <table className="w-full text-sm border bg-white">
+          <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+            <tr><th className="p-2 text-left">Nr.</th><th className="p-2 text-left">Dokuments</th><th className="p-2 text-left">Veids</th>
+              <th className="p-2 text-left">Sistēma ieteica</th><th className="p-2 text-left">Pareizi</th><th className="p-2 text-left">Kāpēc</th>
+              <th className="p-2 text-left">Piemērots</th><th className="p-2"></th></tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id} className={`border-t align-top ${p.active ? "" : "opacity-50"}`}>
+                <td className="p-2 font-mono">{p.id}</td>
+                <td className="p-2">{p.registration_number || p.document_id}<div className="text-xs text-gray-400">{(p.created_at || "").slice(0, 10)} · {p.reviewer}</div></td>
+                <td className="p-2">{KIND[p.kind] || p.kind}</td>
+                <td className="p-2 font-mono text-xs">{p.predicted?.kods || p.predicted?.kategorija || "—"}<br />{p.predicted?.vieniba || ""}</td>
+                <td className="p-2 font-mono text-xs">{p.corrected?.kods || "—"}<br />{p.corrected?.vieniba || "pēc tēmas"}</td>
+                <td className="p-2 text-xs">{p.reason}<details className="mt-1"><summary className="text-gray-400 cursor-pointer">teksts</summary><div className="whitespace-pre-wrap text-gray-600">{p.excerpt}</div></details></td>
+                <td className="p-2 text-center">{p.applied_count}×</td>
+                <td className="p-2"><button onClick={() => toggle(p)} className="text-xs px-2 py-1 rounded border">{p.active ? "Izslēgt" : "Ieslēgt"}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

@@ -2480,6 +2480,8 @@ function SettingsPage({ notify, brand, setBrand }) {
 // tables decided) and — when a step waits for a person — the decision buttons.
 const RESULT_LABELS = {
   joma: "Joma", kategorija: "Kategorija", kategorijasNosaukums: "Kategorijas nosaukums",
+  kods: "Klasifikatora kods", kodaNosaukums: "Tēma", klasifikacijasAvots: "Klasificēja",
+  klasifikacijasPamatojums: "Klasifikācijas pamatojums",
   topic: "Joma", confidence: "Pārliecība", jurisdiction: "Piekritība", reason: "Pamatojums",
   priority: "Prioritāte", responseDays: "Atbildes termiņš (dienās)", outcome: "Virzības priekšlikums",
   department: "Nodaļa", vieniba: "Struktūrvienības ID", role: "Loma", klasifikacijasIndekss: "Klasifikācijas indekss",
@@ -2497,7 +2499,8 @@ const VALUE_LABELS = {
   "steidzams": "Steidzams", "augsts": "Augsta", "parasts": "Parasta",
   "virzit-izskatisanai": "Virzīt izskatīšanai", "uzsakt-parbaudi": "Uzsākt pārbaudi",
   "parsutit-citai-iestadei": "Pārsūtīt citai iestādei", "atteikt": "Atteikt",
-  "manuala-izvertesana": "Manuāla izvērtēšana", "izpilde": "Izpildei", "iepazisanas": "Iepazīšanai",
+  "manuala-izvertesana": "Manuāla izvērtēšana",
+  modelis: "Valodas modelis (ar precedentiem)", precedents: "Darbinieka labojums (precedents)", noteikumi: "Noteikumi (DMN)", "izpilde": "Izpildei", "iepazisanas": "Iepazīšanai",
 };
 const REVIEW_STATUS = {
   gaida: { label: "Gaida darbinieka lēmumu", cls: "bg-amber-100 text-amber-800" },
@@ -2511,6 +2514,27 @@ function ProcessResultCard({ doc, notify }) {
   const [review, setReview] = useState(doc.metadata.uapf_review || null);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fix, setFix] = useState(null);     // {opts, kods, vieniba, iemesls} while correcting
+  const openFix = async () => {
+    try {
+      const o = await api(`/uapf/review/${doc.id}/options`);
+      setFix({ opts: o, kods: result.kods || "", vieniba: result.vieniba || "", iemesls: "" });
+    } catch (e) { notify?.(e.message, "error"); }
+  };
+  const sendFix = async () => {
+    const changes = { labojumaIemesls: fix.iemesls };
+    if (fix.kods && fix.kods !== (result.kods || "")) changes.labotsKods = fix.kods;
+    if (fix.vieniba && fix.vieniba !== (result.vieniba || "")) changes.labotaVieniba = fix.vieniba;
+    if (!changes.labotsKods && !changes.labotaVieniba) { notify?.("Nekas nav mainīts", "error"); return; }
+    if (!fix.iemesls.trim()) { notify?.("Ierakstiet, kāpēc — no tā sistēma mācās", "error"); return; }
+    setBusy(true);
+    try {
+      const r = await api(`/uapf/review/${doc.id}`, { method: "POST", body: JSON.stringify({ decision: "labots", comment: fix.iemesls, changes }) });
+      setReview(r.review); setFix(null);
+      notify?.(`Labojums saglabāts kā precedents; process: ${r.state}`);
+    } catch (e) { notify?.(e.message, "error"); }
+    setBusy(false);
+  };
   const rows = Object.keys(RESULT_LABELS).filter((k) => result[k] !== undefined && result[k] !== null && result[k] !== "");
   const show = (k) => {
     const v = result[k];
@@ -2536,7 +2560,7 @@ function ProcessResultCard({ doc, notify }) {
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
         {rows.map((k) => (
-          <div key={k} className={k === "reason" || k === "klasifikacijasNosaukums" ? "col-span-2" : ""}>
+          <div key={k} className={["reason", "klasifikacijasNosaukums", "klasifikacijasPamatojums", "kodaNosaukums"].includes(k) ? "col-span-2" : ""}>
             <dt className="text-xs uppercase tracking-wide text-gray-500">{RESULT_LABELS[k]}</dt>
             <dd className="font-medium text-gray-900">{show(k)}</dd>
           </div>
@@ -2560,18 +2584,48 @@ function ProcessResultCard({ doc, notify }) {
       {review && (
         <div className="mt-3 pt-3 border-t border-emerald-200 space-y-2">
           <span className={`text-xs px-2 py-0.5 rounded font-semibold ${st.cls}`}>{st.label}</span>
-          {review.status === "gaida" ? (
+          {review.status === "gaida" && fix ? (
+            <div className="space-y-2 bg-sky-50 border border-sky-200 rounded p-3">
+              <div className="text-xs text-sky-900">Labojums tiks saglabāts kā precedents: nākamajiem līdzīgajiem dokumentiem sistēma to ņems vērā.</div>
+              <label className="block text-xs text-gray-600">Pareizā tēma (klasifikators {fix.opts.versija})
+                <select className="mt-1 w-full border rounded p-1.5 text-sm" value={fix.kods} onChange={(e) => setFix({ ...fix, kods: e.target.value })}>
+                  <option value="">— nemainīt —</option>
+                  {["BT", "PPT", "SEK", "TV"].map((j) => (
+                    <optgroup key={j} label={VALUE_LABELS[j] || j}>
+                      {fix.opts.kodi.filter((c) => c.joma === j).map((c) => (
+                        <option key={c.kods} value={c.kods}>{c.kods} — {c.cels}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-gray-600">Pareizā struktūrvienība (atstājiet, ja to nosaka tēma)
+                <select className="mt-1 w-full border rounded p-1.5 text-sm" value={fix.vieniba} onChange={(e) => setFix({ ...fix, vieniba: e.target.value })}>
+                  <option value="">— pēc tēmas —</option>
+                  {fix.opts.vienibas.map((u) => <option key={u.id} value={u.id}>{u.id} — {u.nosaukums}</option>)}
+                </select>
+              </label>
+              <textarea className="w-full border rounded p-2 text-sm" rows={2} placeholder="Kāpēc sistēmas priekšlikums bija nepareizs? (obligāti)"
+                value={fix.iemesls} onChange={(e) => setFix({ ...fix, iemesls: e.target.value })} />
+              <div className="flex gap-2">
+                <button disabled={busy} onClick={sendFix} className="px-3 py-1.5 rounded bg-sky-600 text-white text-sm disabled:opacity-50">Saglabāt labojumu</button>
+                <button disabled={busy} onClick={() => setFix(null)} className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm">Atcelt</button>
+              </div>
+            </div>
+          ) : review.status === "gaida" ? (
             <div className="space-y-2">
               <textarea className="w-full border rounded p-2 text-sm" rows={2} placeholder="Komentārs (nav obligāts)"
                 value={comment} onChange={(e) => setComment(e.target.value)} />
               <div className="flex gap-2">
                 <button disabled={busy} onClick={() => decide("apstiprinats")} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm disabled:opacity-50">Apstiprināt</button>
+                <button disabled={busy} onClick={openFix} className="px-3 py-1.5 rounded bg-sky-600 text-white text-sm disabled:opacity-50">Labot klasifikāciju / nodaļu</button>
                 <button disabled={busy} onClick={() => decide("noraidits")} className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm disabled:opacity-50">Noraidīt — manuāla virzība</button>
               </div>
             </div>
           ) : (
             <div className="text-xs text-gray-600">
               {review.decidedBy && <>Lēma: {review.decidedBy}</>}
+              {result.labots && result.ieprieksejais && <> · sistēma bija ieteikusi {result.ieprieksejais.kods || result.ieprieksejais.kategorija || "—"} / {result.ieprieksejais.vieniba || "—"}; labojums saglabāts kā precedents Nr. {result.precedents}</>}
               {review.comment && <> · „{review.comment}”</>}
             </div>
           )}

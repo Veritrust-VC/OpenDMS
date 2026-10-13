@@ -524,6 +524,68 @@ class ReviewDecisionIn(BaseModel):
 
 
 REVIEW_DECISIONS = ("apstiprinats", "labots", "noraidits")
+CORRECTION_KEYS = ("labotsKods", "labotaVieniba", "labojumaIemesls")
+
+
+@router.get("/review/{doc_id}/options")
+async def review_options(doc_id: int, user=Depends(get_current_user)):
+    """What a reviewer can choose from when correcting: the classifier codes and
+    the units, read from the ProcessGit repositories the process names."""
+    from opendms.uapf.learning import reference_data
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
+    if meta is None:
+        raise HTTPException(404, "Document not found")
+    meta = json.loads(meta) if isinstance(meta, str) else meta
+    refs = ((meta or {}).get("uapf_review") or {}).get("references")
+    if not refs:
+        return {"kodi": [], "vienibas": [], "avoti": {}}
+    try:
+        ref = await reference_data(refs)
+    except LookupError as e:
+        raise HTTPException(502, str(e))
+    klas = ref["klasifikators"] or {"kodi": [], "versija": ""}
+    return {"kodi": [c for c in klas["kodi"] if c["izvelams"]], "versija": klas["versija"],
+            "vienibas": ref["vienibas"] or [], "avoti": ref["avoti"]}
+
+
+@router.get("/precedents")
+async def list_precedents(user=Depends(get_current_user)):
+    """Reviewer corrections the classifier learns from (newest first)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT p.id, p.package_id, p.document_id, d.registration_number, p.kind, p.excerpt,
+                      p.predicted, p.corrected, p.reason, p.reviewer, p.active, p.applied_count,
+                      p.last_applied_at, p.created_at
+                 FROM uapf_precedents p LEFT JOIN documents d ON d.id = p.document_id
+                ORDER BY p.created_at DESC LIMIT 200""")
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("predicted", "corrected"):
+            d[k] = json.loads(d[k]) if isinstance(d[k], str) else d[k]
+        for k in ("last_applied_at", "created_at"):
+            d[k] = d[k].isoformat() if d[k] else None
+        out.append(d)
+    return out
+
+
+class PrecedentActiveIn(BaseModel):
+    active: bool
+
+
+@router.post("/precedents/{pid}/active")
+async def set_precedent_active(pid: int, body: PrecedentActiveIn,
+                               user=Depends(require_role("admin", "superadmin"))):
+    """Switch a precedent off (a wrong correction must not be learned) or on again."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        n = await conn.execute("UPDATE uapf_precedents SET active = $2 WHERE id = $1", pid, body.active)
+    if n.endswith(" 0"):
+        raise HTTPException(404, "Precedent not found")
+    return {"id": pid, "active": body.active}
 
 
 @router.post("/review/{doc_id}")
@@ -546,8 +608,11 @@ async def decide_review(doc_id: int, body: ReviewDecisionIn, user=Depends(get_cu
         raise HTTPException(409, "No process step is waiting for a decision on this document")
 
     reviewer = user.get("email") or user.get("username") or str(user.get("id"))
-    output = {"decision": body.decision, "comment": body.comment, "reviewer": reviewer,
-              **(body.changes or {})}
+    changes = {k: str(v).strip() for k, v in (body.changes or {}).items()
+               if k in CORRECTION_KEYS and v not in (None, "")}
+    if body.decision == "labots" and not (changes.get("labotsKods") or changes.get("labotaVieniba")):
+        raise HTTPException(400, "A correction needs labotsKods or labotaVieniba")
+    output = {"decision": body.decision, "comment": body.comment, "reviewer": reviewer, **changes}
     s = get_settings()
     client = UapfClient(s.uapf_engine_url, s.uapf_engine_auth_token)
     try:

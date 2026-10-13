@@ -533,6 +533,10 @@ async def handle_ai_extract(ctx: dict) -> dict:
 PROCESS_RESULT_KEYS = (
     # lv.tiesibsargs.iesnieguma-virzisana (tēmu klasifikators + organizācijas reģistrs)
     "joma", "kategorija", "kategorijasNosaukums", "vieniba",
+    "kods", "kodaNosaukums", "klasifikacijasAvots", "klasifikacijasPamatojums",
+    "piemerotsPrecedents", "klasifikatorsVersija",
+    # learning from corrections
+    "labots", "precedents", "labojumaVeids", "ieprieksejais",
     "topic", "confidence", "topicConfidence", "jurisdiction", "reason", "priority",
     "responseDays", "slaHours", "outcome", "department", "role", "reviewerRole",
     # VDVC / RS incoming flows
@@ -926,6 +930,8 @@ async def handle_task_request(ctx: dict) -> dict:
         "department": inp.get("department") or inp.get("strukturvieniba"),
         "unitId": inp.get("vieniba"),
         "proposal": proposal,
+        # reference data the reviewer picks corrections from (processgit:... refs)
+        "references": ctx.get("schema_ref"),
         "requestedAt": datetime.now(timezone.utc).isoformat(),
     }
     pool = await get_pool()
@@ -1058,6 +1064,14 @@ async def handle_classification_lookup(ctx: dict) -> dict:
 # Registry — maps capability ref → handler
 # ─────────────────────────────────────────────────────────────
 
+def _learning(name: str):
+    async def handler(ctx: dict) -> dict:
+        from opendms.uapf import learning
+        return await getattr(learning, name)(ctx)
+    handler.__name__ = name
+    return handler
+
+
 HANDLERS = {
     "document/list":  (handle_document_list,  {"namespace": "document", "operation": "list",  "version": 1,
                                                "summary": "List this organisation's recent documents (number, title, status, date, sender). Use to answer what is new."}),
@@ -1080,6 +1094,10 @@ HANDLERS = {
                                                      "summary": "Send the document's metadata, without personal data, to the central register."}),
     "task/request":      (handle_task_request,      {"namespace": "task",       "operation": "request", "version": 1,
                                                      "summary": "Hand a step to a person; the session waits for their decision."}),
+    "ai/classify":       (_learning("handle_ai_classify"), {"namespace": "ai", "operation": "classify", "version": 1,
+                                                     "summary": "Classify into the topic classifier named in schemaRef, using staff corrections (precedents)."}),
+    "learning/record":   (_learning("handle_learning_record"), {"namespace": "learning", "operation": "record", "version": 1,
+                                                     "summary": "Store a reviewer's correction as a precedent and return the corrected values."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,
                                                      "summary": "Find the classification scheme entry, unit and retention (SIMULATED scheme)."}),
 }
