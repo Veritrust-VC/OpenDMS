@@ -657,6 +657,25 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
 
         -- Reviewer corrections kept as precedents for the classifier
         -- (uapf/learning.py). Stays in this DVS; nothing here is sent out.
+        -- Inputs (opendms/intake): one row per item received on a channel —
+        -- e-mail message or web form submission — and its acknowledgement.
+        CREATE TABLE IF NOT EXISTS intake_items (
+            id BIGSERIAL PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            channel_kind TEXT NOT NULL,
+            external_ref TEXT NOT NULL,
+            sender_address TEXT,
+            subject TEXT,
+            document_id BIGINT,
+            status TEXT NOT NULL DEFAULT 'registrets',
+            detail JSONB,
+            ack_status TEXT,
+            ack_sent_at TIMESTAMPTZ,
+            ack_error TEXT,
+            received_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (channel_id, external_ref)
+        );
+
         CREATE TABLE IF NOT EXISTS uapf_precedents (
             id BIGSERIAL PRIMARY KEY,
             package_id TEXT,
