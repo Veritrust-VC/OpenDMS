@@ -50,6 +50,15 @@ async def poll_once(ch: dict) -> dict[str, Any]:
     for m in res.data.get("messages", []):
         ref = m.get("message_id") or f"uid:{m['uid']}:{m.get('received_at')}"
         sender = service.parse_sender(m.get("from"))
+        own = {(conf.get("from_address") or "").lower(), (conf.get("imap_user") or "").lower()}
+        robot = (m.get("auto_submitted") not in ("", "no")) or m.get("precedence") in ("bulk", "junk", "list")
+        if (sender.get("email") or "") in own or robot:
+            # Our own acknowledgements, bounces, auto-replies: never a document, never answered.
+            await service.record_rejected(ch, ref, sender.get("email"), m.get("subject"),
+                                          "automātiska vai pašas pastkastes ziņa")
+            out["noraiditi"].append(sender.get("email"))
+            done.append(m["uid"])
+            continue
         if not cfg.sender_allowed(ch, sender.get("email") or ""):
             await service.record_rejected(ch, ref, sender.get("email"), m.get("subject"), "sūtītājs nav atļauto sarakstā")
             out["noraiditi"].append(sender.get("email"))
@@ -85,7 +94,8 @@ def sender_for(mail_ch: dict):
 
     async def send(to, subject, body, in_reply_to):
         r = await email_box.invoke("send", conf, secret, {"to": to, "subject": subject, "body": body,
-                                                          "in_reply_to": in_reply_to}, {})
+                                                          "in_reply_to": in_reply_to,
+                                                          "auto_submitted": True}, {})
         if not r.ok:
             raise RuntimeError(r.reason)
     return send

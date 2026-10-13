@@ -172,6 +172,8 @@ def _fetch_sync(config: dict, secret: dict, limit: int, unseen_only: bool) -> di
                 "subject": _decode(msg.get("Subject")),
                 "from": _decode(msg.get("From")),
                 "to": _decode(msg.get("To")),
+                "auto_submitted": _s(msg.get("Auto-Submitted")).lower(),
+                "precedence": _s(msg.get("Precedence")).lower(),
                 "received_at": received,
                 "body": body[:100000],
                 "attachments": attachments,
@@ -209,6 +211,8 @@ def _send_sync(config: dict, secret: dict, inputs: dict) -> dict:
     msg["From"] = _s(config.get("from_address")) or user
     msg["To"] = inputs["to"]
     msg["Subject"] = inputs.get("subject") or "(no subject)"
+    if inputs.get("auto_submitted"):
+        msg["Auto-Submitted"] = "auto-replied"  # RFC 3834: other robots must not answer
     if inputs.get("in_reply_to"):
         msg["In-Reply-To"] = inputs["in_reply_to"]
         msg["References"] = inputs["in_reply_to"]
