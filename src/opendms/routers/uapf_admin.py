@@ -550,6 +550,57 @@ async def review_options(doc_id: int, user=Depends(get_current_user)):
             "vienibas": ref["vienibas"] or [], "avoti": ref["avoti"]}
 
 
+def _semantics_schema_ref(package_id: str) -> Optional[str]:
+    """schemaRef of the package's semantics.generate binding (resources/mappings.yaml)."""
+    import yaml, zipfile
+    from opendms.uapf.package_inspector import find_package_file
+    path = find_package_file(package_id) if package_id else None
+    if not path:
+        return None
+    with zipfile.ZipFile(path) as z:
+        name = next((n for n in z.namelist() if n.endswith("resources/mappings.yaml")), None)
+        if not name:
+            return None
+        m = yaml.safe_load(z.read(name)) or {}
+    targets = {t.get("id"): t for t in m.get("targets") or []}
+    for b in m.get("bindings") or []:
+        caps = (targets.get(b.get("targetId")) or {}).get("capabilities") or []
+        if "capability.semantics.generate" in caps and b.get("schemaRef"):
+            return b["schemaRef"]
+    return None
+
+
+@router.post("/semantics/{doc_id}/regenerate")
+async def regenerate_semantics(doc_id: int, user=Depends(get_current_user)):
+    """Write the semantic description again (e.g. after the text could not be read):
+    read the document, redact it, describe it with the profile the process names."""
+    from opendms.semantics.service import handle_semantics_generate
+    from opendms.uapf.handlers import handle_ai_redact, handle_document_fetch
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
+        pkgs = [r["package_id"] for r in await conn.fetch(
+            "SELECT DISTINCT package_id FROM uapf_sessions WHERE document_id = $1", doc_id)]
+    if meta is None:
+        raise HTTPException(404, "Document not found")
+    meta = json.loads(meta) if isinstance(meta, str) else (meta or {})
+    ref = (meta.get("semantika") or {}).get("schemaRef")
+    for p in pkgs:
+        ref = ref or _semantics_schema_ref(p)
+    if not ref:
+        raise HTTPException(409, "No process of this document describes documents (no semantics.generate binding)")
+    fetched = (await handle_document_fetch({"input": {"documentId": doc_id}}))["output"]
+    red = (await handle_ai_redact({"input": fetched}))["output"]
+    result = meta.get("uapf_result") or {}
+    sem_meta = meta.get("semantika") or {}
+    if sem_meta.get("lokals"):   # a fresh description, not an update
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE documents SET metadata = metadata - 'semantika' WHERE id = $1", doc_id)
+    out = await handle_semantics_generate({"input": {**result, **fetched, **red, "documentId": doc_id},
+                                           "schema_ref": ref, "session_id": result.get("sessionId")})
+    return out.get("output") or {}
+
+
 @router.get("/precedents")
 async def list_precedents(user=Depends(get_current_user)):
     """Reviewer corrections the classifier learns from (newest first)."""

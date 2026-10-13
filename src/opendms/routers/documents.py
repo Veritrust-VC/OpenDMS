@@ -223,7 +223,11 @@ async def list_documents(
         total = await conn.fetchval(f"SELECT COUNT(*) FROM documents d WHERE {where}", *params)
         rows = await conn.fetch(
             f"""SELECT d.*, o.name as org_name, r.name as register_name, c.name as classification_name,
-                       u.full_name as assigned_name, cr.full_name as creator_name
+                       u.full_name as assigned_name, cr.full_name as creator_name,
+                       (SELECT COUNT(*) FROM document_files f WHERE f.document_id = d.id) AS file_count,
+                       (SELECT f.mime_type FROM document_files f WHERE f.document_id = d.id
+                         ORDER BY f.is_primary DESC, f.id LIMIT 1) AS primary_mime,
+                       (SELECT COUNT(*) FROM document_events e WHERE e.document_id = d.id) AS event_count
                 FROM documents d
                 LEFT JOIN organizations o ON d.org_id = o.id
                 LEFT JOIN registers r ON d.register_id = r.id

@@ -89,6 +89,16 @@ async def handle_document_fetch(ctx: dict) -> dict:
     doc = dict(row)
     content_text = ""
 
+    # Files uploaded as attachments live in document_files (documents.storage_key is
+    # only set by the older single-file upload). Read the primary attachment then.
+    if not doc.get("storage_key"):
+        async with pool.acquire() as conn:
+            f = await conn.fetchrow(
+                """SELECT storage_key, file_name, mime_type, file_size FROM document_files
+                    WHERE document_id = $1 ORDER BY is_primary DESC, id LIMIT 1""", doc["id"])
+        if f:
+            doc.update({k: f[k] for k in ("storage_key", "file_name", "mime_type", "file_size")})
+
     # If a file is attached, read and extract text
     if doc.get("storage_key"):
         from opendms.routers.documents import _extract_text

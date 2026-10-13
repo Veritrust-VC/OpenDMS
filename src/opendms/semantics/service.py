@@ -280,6 +280,11 @@ async def handle_semantics_generate(ctx: dict) -> dict:
     redacted = inp.get("redactedContent") or ""
     if not redacted.strip():
         raise ValueError("semantics.generate needs redactedContent (run ai.redact first)")
+    if len(redacted.strip()) < 200:
+        msg = (f"Dokumenta teksts nav nolasīts (tikai {len(redacted.strip())} rakstzīmes) — "
+               "apraksts netiek ģenerēts no virsraksta.")
+        await _save(doc_id, {"lokals": None, "kludas": [msg], "generets": _now()})
+        return {"output": {"semantikaDeriga": False, "semantikaKluda": msg}}
     ans = await _complete_json("You write structured semantic descriptions of documents as JSON.",
                                build_prompt(fmt, redacted[:14000]), max_tokens=4000, timeout=240.0)
     if not ans:
@@ -401,7 +406,7 @@ async def handle_semantics_generate(ctx: dict) -> dict:
     if not local["dokuments"]["datnes"]:
         local["dokuments"].pop("datnes")
     errs = dsf.check(local, m, fmt["schemas"]["lokals"])
-    await _save(doc_id, {"lokals": local, "kludas": errs, "generets": _now()})
+    await _save(doc_id, {"lokals": local, "kludas": errs, "generets": _now(), "schemaRef": ctx.get("schema_ref")})
     return {"output": {"semantikaDeriga": not errs, "semantikaVersija": 1,
                        "semantikaKopsavilkums": local["kopsavilkums"]["teksts"][:1000],
                        "semantikaKludas": len(errs)}}
