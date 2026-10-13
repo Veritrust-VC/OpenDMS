@@ -436,7 +436,7 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             package_version TEXT,
             process_id TEXT NOT NULL,
             trigger_event TEXT NOT NULL
-                CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','manual')),
+                CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','document.forwarding','manual')),
             match_condition JSONB DEFAULT '{}',
             org_id BIGINT REFERENCES organizations(id),
             is_active BOOLEAN DEFAULT TRUE,
@@ -447,6 +447,10 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
 
         CREATE INDEX IF NOT EXISTS idx_triggers_event_active
             ON process_triggers(trigger_event) WHERE is_active = TRUE;
+        -- document.forwarding: staff request to forward the document (e-adrese)
+        ALTER TABLE process_triggers DROP CONSTRAINT IF EXISTS process_triggers_trigger_event_check;
+        ALTER TABLE process_triggers ADD CONSTRAINT process_triggers_trigger_event_check
+            CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','document.forwarding','manual'));
         CREATE INDEX IF NOT EXISTS idx_triggers_org ON process_triggers(org_id);
 
         CREATE TABLE IF NOT EXISTS uapf_sessions (
