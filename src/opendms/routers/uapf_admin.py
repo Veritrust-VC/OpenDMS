@@ -761,6 +761,16 @@ async def decide_review(doc_id: int, body: ReviewDecisionIn, user=Depends(get_cu
     # An approved proposal is a decision on the document: processes waiting for
     # 'document.decided' (e.g. the response draft) start now.
     if body.decision in ("apstiprinats", "labots") and state == "completed":
+        # The confirmed routing is a lifecycle fact for the central register.
+        out = result.get("output") or {}
+        dept = out.get("department") or out.get("strukturvieniba")
+        if dept:
+            try:
+                from opendms.uapf.handlers import _register_assignment
+                await _register_assignment(doc_id, {"department": dept, "vieniba": out.get("vieniba")},
+                                           review["sessionId"])
+            except Exception as exc:  # the register must not block the decision
+                logger.warning("register assignment for doc %s failed: %s", doc_id, exc)
         async with pool.acquire() as conn:
             finished_pkg = await conn.fetchval(
                 "SELECT package_id FROM uapf_sessions WHERE session_id = $1", review["sessionId"])

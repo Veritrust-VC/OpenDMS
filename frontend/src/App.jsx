@@ -394,6 +394,7 @@ const fmtDT = (v) => v ? new Date(v).toLocaleString("lv-LV", { year: "numeric", 
 const REVIEW_PILL = {
   gaida: ["Gaida lēmumu", "bg-amber-100 text-amber-800"], apstiprinats: ["Apstiprināts", "bg-green-100 text-green-800"],
   labots: ["Labots", "bg-sky-100 text-sky-800"], noraidits: ["Manuāla virzība", "bg-gray-200 text-gray-700"],
+  parsutits: ["Pārsūtīts", "bg-violet-100 text-violet-800"],
 };
 const MIME_LV = { "application/pdf": "PDF", "text/plain": "Teksts", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX" };
 
@@ -2599,6 +2600,7 @@ const REVIEW_STATUS = {
   gaida: { label: "Gaida darbinieka lēmumu", cls: "bg-amber-100 text-amber-800" },
   apstiprinats: { label: "Apstiprināts", cls: "bg-green-100 text-green-800" },
   labots: { label: "Labots un apstiprināts", cls: "bg-sky-100 text-sky-800" },
+  parsutits: { label: "Pārsūtīts citai iestādei", cls: "bg-violet-100 text-violet-800" },
   noraidits: { label: "Noraidīts — manuāla virzība", cls: "bg-gray-200 text-gray-700" },
 };
 

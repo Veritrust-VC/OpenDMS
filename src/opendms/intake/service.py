@@ -105,7 +105,8 @@ def expand(attachments: list[dict], body: str = "") -> tuple[list[dict], list[di
 async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str, body: str,
                  attachments: list[dict], received_at: Optional[str] = None,
                  extra: Optional[dict] = None, primary: Optional[dict] = None,
-                 register_did: Optional[str] = None, received_vc: bool = False) -> dict:
+                 register_did: Optional[str] = None, received_vc: bool = False,
+                 doc_uid: Optional[str] = None) -> dict:
     """Register one received item as a DVS document. Idempotent per (channel, external_ref)."""
     from opendms.routers.documents import DocumentCreate, add_file, create_document
 
@@ -144,6 +145,10 @@ async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str
         # Local only: the register received the neutral title at creation.
         await conn.execute("UPDATE documents SET title = $1, metadata = metadata || $2::jsonb WHERE id = $3",
                            title, json.dumps(local_meta, ensure_ascii=False), doc_id)
+        if doc_uid:
+            # A document received from another institution keeps its identifier.
+            await conn.execute("""UPDATE documents SET doc_uid = $1 WHERE id = $2
+                                  AND NOT EXISTS (SELECT 1 FROM documents WHERE doc_uid = $1)""", doc_uid, doc_id)
         await conn.execute(
             """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
                VALUES ($1, 'DocumentReceived', $2, $4, $3)""",
@@ -177,6 +182,8 @@ async def record_rejected(channel: dict, external_ref: str, sender: str, subject
 
 
 def _ack_enabled(channel: dict) -> bool:
+    if channel.get("veids") == "e-adrese":
+        return False  # institution-to-institution: DIV confirmation is the acknowledgement
     a = channel.get("apstiprinajums") or {}
     if a.get("ieslegts", True) is False:
         return False

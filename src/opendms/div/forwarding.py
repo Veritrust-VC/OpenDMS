@@ -180,7 +180,29 @@ async def handle_forward_record(ctx: dict) -> dict:
                                              "messageId": p.get("messageId"), "serverRefNumber": p.get("serverRefNumber"),
                                              "iemesls": p.get("iemesls"), "registraKluda": err}, vc=vc)
     await _set(doc["id"], {"registraNotikums": vc})
+    if p.get("iemesls") == "piekritiba":
+        await _close_local_review(doc, p)
     return {"output": {"registraNotikums": vc, "adresataDid": p.get("adresataDid"), "registraKluda": err}}
+
+
+async def _close_local_review(doc: dict, p: dict) -> None:
+    """Forwarded by competence: this institution no longer decides on it. A step
+    still waiting for a person here is closed as 'pārsūtīts', its session ended."""
+    review = doc["metadata"].get("uapf_review") or {}
+    if review.get("status") != "gaida":
+        return
+    review.update({"status": "parsutits", "decidedAt": _now(),
+                   "comment": f"Pārsūtīts pēc piekritības: {p.get('adresataNosaukums') or p.get('adresats')}"})
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+                           json.dumps({"uapf_review": review}, ensure_ascii=False), doc["id"])
+        if review.get("sessionId"):
+            await conn.execute(
+                """UPDATE uapf_sessions SET state = 'aborted', error_message = $2, completed_at = NOW()
+                   WHERE session_id = $1 AND state NOT IN ('completed','failed','aborted')""",
+                review["sessionId"], "Dokuments pārsūtīts pēc piekritības")
+    await _event(doc["id"], "uapf.review.closed", {"status": "parsutits", "iemesls": review["comment"]})
 
 
 # ── submitter.notify@1 ─────────────────────────────────────────────────────
