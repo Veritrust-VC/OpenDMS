@@ -213,7 +213,8 @@ def rules_from_variables(v: dict) -> dict:
     }
 
 
-async def build_package(doc_id: int, rules: dict) -> dict:
+async def build_package(doc_id: int, rules: dict, semantika_xml: bytes | None = None,
+                        semantika_versija: str | None = None) -> dict:
     s = get_settings()
     pool = await get_pool()
     storage = get_storage()
@@ -269,7 +270,8 @@ async def build_package(doc_id: int, rules: dict) -> dict:
     document = {**doc, "sdk_did": doc.get("doc_did")}
     meta_xml = pkg.build_metadata_xml(org=org, document=document, files=files, rules=rules,
                                       creator=users.get(doc.get("created_by")), system=system,
-                                      generated_at=now)
+                                      generated_at=now, semantic_xml=semantika_xml,
+                                      semantic_version=semantika_versija)
     track_xml = pkg.build_tracking_xml(org=org, document=doc, events=std_events, users=users,
                                        generated_at=now)
     package = pkg.assemble(meta_xml, track_xml, contents)
@@ -286,6 +288,8 @@ async def build_package(doc_id: int, rules: dict) -> dict:
         "derigs": not problems,
         "problemas": problems,
         "izveidots": now.isoformat(),
+        "noteikumi": {k: v for k, v in rules.items() if k != "case"},   # for rebuild_package
+        "semantika": bool(semantika_xml),
     }
     async with pool.acquire() as conn:
         await conn.execute(
@@ -294,6 +298,22 @@ async def build_package(doc_id: int, rules: dict) -> dict:
     if problems:
         raise StandardError("Package does not conform to the standard: " + "; ".join(problems[:5]))
     return result
+
+
+async def rebuild_package(doc_id: int, semantika_xml: bytes | None = None,
+                          semantika_versija: str | None = None) -> dict:
+    """Build the package again with the rules it was first built with (e.g. to add the
+    semantic description in metadati.xml section 13)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = _json(await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)) or {}
+    prev = meta.get("standartaPakotne") or {}
+    if not prev:
+        raise StandardError("The document has no package yet (package.build has not run)")
+    if "noteikumi" not in prev:
+        raise StandardError("The package was built before its rules were kept; it is not rebuilt with default rules")
+    rules = prev.get("noteikumi") or {}
+    return await build_package(doc_id, rules, semantika_xml=semantika_xml, semantika_versija=semantika_versija)
 
 
 async def _package_info(doc_id: int) -> tuple[str, list[str]]:

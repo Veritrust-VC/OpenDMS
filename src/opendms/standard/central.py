@@ -21,7 +21,10 @@ from typing import Any
 
 from lxml import etree
 
-REMOVED_ELEMENTS = {"Izveidotajs", "Iesniedzejs", "Kontakti", "DatnesNosaukums", "GlabasanasAtsauce"}
+# SemantiskaisKopsavilkums holds the institution's LOCAL semantic layer; the register gets
+# the separately projected central layer instead (see attach_semantics).
+REMOVED_ELEMENTS = {"Izveidotajs", "Iesniedzejs", "Kontakti", "DatnesNosaukums", "GlabasanasAtsauce",
+                    "SemantiskaisKopsavilkums"}
 
 MASKS = [
     (re.compile(r"\b[0-3]\d[01]\d\d{2}-?[0-2]\d{4}\b"), "[personas kods]"),
@@ -88,3 +91,17 @@ def project(metadata_xml: bytes, scope: str = "pilns") -> dict:
     canonical = json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")
     return {"metadata": body, "removed": sorted(set(stats["removed"])), "masked": stats["masked"],
             "sha256": hashlib.sha256(canonical).hexdigest()}
+
+
+def attach_semantics(projection: dict, central_layer: dict) -> dict:
+    """Put the central semantic layer (vdvc/dokumentu-semantikas-formats, JSON) into
+    Dokuments.SemantiskaisKopsavilkums and recompute the hash."""
+    body = projection["metadata"]
+    docs = body.get("Dokuments")
+    docs = docs if isinstance(docs, list) else [docs]
+    want = (central_layer.get("dokuments") or {}).get("id")
+    target = next((d for d in docs if isinstance(d, dict) and d.get("DokumentaID") == want), docs[0])
+    if isinstance(target, dict):
+        target["SemantiskaisKopsavilkums"] = central_layer
+    canonical = json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return {**projection, "metadata": body, "sha256": hashlib.sha256(canonical).hexdigest()}

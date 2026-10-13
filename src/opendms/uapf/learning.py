@@ -40,7 +40,6 @@ PRECEDENT_APPLY = 0.6
 PRECEDENT_SHOW = 0.08
 CACHE_SECONDS = 600
 
-_cache: dict[str, tuple[float, bytes]] = {}
 
 
 # ─────────────────────────── reference data ───────────────────────────
@@ -55,12 +54,16 @@ def parse_refs(schema_ref: Optional[str]) -> dict[str, str]:
     return out
 
 
-async def fetch_file(ref: str) -> bytes:
-    """'owner/repo/path/in/repo.xml' from ProcessGit (main branch), cached."""
-    hit = _cache.get(ref)
+_zip_cache: dict[str, tuple[float, bytes]] = {}
+
+
+async def fetch_repo_zip(owner: str, repo: str) -> bytes:
+    """The main branch of a ProcessGit repository as a zip (cached). The zip comment
+    holds the commit id (git archive)."""
+    key = f"{owner}/{repo}"
+    hit = _zip_cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
-    owner, repo, path = ref.split("/", 2)
     s = get_settings()
     url = f"{s.processgit_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/archive/main.zip"
     headers = {"Authorization": f"token {s.processgit_token}"} if s.processgit_token else {}
@@ -72,16 +75,26 @@ async def fetch_file(ref: str) -> bytes:
         async with httpx.AsyncClient(timeout=60.0, verify=verify) as hc:
             r = await hc.get(url, headers=headers)
             r.raise_for_status()
-        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-            name = next(n for n in z.namelist() if n.split("/", 1)[-1] == path)
-            data = z.read(name)
+        data = r.content
+        zipfile.ZipFile(io.BytesIO(data)).testzip()
     except Exception as e:
         if hit:
-            logger.warning("ProcessGit %s unavailable (%s); using the cached copy", ref, e)
+            logger.warning("ProcessGit %s unavailable (%s); using the cached copy", key, e)
             return hit[1]
-        raise LookupError(f"Cannot read {ref} from ProcessGit: {e}") from e
-    _cache[ref] = (time.time(), data)
+        raise LookupError(f"Cannot read {key} from ProcessGit: {e}") from e
+    _zip_cache[key] = (time.time(), data)
     return data
+
+
+async def fetch_file(ref: str) -> bytes:
+    """'owner/repo/path/in/repo.xml' from ProcessGit (main branch), cached."""
+    owner, repo, path = ref.split("/", 2)
+    data = await fetch_repo_zip(owner, repo)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        name = next((n for n in z.namelist() if n.split("/", 1)[-1] == path), None)
+        if not name:
+            raise LookupError(f"{path} not found in {owner}/{repo}")
+        return z.read(name)
 
 
 def _local(tag: str) -> str:

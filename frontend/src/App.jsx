@@ -1184,6 +1184,7 @@ function DocumentDetail({ doc, onAction, notify }) {
         {doc?.metadata?.uapf_result
           ? <ProcessResultCard doc={doc} notify={notify} />
           : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
+        {doc?.metadata?.semantika && <SemanticDescriptionCard sem={doc.metadata.semantika} />}
 
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">{doc.title}</h3>
@@ -2629,6 +2630,82 @@ function ProcessResultCard({ doc, notify }) {
               {review.comment && <> · „{review.comment}”</>}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Semantic description (vdvc/dokumentu-semantikas-formats): what the reviewer sees
+// before approving, and whether the de-identified central layer was made.
+const CLAIM_STATUS = {
+  apgalvots: "apgalvo", pieprasits: "lūdz", apliecinats: "apliecina", noliegts: "noliedz", secinats: "secināts",
+};
+const PREDICATE_LV = {
+  "iesnieguma-prieksmets": "Priekšmets", "iespejamais-parkapums": "Iespējamais pārkāpums", "lugums": "Lūgums",
+  "notikuma-laiks": "Laiks", "tiesvediba": "Tiesvedība", "kaitejums-turpinas": "Kaitējums turpinās",
+  "ieprieksejas-versanas": "Iepriekšējās vēršanās", "normativa-atsauce": "Normatīvā atsauce",
+  "dokumenta-merkis": "Mērķis", "termins": "Termiņš", "pielikums": "Pielikums",
+};
+function SemanticDescriptionCard({ sem }) {
+  const [view, setView] = useState("lokals");
+  const local = sem.lokals;
+  const central = sem.centrals || sem.centralaPrieksskatijums;
+  const d = view === "centrals" && central ? central : local;
+  if (!local) {
+    return <div className="mt-3 border rounded-lg p-3 text-sm text-red-700 bg-red-50">Semantiskais apraksts nav izveidots: {(sem.kludas || []).join("; ")}</div>;
+  }
+  const who = Object.fromEntries((d.dalibnieki || []).map((p) => [p.id, p.nosaukums || p.loma]));
+  const proj = sem.projekcija;
+  const rev = d.izcelsme?.parskatisana?.statuss;
+  return (
+    <div className="mt-3 border-2 border-indigo-200 rounded-lg p-4 bg-white">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="font-semibold text-indigo-900">Semantiskais apraksts</h4>
+        <div className="flex gap-1 text-xs">
+          {["lokals", "centrals"].map((v) => (
+            <button key={v} disabled={v === "centrals" && !central} onClick={() => setView(v)}
+              className={`px-2 py-0.5 rounded border ${view === v ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-600"} disabled:opacity-40`}>
+              {v === "lokals" ? "Iestādē (lokālais)" : "Reģistram (centrālais)"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 mb-2">
+        MI ģenerēts · {rev === "neparskatits" ? "nav pārskatīts" : rev === "labots" ? "pārskatīts un labots" : "pārskatīts"} ·
+        profils {d.profils} · formāts {d.formataVersija} · {d.izcelsme?.noteikumuVersija}
+      </div>
+      <p className="text-sm text-gray-900 leading-relaxed">{d.kopsavilkums?.teksts}</p>
+      <div className="flex flex-wrap gap-1 mt-2">
+        {(d.temas || []).map((t, i) => (
+          <span key={i} title={t.shema} className={`text-xs px-2 py-0.5 rounded ${t.shema?.includes("eurovoc") ? "bg-indigo-50 text-indigo-800" : "bg-emerald-50 text-emerald-800"}`}>
+            {t.shema?.includes("eurovoc") ? "EuroVoc" : "Klasifikators"} {t.kods} {t.nosaukums}
+          </span>
+        ))}
+        {(d.pazimes || []).map((p, i) => <span key={"p" + i} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">{p.kods}: {p.vertiba}</span>)}
+      </div>
+      <table className="w-full text-xs mt-3">
+        <tbody>
+          {(d.apgalvojumi || []).map((a) => (
+            <tr key={a.id} className="border-t align-top">
+              <td className="py-1 pr-2 text-gray-500 whitespace-nowrap">{PREDICATE_LV[a.predikats] || a.predikats}</td>
+              <td className="py-1 pr-2"><span className="text-gray-500">{who[a.apgalvo] || a.apgalvo} {CLAIM_STATUS[a.statuss] || a.statuss}:</span> {a.vertiba}
+                {a.laiks?.datums && <span className="text-gray-400"> ({a.laiks.datums})</span>}</td>
+              <td className="py-1 text-gray-400 whitespace-nowrap">{(a.pieradijumi || []).map((e) => e.lapa ? `${e.lapa}. lpp.` : "").filter(Boolean).join(", ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(d.nenoteiktibas || []).length > 0 && (
+        <div className="text-xs text-amber-700 mt-2">Nav noteikts: {d.nenoteiktibas.map((u) => `${u.lauks} (${u.iemesls})`).join("; ")}</div>
+      )}
+      {(sem.kludas || []).length > 0 && <div className="text-xs text-red-700 mt-2">Formāta pārbaude: {sem.kludas.slice(0, 4).join("; ")}</div>}
+      {proj && (
+        <div className={`text-xs mt-2 px-2 py-1 rounded ${proj.derigs ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+          Centrālais slānis: {proj.derigs ? "atbilst — var nodot reģistram" : "neatbilst — netiek nodots"} ·
+          noņemti {proj.nonemti?.length || 0} lauki, vispārināti {proj.visparinati || 0}, aizstāti {proj.aizstati || 0}
+          {(proj.atradumi || []).length > 0 && <> · atrasts: {proj.atradumi.map((f) => f.iemesls).join(", ")}</>}
+          {(proj.modelaAtradumi || []).length > 0 && <> · modeļa pārbaude: {proj.modelaAtradumi.map((f) => f.iemesls).join("; ")}</>}
         </div>
       )}
     </div>

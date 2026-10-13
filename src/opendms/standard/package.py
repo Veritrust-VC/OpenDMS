@@ -121,6 +121,8 @@ def build_metadata_xml(
     creator: Optional[dict] = None,
     system: Optional[dict] = None,
     generated_at: Optional[datetime] = None,
+    semantic_xml: Optional[bytes] = None,
+    semantic_version: Optional[str] = None,
 ) -> bytes:
     """
     org       {std_code, name, org_did?, reg_number?, e_address?}
@@ -248,6 +250,13 @@ def build_metadata_xml(
         _el(i, M, "SanemtsUz", _riga(meta["receivedAt"]))
     if meta.get("channel"):
         _el(i, M, "SanemsanasKanals", _pick(meta["channel"], CHANNELS, "DVSLietotajs"))
+
+    # 13. Semantiskais kopsavilkums — vdvc/dokumentu-semantikas-formats (lokālais slānis)
+    if semantic_xml:
+        sk = _el(d, M, "SemantiskaisKopsavilkums")
+        if semantic_version:
+            sk.set("shemasVersija", semantic_version)
+        sk.append(etree.fromstring(semantic_xml))
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 

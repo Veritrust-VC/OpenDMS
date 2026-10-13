@@ -537,6 +537,8 @@ PROCESS_RESULT_KEYS = (
     "piemerotsPrecedents", "klasifikatorsVersija",
     # learning from corrections
     "labots", "precedents", "labojumaVeids", "ieprieksejais",
+    # semantic description
+    "semantikaDeriga", "semantikaVersija", "centralaisSlanis", "centralaisIemesls",
     "topic", "confidence", "topicConfidence", "jurisdiction", "reason", "priority",
     "responseDays", "slaHours", "outcome", "department", "role", "reviewerRole",
     # VDVC / RS incoming flows
@@ -1023,12 +1025,16 @@ async def handle_register_submit(ctx: dict) -> dict:
         return {"output": {"nodots": False, "_warning": "document has no register DID (not registered with dokregistrs)"}}
 
     p = project(xml, scope)
+    central_layer = (meta.get("semantika") or {}).get("centrals")
+    if central_layer:
+        from opendms.standard.central import attach_semantics
+        p = attach_semantics(p, central_layer)
     res = await sdk_client.submit_metadata(doc["doc_did"], p["metadata"], scope, p["sha256"],
                                            trace_id=ctx.get("session_id"))
     status = (res or {}).get("_meta", {}).get("status_code", 502)
     ok = status in (200, 201)
     registry = (res or {}).get("registry") or {}
-    out = {"nodots": ok, "apjoms": scope, "izņemtieLauki": p["removed"], "aizklatasVertibas": p["masked"],
+    out = {"nodots": ok, "apjoms": scope, "semantika": bool(central_layer), "izņemtieLauki": p["removed"], "aizklatasVertibas": p["masked"],
            "metadatuSha256": p["sha256"],
            "registrs": {"statuss": registry.get("status"), "eventId": registry.get("event_id")} if ok
                        else {"kluda": (res or {}).get("detail") or (res or {}).get("error") or f"HTTP {status}"}}
@@ -1072,6 +1078,14 @@ def _learning(name: str):
     return handler
 
 
+def _semantics(name: str):
+    async def handler(ctx: dict) -> dict:
+        from opendms.semantics import service
+        return await getattr(service, name)(ctx)
+    handler.__name__ = name
+    return handler
+
+
 HANDLERS = {
     "document/list":  (handle_document_list,  {"namespace": "document", "operation": "list",  "version": 1,
                                                "summary": "List this organisation's recent documents (number, title, status, date, sender). Use to answer what is new."}),
@@ -1096,6 +1110,10 @@ HANDLERS = {
                                                      "summary": "Hand a step to a person; the session waits for their decision."}),
     "ai/classify":       (_learning("handle_ai_classify"), {"namespace": "ai", "operation": "classify", "version": 1,
                                                      "summary": "Classify into the topic classifier named in schemaRef, using staff corrections (precedents)."}),
+    "semantics/generate": (_semantics("handle_semantics_generate"), {"namespace": "semantics", "operation": "generate", "version": 1,
+                                                     "summary": "Write the document's semantic description (vdvc/dokumentu-semantikas-formats) for the profile in schemaRef."}),
+    "semantics/project":  (_semantics("handle_semantics_project"), {"namespace": "semantics", "operation": "project", "version": 1,
+                                                     "summary": "Make the de-identified central layer and put the local layer in metadati.xml section 13."}),
     "learning/record":   (_learning("handle_learning_record"), {"namespace": "learning", "operation": "record", "version": 1,
                                                      "summary": "Store a reviewer's correction as a precedent and return the corrected values."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,

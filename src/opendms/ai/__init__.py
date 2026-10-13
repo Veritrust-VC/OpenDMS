@@ -39,7 +39,8 @@ def _cfg():
     return {"provider": PROVIDER, "api_key": API_KEY, "base_url": BASE_URL or d["base_url"], "model": MODEL or d["model"]}
 
 
-async def _complete(system: str, user_msg: str, temperature=0.2, max_tokens=1500) -> Optional[str]:
+async def _complete(system: str, user_msg: str, temperature=0.2, max_tokens=1500,
+                    timeout: float = 60.0) -> Optional[str]:
     cfg = _cfg()
     if not cfg["api_key"] and cfg["provider"] != "ollama":
         return None
@@ -51,7 +52,7 @@ async def _complete(system: str, user_msg: str, temperature=0.2, max_tokens=1500
             }
             payload = {"model": cfg["model"], "max_tokens": max_tokens,
                        "system": system, "messages": [{"role": "user", "content": user_msg}]}
-            async with httpx.AsyncClient(timeout=60.0) as c:
+            async with httpx.AsyncClient(timeout=timeout) as c:
                 # Newer models (claude-sonnet-5 and later) reject `temperature`
                 # outright: "temperature is deprecated for this model", HTTP 400.
                 # Send it, and drop it on that specific complaint rather than
@@ -77,7 +78,7 @@ async def _complete(system: str, user_msg: str, temperature=0.2, max_tokens=1500
             headers = {"content-type": "application/json"}
             if cfg["api_key"]:
                 headers["authorization"] = f"Bearer {cfg['api_key']}"
-            async with httpx.AsyncClient(timeout=60.0) as c:
+            async with httpx.AsyncClient(timeout=timeout) as c:
                 r = await c.post(url, headers=headers, json={
                     "model": cfg["model"], "temperature": temperature, "max_tokens": max_tokens,
                     "messages": [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
@@ -90,8 +91,9 @@ async def _complete(system: str, user_msg: str, temperature=0.2, max_tokens=1500
         return None
 
 
-async def _complete_json(system: str, user_msg: str) -> Optional[dict]:
-    raw = await _complete(system, user_msg, temperature=0.1)
+async def _complete_json(system: str, user_msg: str, max_tokens: int = 1500,
+                         timeout: float = 60.0) -> Optional[dict]:
+    raw = await _complete(system, user_msg, temperature=0.1, max_tokens=max_tokens, timeout=timeout)
     if not raw:
         return None
     text = raw.strip()
@@ -102,6 +104,13 @@ async def _complete_json(system: str, user_msg: str) -> Optional[dict]:
     try:
         return json.loads(text.strip())
     except Exception:
+        # some models add a sentence around the object
+        a, b = text.find("{"), text.rfind("}")
+        if a >= 0 and b > a:
+            try:
+                return json.loads(text[a:b + 1])
+            except Exception:
+                pass
         return None
 
 
