@@ -100,6 +100,10 @@ services:
       OPENDMS_OPENDMS_HOST_BASE_URL: ${OPENDMS_HOST_BASE_URL:-http://api:8002}
       OPENDMS_PROCESSGIT_TOKEN: ${PROCESSGIT_TOKEN:-}
       OPENDMS_PROCESSGIT_URL: ${PROCESSGIT_URL:-https://processgit.org}
+      # Inputs (docs/ievade.md): channel config file and the mailbox password it names
+      OPENDMS_INTAKE_CONFIG: ${INTAKE_CONFIG:-/etc/opendms/ievade.yaml}
+      OPENDMS_INTAKE_EMAIL_PASSWORD: ${OPENDMS_INTAKE_EMAIL_PASSWORD:-}
+      OPENDMS_REGISTER_PUBLIC_URL: ${REGISTER_PUBLIC_URL:-}
     depends_on:
       db:
         condition: service_healthy
