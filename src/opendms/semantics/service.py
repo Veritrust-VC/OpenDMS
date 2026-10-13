@@ -97,9 +97,11 @@ def _bullets(d: dict, extra=None) -> str:
 def _facets(profile: dict, groups: dict) -> str:
     lines = []
     for k, v in (profile.get("pazimes") or {}).items():
-        vals = list(groups) if v.get("vertibas_no") == "vardnica.grupas" else list((v.get("vertibas") or {}).keys())
+        vals = ({g: (x or {}).get("nosaukums", g) for g, x in groups.items()}
+                if v.get("vertibas_no") == "vardnica.grupas" else (v.get("vertibas") or {}))
         lines.append(f"- `{k}` ({v.get('nosaukums')}){' — required' if v.get('obligata') else ''}"
-                     f"{' — several allowed' if v.get('vairakas') else ''}: {', '.join(vals)}")
+                     f"{' — several allowed' if v.get('vairakas') else ''}; value is ONE of: "
+                     + "; ".join(f"`{c}` = {lbl}" for c, lbl in vals.items()))
     return "\n".join(lines)
 
 
@@ -314,6 +316,18 @@ async def handle_semantics_generate(ctx: dict) -> dict:
     facets_spec = profile.get("pazimes") or {}
     facets = [f for f in (ans.get("pazimes") or []) if isinstance(f, dict) and f.get("kods") in facets_spec]
     facets = [{"kods": f["kods"], "vertiba": str(f.get("vertiba")).lower() if isinstance(f.get("vertiba"), bool) else str(f.get("vertiba"))} for f in facets]
+    groups_voc = set((voc.get("grupas") or {}))
+    kept = []
+    for f in facets:   # a value outside the profile's list is dropped and noted, not guessed
+        spec = facets_spec[f["kods"]]
+        allowed = groups_voc if spec.get("vertibas_no") == "vardnica.grupas" else {str(x) for x in (spec.get("vertibas") or {})}
+        if f["vertiba"] in allowed:
+            kept.append(f)
+        else:
+            kept_note = {"lauks": f"pazimes/{f['kods']}", "iemesls": "pretrunigs",
+                         "piezime": f"Modeļa vērtība '{f['vertiba']}' nav profila sarakstā."}
+            ans.setdefault("nenoteiktibas", []).append(kept_note)
+    facets = kept
     ev_known = m["eurovoc"]["koncepti"]
     temas = []
     for t in (ans.get("temas") or [])[:3]:
