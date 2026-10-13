@@ -78,13 +78,34 @@ async def load_format(schema_ref: Optional[str]) -> dict:
     out["profile"] = profile
     out["prompt"] = (fmt["root"] / profile["uzvedne"]).read_text(encoding="utf-8").split("\n---\n", 1)[-1]
     out["check_prompt"] = (fmt["root"] / profile["parbaudes_uzvedne"]).read_text(encoding="utf-8").split("\n---\n", 1)[-1]
-    # the institution's own classifier, if the process names it (Tema.shema from tematika/shemas.yaml)
-    out["class_scheme"] = None
-    for r in refs:
-        for s in fmt["model"]["tematika"]["shemas"].values():
-            if s.get("avots") and r.startswith(str(s["avots"]).replace("processgit:", "")):
-                out["class_scheme"] = s
+    # The institution's own classifier, if the process names it (an XML file in schemaRef other
+    # than the profile): its namespace is Tema.shema; its repository may publish a mapping to
+    # EuroVoc in kartejumi/eurovoc.csv (docs/04 of the format).
+    out["class_scheme"], out["mapping"], out["eurovoc_candidates"] = None, [], {}
+    cref = next((r for r in refs if r.endswith(".xml") and "/profili/" not in r), None)
+    if cref:
+        out["class_scheme"], out["mapping"] = await _institution_classifier(cref)
+    for row in out["mapping"]:
+        if row.get("eurovoc"):
+            out["eurovoc_candidates"].setdefault(str(row["eurovoc"]), row.get("eurovoc_nosaukums") or "")
     return out
+
+
+async def _institution_classifier(ref: str) -> tuple[Optional[dict], list[dict]]:
+    import csv
+    from lxml import etree
+    from opendms.uapf.learning import fetch_file, fetch_repo_zip
+
+    root = etree.fromstring(await fetch_file(ref))
+    ns = root.tag[1:].split("}", 1)[0] if root.tag.startswith("{") else None
+    scheme = {"uri": ns, "repo": ref} if ns else None
+    owner, repo, _ = ref.split("/", 2)
+    rows: list[dict] = []
+    with zipfile.ZipFile(io.BytesIO(await fetch_repo_zip(owner, repo))) as z:
+        name = next((n for n in z.namelist() if n.split("/", 1)[-1] == "kartejumi/eurovoc.csv"), None)
+        if name:
+            rows = list(csv.DictReader(z.read(name).decode("utf-8").splitlines()))
+    return scheme, rows
 
 
 # ─────────────────────────── helpers ───────────────────────────
@@ -110,14 +131,14 @@ def build_prompt(fmt: dict, text: str) -> str:
     m, p = fmt["model"], fmt["profile"]
     voc = m["vardnica"]
     preds = {**(voc.get("predikati") or {}), **(p.get("predikati") or {})}
-    ev = m["eurovoc"]["koncepti"]
+    ev = fmt.get("eurovoc_candidates") or {}
     repl = {
         "{{KOPSAVILKUMA_VEIDNE}}": str((p.get("kopsavilkums") or {}).get("veidne", "")).strip(),
         "{{LOMAS}}": _bullets(voc.get("lomas")),
         "{{GRUPAS}}": "\n".join(f"- `{k}` — {v.get('nosaukums')}" for k, v in (voc.get("grupas") or {}).items()),
         "{{PREDIKATI}}": _bullets(preds),
         "{{PAZIMES}}": _facets(p, voc.get("grupas") or {}),
-        "{{EUROVOC}}": "\n".join(f"- `{k}` — {v.get('lv') or v.get('en')}" for k, v in ev.items()),
+        "{{EUROVOC}}": "\n".join(f"- `{k}` — {v}" for k, v in ev.items()) or "(no candidate list — use EuroVoc concept identifiers)",
         "{{DOKUMENTS}}": text,
     }
     out = fmt["prompt"]
@@ -185,7 +206,7 @@ def _now() -> str:
 def _institution_topic(fmt: dict, inp: dict, avots: str) -> Optional[dict]:
     s = fmt.get("class_scheme")
     code = inp.get("kods") or inp.get("kategorija")
-    if not s or not code:
+    if not s or not s.get("uri") or not code:
         return None
     return {"shema": s["uri"], "kods": str(code),
             "nosaukums": inp.get("kodaNosaukums") or inp.get("kategorijasNosaukums") or "",
@@ -193,16 +214,13 @@ def _institution_topic(fmt: dict, inp: dict, avots: str) -> Optional[dict]:
 
 
 def _mapped_eurovoc(fmt: dict, kategorija: Optional[str]) -> Optional[dict]:
-    """Institution category -> EuroVoc via tematika/kartejumi/*.csv."""
-    import csv
+    """Institution category -> EuroVoc via the institution's published mapping."""
     if not kategorija:
         return None
-    for f in sorted((fmt["root"] / "tematika/kartejumi").glob("*.csv")):
-        for row in csv.DictReader(f.read_text(encoding="utf-8").splitlines()):
-            first = next(iter(row.values()))
-            if str(first) == str(kategorija) and row.get("eurovoc"):
-                return {"shema": "http://eurovoc.europa.eu/", "kods": row["eurovoc"],
-                        "nosaukums": row.get("eurovoc_nosaukums") or "", "loma": "papildu", "avots": "kartejums"}
+    for row in fmt.get("mapping") or []:
+        if str(row.get("kods")) == str(kategorija) and row.get("eurovoc"):
+            return {"shema": "http://eurovoc.europa.eu/", "kods": str(row["eurovoc"]),
+                    "nosaukums": row.get("eurovoc_nosaukums") or "", "loma": "papildu", "avots": "kartejums"}
     return None
 
 
@@ -329,13 +347,13 @@ async def handle_semantics_generate(ctx: dict) -> dict:
                          "piezime": f"Modeļa vērtība '{f['vertiba']}' nav profila sarakstā."}
             ans.setdefault("nenoteiktibas", []).append(kept_note)
     facets = kept
-    ev_known = m["eurovoc"]["koncepti"]
+    ev_known = fmt.get("eurovoc_candidates") or {}
+    ev_rx = re.compile(m["tematika"]["shemas"]["eurovoc"].get("koda_paraugs") or r"^(\d+|c_[0-9a-f]{8})$")
     temas = []
     for t in (ans.get("temas") or [])[:3]:
         k = str(t.get("kods"))
-        if k in {str(x) for x in ev_known}:
-            v = ev_known.get(k)
-            temas.append({"shema": "http://eurovoc.europa.eu/", "kods": k, "nosaukums": (v or {}).get("lv") or (v or {}).get("en") or "",
+        if (k in ev_known) if ev_known else bool(ev_rx.match(k)):
+            temas.append({"shema": "http://eurovoc.europa.eu/", "kods": k, "nosaukums": ev_known.get(k, ""),
                           "loma": "galvena" if not temas else "papildu", "avots": "modelis"})
     inst = _institution_topic(fmt, inp, "noteikumi" if inp.get("klasifikacijasAvots") == "noteikumi" else "modelis")
     if inst:

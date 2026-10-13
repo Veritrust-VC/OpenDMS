@@ -33,7 +33,6 @@ def load(root: str | Path) -> dict:
     m = yaml.safe_load((root / "modelis/kodols.yaml").read_text(encoding="utf-8"))
     m["vardnica"] = yaml.safe_load((root / "modelis/vardnica.yaml").read_text(encoding="utf-8"))
     m["tematika"] = yaml.safe_load((root / "tematika/shemas.yaml").read_text(encoding="utf-8"))
-    m["eurovoc"] = yaml.safe_load((root / "tematika/eurovoc-izlase.yaml").read_text(encoding="utf-8"))
     m["profili"] = {}
     for p in sorted((root / "profili").glob("*/profils.yaml")):
         prof = yaml.safe_load(p.read_text(encoding="utf-8"))
@@ -323,10 +322,12 @@ def check(obj: dict, model: dict, schema: dict | None = None) -> list[str]:
     tp = prof.get("temas") or {}
     if len(ev) < tp.get("min_eurovoc", 1):
         errs.append("temas: vajag vismaz vienu EuroVoc tēmu")
-    known = set(str(k) for k in (model["eurovoc"].get("koncepti") or {}))
+    pattern = re.compile(model["tematika"]["shemas"]["eurovoc"].get("koda_paraugs") or r"^(\d+|c_[0-9a-f]{8})$")
     for t in ev:
-        if str(t.get("kods")) not in known:
-            errs.append(f"temas: EuroVoc '{t.get('kods')}' nav izlasē (tematika/eurovoc-izlase.yaml)")
+        if not pattern.match(str(t.get("kods"))):
+            errs.append(f"temas: '{t.get('kods')}' nav EuroVoc koncepta identifikators")
+    if len(ev) > tp.get("max_eurovoc", 3):
+        errs.append(f"temas: ne vairāk kā {tp.get('max_eurovoc', 3)} EuroVoc tēmas")
     if obj.get("slanis") == "centrals":
         for path, text in iter_texts(obj):
             for name in text_findings(text):
