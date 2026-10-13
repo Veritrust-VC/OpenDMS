@@ -719,13 +719,43 @@ async def handle_event_emit(ctx: dict) -> dict:
             int(document_id), event_type, json.dumps(payload),
         )
 
+    # The routing decision is a lifecycle fact for the central register: the
+    # document is now with a department (a unit, never a named person).
+    assigned = None
+    if step == "EmitRouted" and payload.get("department"):
+        assigned = await _register_assignment(int(document_id), payload, session_id)
+
     return {
         "output": {
             "eventId": row["id"],
             "eventType": event_type,
             "persistedAt": row["created_at"].isoformat(),
+            **({"registraNotikums": assigned} if assigned is not None else {}),
         }
     }
+
+
+async def _register_assignment(doc_id: int, payload: dict, session_id) -> bool:
+    """DocumentAssigned in the central register: department name and unit id only."""
+    from opendms import sdk_client
+    from opendms.config import get_settings
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        did = await conn.fetchval("SELECT doc_did FROM documents WHERE id = $1", doc_id)
+        done = await conn.fetchval(
+            """SELECT 1 FROM document_events WHERE document_id = $1 AND event_type = 'DocumentAssigned'
+               AND vc_submitted AND details->>'department' = $2""", doc_id, payload.get("department"))
+    if not did or done or not get_settings().sdk_enabled:
+        return False
+    res = await sdk_client.assign_document(did, assignee=payload.get("vieniba") or payload["department"],
+                                           department=payload["department"], trace_id=session_id)
+    ok = bool(res) and res.get("_meta", {}).get("status_code", 200) in (200, 201)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,'DocumentAssigned',NULL,$2,$3)",
+            doc_id, ok, json.dumps({"department": payload["department"], "vieniba": payload.get("vieniba"),
+                                    "registrs": ok}, ensure_ascii=False))
+    return ok
 
 
 # ─────────────────────────────────────────────────────────────
