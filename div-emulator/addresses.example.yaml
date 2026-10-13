@@ -1,0 +1,12 @@
+# E-adrešu katalogs. Žetons katrai e-adresei — vides mainīgajā token_env.
+adreses:
+  - eAddress: "_DEFAULT@90000000001"
+    name: "Paraugiestāde A"
+    code: "99-0001"
+    did: "did:web:a.example"
+    token_env: DIV_TOKEN_A
+  - eAddress: "_DEFAULT@90000000002"
+    name: "Paraugiestāde B"
+    code: "99-0002"
+    did: "did:web:b.example"
+    token_env: DIV_TOKEN_B

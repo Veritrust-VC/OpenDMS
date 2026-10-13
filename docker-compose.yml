@@ -104,6 +104,10 @@ services:
       OPENDMS_INTAKE_CONFIG: ${INTAKE_CONFIG:-/etc/opendms/ievade.yaml}
       OPENDMS_INTAKE_EMAIL_PASSWORD: ${OPENDMS_INTAKE_EMAIL_PASSWORD:-}
       OPENDMS_REGISTER_PUBLIC_URL: ${REGISTER_PUBLIC_URL:-}
+      # e-adrese (DIV) — docs/parsutisana.md
+      OPENDMS_DIV_URL: ${DIV_URL:-}
+      OPENDMS_DIV_TOKEN: ${DIV_TOKEN:-}
+      OPENDMS_DIV_E_ADDRESS: ${DIV_E_ADDRESS:-}
     depends_on:
       db:
         condition: service_healthy

@@ -1096,7 +1096,23 @@ def _semantics(name: str):
     return handler
 
 
+def _forwarding(name: str):
+    async def run(ctx: dict) -> dict:
+        from opendms.div import forwarding
+        return await getattr(forwarding, name)(ctx)
+    run.__name__ = name
+    return run
+
+
 HANDLERS = {
+    "forward/request":   (_forwarding("handle_forward_request"), {"namespace": "forward", "operation": "request", "version": 1,
+                                                     "summary": "Read a staff request to forward the document to another institution (e-adrese)."}),
+    "div/send":          (_forwarding("handle_div_send"), {"namespace": "div", "operation": "send", "version": 1,
+                                                     "summary": "Send the document in a DIV envelope to the recipient's e-adrese."}),
+    "forward/record":    (_forwarding("handle_forward_record"), {"namespace": "forward", "operation": "record", "version": 1,
+                                                     "summary": "Record the dispatch in the DVS and as DocumentSent in the central register."}),
+    "submitter/notify":  (_forwarding("handle_submitter_notify"), {"namespace": "submitter", "operation": "notify", "version": 1,
+                                                     "summary": "Tell the submitter by e-mail that the document was forwarded."}),
     "document/list":  (handle_document_list,  {"namespace": "document", "operation": "list",  "version": 1,
                                                "summary": "List this organisation's recent documents (number, title, status, date, sender). Use to answer what is new."}),
     "document/fetch": (handle_document_fetch, {"namespace": "document", "operation": "fetch", "version": 1,

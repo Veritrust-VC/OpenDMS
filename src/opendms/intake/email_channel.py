@@ -110,6 +110,35 @@ async def form_acks() -> None:
             await service.process_acks(ch, sender_for(mail))
 
 
+async def _div_tick(loop, last: dict) -> None:
+    """e-adrese (DIV): incoming messages for an enabled 'e-adrese' channel, and
+    delivery notifications for documents this DVS forwarded."""
+    from opendms import div
+    if not div.configured():
+        return
+    for ch in cfg.channels("e-adrese"):
+        interval = max(15, int(ch.get("intervals_s", 30)))
+        if loop.time() - last.get(ch["id"], 0) < interval:
+            continue
+        last[ch["id"]] = loop.time()
+        try:
+            from opendms.intake.div_channel import poll_once as div_poll
+            r = await div_poll(ch)
+            if r["registreti"] or r["kludas"]:
+                logger.info("intake %s: %s", ch["id"], r)
+        except Exception:
+            logger.exception("intake %s: poll failed", ch["id"])
+    if loop.time() - last.get("_div_notifications", 0) >= 20:
+        last["_div_notifications"] = loop.time()
+        try:
+            from opendms.div.forwarding import poll_notifications
+            n = await poll_notifications()
+            if n:
+                logger.info("e-adrese: %d delivery notification(s)", n)
+        except Exception:
+            logger.exception("e-adrese: notifications failed")
+
+
 async def run_forever() -> None:
     """Background loop started with the app. Holds a DB advisory lock so only one process polls."""
     from opendms.database import get_pool
@@ -144,6 +173,7 @@ async def run_forever() -> None:
                 await form_acks()
             except Exception:
                 logger.exception("intake: form acknowledgements failed")
+            await _div_tick(loop, last)
             await asyncio.sleep(10)
     except asyncio.CancelledError:
         pass

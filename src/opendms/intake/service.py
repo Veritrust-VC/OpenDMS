@@ -37,8 +37,9 @@ from opendms.intake import edoc
 logger = logging.getLogger(__name__)
 
 SYSTEM_EMAIL = "ievade@opendms.local"
-CHANNEL_CODE = {"epasts": "EPasts", "tiessaistes-forma": "Portals"}
-TITLES = {"epasts": "Iesniegums (e-pasts)", "tiessaistes-forma": "Iesniegums (tiešsaistes forma)"}
+CHANNEL_CODE = {"epasts": "EPasts", "tiessaistes-forma": "Portals", "e-adrese": "EAdrese"}
+TITLES = {"epasts": "Iesniegums (e-pasts)", "tiessaistes-forma": "Iesniegums (tiešsaistes forma)",
+          "e-adrese": "Dokuments (e-adrese)"}
 # Signed / main documents first — the primary file is what the processes read.
 PRIMARY_RANK = {"application/pdf": 0,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 1,
@@ -103,7 +104,8 @@ def expand(attachments: list[dict], body: str = "") -> tuple[list[dict], list[di
 
 async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str, body: str,
                  attachments: list[dict], received_at: Optional[str] = None,
-                 extra: Optional[dict] = None, primary: Optional[dict] = None) -> dict:
+                 extra: Optional[dict] = None, primary: Optional[dict] = None,
+                 register_did: Optional[str] = None, received_vc: bool = False) -> dict:
     """Register one received item as a DVS document. Idempotent per (channel, external_ref)."""
     from opendms.routers.documents import DocumentCreate, add_file, create_document
 
@@ -125,7 +127,8 @@ async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str
     received_at = received_at or datetime.now(timezone.utc).isoformat()
 
     doc = await create_document(DocumentCreate(title=TITLES.get(kind, "Iesniegums"),
-                                               metadata={"channel": CHANNEL_CODE.get(kind, "API")}), user=user)
+                                               metadata={"channel": CHANNEL_CODE.get(kind, "API")},
+                                               register_did=register_did), user=user)
     doc_id = doc["id"]
 
     local_meta = {
@@ -143,10 +146,10 @@ async def ingest(channel: dict, *, external_ref: str, sender: dict, subject: str
                            title, json.dumps(local_meta, ensure_ascii=False), doc_id)
         await conn.execute(
             """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
-               VALUES ($1, 'DocumentReceived', $2, FALSE, $3)""",
+               VALUES ($1, 'DocumentReceived', $2, $4, $3)""",
             doc_id, user["id"], json.dumps({"kanals": cid, "veids": kind, "datnes": len(files),
                                             "edoc": [{"paraksti": e.get("parakstuSkaits"), "integritate": e.get("integritateVisiem")} for e in edocs]},
-                                           ensure_ascii=False))
+                                           ensure_ascii=False), received_vc)
         intake_id = await conn.fetchval(
             """INSERT INTO intake_items (channel_id, channel_kind, external_ref, sender_address, subject,
                                          document_id, status, detail, ack_status)

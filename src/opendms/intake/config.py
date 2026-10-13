@@ -34,7 +34,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = "/etc/opendms/ievade.yaml"
-KINDS = ("epasts", "tiessaistes-forma")
+KINDS = ("epasts", "tiessaistes-forma", "e-adrese")
 
 _cache: dict[str, Any] = {"mtime": None, "data": {}}
 

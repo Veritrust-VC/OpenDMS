@@ -25,6 +25,9 @@ class DocumentCreate(BaseModel):
     semantic_summary: Optional[dict[str, Any]] = None
     sensitivity_control: Optional[dict[str, Any]] = None
     ai_summary_status: Optional[str] = None
+    # An existing register document (a document received from another institution
+    # keeps its register identity; this DVS becomes its holder instead of creating a new one).
+    register_did: Optional[str] = None
 
 
 class DocumentSend(BaseModel):
@@ -282,7 +285,9 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         reg_summary, reg_sensitivity = _sanitize_for_registry(
             req.semantic_summary, req.sensitivity_control
         )
-        if s.sdk_enabled:
+        if req.register_did:
+            doc_did = req.register_did
+        elif s.sdk_enabled:
             sdk_result = await sdk_client.create_document(
                 title=req.title,
                 classification=req.metadata.get("classification", ""),

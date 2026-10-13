@@ -7,6 +7,7 @@ import AgentPage from "./AgentPage.jsx";
 import StoragePage from "./StoragePage.jsx";
 import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
+import ForwardingCard from "./ForwardingCard.jsx";
 import ActiveClassifiers from "./ClassifiersPage.jsx";
 
 const API = "/api";
@@ -1275,6 +1276,7 @@ function DocumentDetail({ doc, onAction, notify }) {
           ? <ProcessResultCard doc={doc} notify={notify} />
           : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
         {doc?.metadata?.semantika && <SemanticDescriptionCard sem={doc.metadata.semantika} docId={doc.id} notify={notify} />}
+        <ForwardingCard doc={doc} files={files} notify={notify} onAction={onAction} />
 
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">{doc.title}</h3>

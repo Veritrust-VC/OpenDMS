@@ -872,6 +872,7 @@ function CreateTriggerModal({ onClose, onCreated, notify }) {
               <option value="document.received">document.received</option>
               <option value="document.assigned">document.assigned</option>
               <option value="document.decided">document.decided</option>
+              <option value="document.forwarding">document.forwarding (pārsūtīšana)</option>
               <option value="manual">manual</option>
             </select>
           </div>

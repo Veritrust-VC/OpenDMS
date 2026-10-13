@@ -58,7 +58,7 @@ class TriggerIn(BaseModel):
     package_id: str
     package_version: Optional[str] = None
     process_id: str
-    trigger_event: str  # document.received | document.created | document.assigned | document.decided
+    trigger_event: str  # document.received | document.created | document.assigned | document.decided | document.forwarding
     match_condition: dict = {}
     is_active: bool = True
 
@@ -81,7 +81,7 @@ async def list_triggers(user=Depends(get_current_user)):
 async def create_trigger(t: TriggerIn, user=Depends(require_role("admin", "superadmin"))):
     if t.trigger_event not in (
         "document.created", "document.received", "document.assigned",
-        "document.decided", "manual",
+        "document.decided", "document.forwarding", "manual",
     ):
         raise HTTPException(400, f"Invalid trigger_event: {t.trigger_event}")
     pool = await get_pool()
