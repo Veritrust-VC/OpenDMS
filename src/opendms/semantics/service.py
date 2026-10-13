@@ -35,6 +35,7 @@ from opendms.semantics import dsf
 logger = logging.getLogger(__name__)
 
 _formats: dict[str, tuple[float, dict]] = {}
+MONTH_OR_YEAR = re.compile(r"(\d{4}\.?\s*(gad[aā]\s*)?([a-zāčēģīķļņšūž]+[īa]?)?|\d{4}-\d{2}|[a-zāčēģīķļņšūž]+\s+\d{4})", re.I)
 CACHE_SECONDS = 600
 
 
@@ -416,8 +417,10 @@ async def handle_semantics_project(ctx: dict) -> dict:
     model_checked = chk is not None
     for f in (chk or {}).get("atradumi") or []:
         frag, rep = str(f.get("teksts") or ""), str(f.get("aizstat") or "")
-        if len(frag) < 3:
-            continue
+        if len(frag) < 3 or MONTH_OR_YEAR.fullmatch(frag.strip()):
+            continue   # month and year are kept on purpose (docs/03)
+        if not rep or "[" in rep:
+            rep = "noteiktā laikā" if re.search(r"\d{4}", frag) else "attiecīgā persona"
         for path_obj in [central.get("kopsavilkums") or {}] + list(central.get("apgalvojumi") or []) + list(central.get("nenoteiktibas") or []):
             for key in ("teksts", "vertiba", "nosacijumi", "piezime"):
                 if isinstance(path_obj.get(key), str) and frag in path_obj[key]:
@@ -428,7 +431,8 @@ async def handle_semantics_project(ctx: dict) -> dict:
         for name in dsf.text_findings(text):
             findings.append({"vieta": path, "iemesls": name})
     unresolved = [f for f in (chk or {}).get("atradumi") or []
-                  if str(f.get("teksts") or "") and any(str(f["teksts"]) in t for _, t in dsf.iter_texts(central))]
+                  if len(str(f.get("teksts") or "")) >= 3 and not MONTH_OR_YEAR.fullmatch(str(f["teksts"]).strip())
+                  and any(str(f["teksts"]) in t for _, t in dsf.iter_texts(central))]
     ok = model_checked and not findings and not unresolved
     deid = central["piekluve"]["deidentifikacija"]
     deid["parbaudes"] = deid["parbaudes"] + (["modeļa-pārbaude"] if model_checked else [])
