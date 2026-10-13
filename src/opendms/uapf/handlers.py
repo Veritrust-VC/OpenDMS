@@ -13,6 +13,7 @@ and return a dict that will be merged into the UAPF session variables.
 """
 
 import json
+import re
 from datetime import datetime, timezone
 import logging
 import os
@@ -251,7 +252,26 @@ async def handle_ai_redact(ctx: dict) -> dict:
             }
         }
 
+    # The model can miss identifiers (e.g. "+371 29123456" passed through).
+    # Deterministic shapes are always masked after it, whatever it returned.
+    red = result.get("redactedContent")
+    if isinstance(red, str):
+        result["redactedContent"] = scrub_identifiers(red)
     return {"output": {**result, **_pii}}
+
+
+_SCRUB = [
+    (re.compile(r"\b[0-3]\d[01]\d\d{2}-?[0-2]\d{4}\b"), "[PERSONAS_KODS]"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "[EMAIL_REDACTED]"),
+    (re.compile(r"\b[A-Z]{2}\d{2}[A-Z]{4}[A-Z0-9]{8,26}\b"), "[BANKAS_KONTS]"),
+    (re.compile(r"(?:\+371|00371)[\s-]?\d{8}\b|\b[2-6]\d{7}\b"), "[TALRUNIS]"),
+]
+
+
+def scrub_identifiers(text: str) -> str:
+    for rx, repl in _SCRUB:
+        text = rx.sub(repl, text)
+    return text
 
 
 # ─────────────────────────────────────────────────────────────

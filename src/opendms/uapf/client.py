@@ -17,12 +17,17 @@ class UapfClient:
         engine_url: str,
         auth_token: Optional[str] = None,
         timeout_seconds: float = 30.0,
+        session_timeout_seconds: float = 300.0,
     ):
         if not engine_url:
             raise ValueError("UapfClient: engine_url is required")
         self.engine_url = engine_url.rstrip("/")
         self.auth_token = auth_token
         self.timeout = timeout_seconds
+        # A session runs the whole process synchronously, model steps included
+        # (redaction + extraction take 20-60 s on TET GPT); 30 s cut it off
+        # while the engine was still working.
+        self.session_timeout = session_timeout_seconds
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -48,7 +53,7 @@ class UapfClient:
         if package_version:
             body["packageVersion"] = package_version
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.session_timeout) as client:
             r = await client.post(
                 f"{self.engine_url}/uapf/start-session",
                 headers=self._headers(),
@@ -78,7 +83,7 @@ class UapfClient:
 
     async def resume_session(self, session_id: str, output: dict) -> dict:
         """Continue a session suspended on a user task with the human's result."""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        async with httpx.AsyncClient(timeout=self.session_timeout) as client:
             r = await client.post(
                 f"{self.engine_url}/uapf/sessions/{session_id}/resume",
                 headers=self._headers(),

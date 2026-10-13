@@ -78,3 +78,11 @@ def test_seed_templates_cover_p2_outcomes():
             "TPL-PARSUTIT-CITAI-IESTADEI", "TPL-UZSAKT-PARBAUDI"} <= ids
     for _id, _title, body in SEED:
         assert "SINTĒTISKA" in body and "Rekvizīti" in body
+
+
+def test_redact_always_masks_identifier_shapes(monkeypatch):
+    async def model(_s, _u):
+        return {"redactedContent": "[VARDS]\nTālr.: +371 29123456, p.k. 010190-12345, x@y.lv"}
+    monkeypatch.setattr(handlers, "_complete_json", model)
+    out = asyncio.run(handlers.handle_ai_redact({"input": {"content": "x"}}))["output"]["redactedContent"]
+    assert "29123456" not in out and "010190" not in out and "x@y.lv" not in out
