@@ -200,7 +200,8 @@ function MetaDocument({ d }) {
   const glab = child(d, "Glabasana");
   const cas = child(child(d, "Klasifikacija"), "KlasifikacijasLieta");
   const shown = ["DokumentaID", "DokumentaDID", "Virsraksts", "Apraksts", "DokumentaVeids", "DokumentaDatums", "RegistretsUz", "Valoda",
-                 "ArejieIdentifikatori", "Versija", "Klasifikacija", "Glabasana", "Drosiba", "Datnes", "Izcelsme"];
+                 "ArejieIdentifikatori", "Versija", "Klasifikacija", "Glabasana", "Drosiba", "Datnes", "Izcelsme",
+                 "SemantiskaisKopsavilkums"];
   const rest = kids(d).filter((c) => !shown.includes(c.localName));
   const regNr = kids(child(d, "ArejieIdentifikatori") || d).find((c) => c.getAttribute?.("tips") === "RegistracijasNumurs");
   const files = kids(child(d, "Datnes") || d).filter((c) => c.localName === "Datne");
@@ -226,6 +227,8 @@ function MetaDocument({ d }) {
         {child(glab, "GlabasanasTermins") && <Row k="Glabāšana" v={<>{leafValue(child(glab, "GlabasanasTermins"))} {val(text(glab, "GlabasanasTriggeris"))}, pēc tam — {val(text(glab, "IznicinasanasDarbiba")).toLowerCase()}</>} />}
         {text(child(sec, "PiekluvesIerobezojums"), "TiesiskaisPamatojums") && <Row k="Piekļuves pamatojums" v={text(child(sec, "PiekluvesIerobezojums"), "TiesiskaisPamatojums")} />}
       </dl>
+
+      {child(d, "SemantiskaisKopsavilkums") && <Semantics sk={child(d, "SemantiskaisKopsavilkums")} />}
 
       {child(d, "Izcelsme") && <Section title="Izcelsme"><Block el={child(d, "Izcelsme")} /></Section>}
 
@@ -256,6 +259,40 @@ function MetaDocument({ d }) {
         <div className="mt-2"><Block el={d} /></div>
       </details>
     </div>
+  );
+}
+
+// 13. Semantiskais kopsavilkums (vdvc/dokumentu-semantikas-formats)
+const STATUSS = { apgalvots: "apgalvo", pieprasits: "lūdz", apliecinats: "apliecina", noliegts: "noliedz", secinats: "secināts" };
+const PARSK = { neparskatits: "nav pārskatīts", apstiprinats: "pārskatīts, apstiprināts", labots: "pārskatīts, labots" };
+function Semantics({ sk }) {
+  const a = kids(sk).find((c) => c.localName === "SemantiskaisApraksts");
+  if (!a) return <Section title="Semantiskais kopsavilkums"><Block el={sk} /></Section>;
+  const list = (name) => kids(child(a, name) || a).filter((c) => c.parentNode === child(a, name));
+  const people = Object.fromEntries(list("Dalibnieki").map((p) => [p.getAttribute("id"), text(p, "Nosaukums") || text(p, "Loma")]));
+  const rev = child(child(a, "Izcelsme"), "Parskatisana")?.getAttribute("statuss");
+  return (
+    <Section title={<>Semantiskais kopsavilkums <span className="font-normal text-ink-400">· {a.getAttribute("profils")} · {a.getAttribute("slanis")} slānis · MI ģenerēts, {PARSK[rev] || rev}</span></>}>
+      <p className="text-xs text-ink-800 leading-relaxed">{text(child(a, "Kopsavilkums"), "Teksts")}</p>
+      <div className="flex flex-wrap gap-1 mt-2">
+        {list("Temas").map((t, i) => (
+          <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${(t.getAttribute("shema") || "").includes("eurovoc") ? "bg-indigo-50 text-indigo-800" : "bg-emerald-50 text-emerald-800"}`}>
+            {(t.getAttribute("shema") || "").includes("eurovoc") ? "EuroVoc" : "Klasifikators"} {t.getAttribute("kods")} {text(t, "Nosaukums")}
+          </span>
+        ))}
+        {list("Pazimes").map((p, i) => <span key={"p" + i} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-ink-700">{p.getAttribute("kods")}: {text(p, "Vertiba")}</span>)}
+      </div>
+      <dl className="grid grid-cols-[minmax(8rem,12rem)_1fr] gap-x-3 gap-y-1 text-xs mt-2">
+        {list("Apgalvojumi").map((c, i) => (
+          <Row key={i} k={text(c, "Predikats")}
+            v={<><span className="text-ink-400">{people[text(c, "Apgalvo")] || text(c, "Apgalvo")} {STATUSS[text(c, "Statuss")] || text(c, "Statuss")}:</span> {text(c, "Vertiba")}</>} />
+        ))}
+      </dl>
+      <details className="text-xs mt-1">
+        <summary className="cursor-pointer text-ink-400 hover:text-ink-700">Visi semantiskā apraksta lauki</summary>
+        <div className="mt-2"><Block el={a} /></div>
+      </details>
+    </Section>
   );
 }
 

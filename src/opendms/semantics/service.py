@@ -224,6 +224,23 @@ def _mapped_eurovoc(fmt: dict, kategorija: Optional[str]) -> Optional[dict]:
     return None
 
 
+async def write_section13(doc_id: int, local: dict, fmt: dict) -> tuple[bool, Optional[str]]:
+    """Put the local layer into metadati.xml section 13 (rebuilds the package with the
+    rules it was first built with). Best effort: the description is kept either way."""
+    try:
+        from lxml import etree
+        from opendms.standard.service import rebuild_package
+        el = dsf.to_xml(local, fmt["model"])
+        xsd = etree.XMLSchema(etree.parse(str(fmt["root"] / "shemas/semantika.xsd")))
+        if not xsd.validate(etree.ElementTree(el)):
+            raise ValueError("semantika.xsd: " + "; ".join(e.message for e in list(xsd.error_log)[:3]))
+        await rebuild_package(doc_id, semantika_xml=etree.tostring(el), semantika_versija=fmt["model"]["versija"])
+        return True, None
+    except Exception as e:
+        logger.warning("metadati.xml section 13 not written for %s: %s", doc_id, e)
+        return False, str(e)[:300]
+
+
 # ─────────────────────────── semantics.generate@1 ───────────────────────────
 
 async def handle_semantics_generate(ctx: dict) -> dict:
@@ -271,7 +288,9 @@ async def handle_semantics_generate(ctx: dict) -> dict:
                                              "loma": inp.get("role") or inp.get("reviewerRole") or "darbinieks",
                                              "laiks": _now()}
         errs = dsf.check(local, m, fmt["schemas"]["lokals"])
-        await _save(doc_id, {**(c["meta"].get("semantika") or {}), "lokals": local, "kludas": errs})
+        pk_ok, pk_err = await write_section13(doc_id, local, fmt)
+        await _save(doc_id, {**(c["meta"].get("semantika") or {}), "lokals": local, "kludas": errs,
+                             "metadatiXml": {"ierakstits": pk_ok, "kluda": pk_err, "laiks": _now()}})
         return {"output": {"semantikaDeriga": not errs, "semantikaVersija": local["dokuments"]["metadatuVersija"],
                            "semantikaParskatita": True}}
 
@@ -422,7 +441,9 @@ async def handle_semantics_generate(ctx: dict) -> dict:
             local2, errs2 = _assemble(fix)
             if len(errs2) < len(errs):
                 local, errs = local2, errs2
-    await _save(doc_id, {"lokals": local, "kludas": errs, "generets": _now(), "schemaRef": ctx.get("schema_ref")})
+    pk_ok, pk_err = await write_section13(doc_id, local, fmt) if not errs else (False, "apraksts neatbilst formātam")
+    await _save(doc_id, {"lokals": local, "kludas": errs, "generets": _now(), "schemaRef": ctx.get("schema_ref"),
+                         "metadatiXml": {"ierakstits": pk_ok, "kluda": pk_err, "laiks": _now()}})
     return {"output": {"semantikaDeriga": not errs, "semantikaVersija": 1,
                        "semantikaKopsavilkums": local["kopsavilkums"]["teksts"][:1000],
                        "semantikaKludas": len(errs)}}
@@ -481,19 +502,7 @@ async def handle_semantics_project(ctx: dict) -> dict:
     ok = ok and not errs
 
     # metadati.xml section 13 carries the local layer: rebuild the package with it
-    package_ok, package_err = True, None
-    try:
-        from lxml import etree
-        from opendms.standard.service import rebuild_package
-        el = dsf.to_xml(local, m)
-        xsd = etree.XMLSchema(etree.parse(str(fmt["root"] / "shemas/semantika.xsd")))
-        if not xsd.validate(etree.ElementTree(el)):
-            raise ValueError("semantika.xsd: " + "; ".join(e.message for e in list(xsd.error_log)[:3]))
-        await rebuild_package(doc_id, semantika_xml=etree.tostring(el),
-                              semantika_versija=m["versija"])
-    except Exception as e:  # the semantic layer is still kept; the submit step reports it
-        package_ok, package_err = False, str(e)[:300]
-        logger.warning("semantics.project: package rebuild failed for %s: %s", doc_id, e)
+    package_ok, package_err = await write_section13(doc_id, local, fmt)
 
     await _save(doc_id, {**sem, "centrals": central if ok else None,
                          "centralaPrieksskatijums": central,
