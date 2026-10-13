@@ -531,7 +531,8 @@ async def handle_ai_extract(ctx: dict) -> dict:
 
 # Decision outputs of the lab process packages, recorded as they come.
 PROCESS_RESULT_KEYS = (
-    # lv.tiesibsargs.iesnieguma-virzisana
+    # lv.tiesibsargs.iesnieguma-virzisana (tēmu klasifikators + organizācijas reģistrs)
+    "joma", "kategorija", "kategorijasNosaukums", "vieniba",
     "topic", "confidence", "topicConfidence", "jurisdiction", "reason", "priority",
     "responseDays", "slaHours", "outcome", "department", "role", "reviewerRole",
     # VDVC / RS incoming flows
@@ -601,7 +602,7 @@ async def handle_data_write(ctx: dict) -> dict:
             )
 
         row = None
-        if inp.get("topic") and inp.get("priority"):
+        if (inp.get("topic") or inp.get("joma")) and inp.get("priority"):
             row = await conn.fetchrow(
               """INSERT INTO complaint_classifications (
                      document_id, session_id, topic, topic_confidence,
@@ -609,7 +610,7 @@ async def handle_data_write(ctx: dict) -> dict:
                  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                  RETURNING id, created_at""",
               int(document_id), session_id,
-              inp.get("topic"), float(topic_conf or 0.0),
+              inp.get("topic") or inp.get("joma"), float(topic_conf or 0.0),
               inp.get("priority"), int(sla_hours or 0),
               inp.get("department"), reviewer_role,
               json.dumps(raw_facets),
@@ -831,6 +832,13 @@ ELEMENT_MARKERS = {
     "kompetenta-iestade": "Kompetentā iestāde",
 }
 
+# Tiesībsarga tēmu klasifikatora jomas (tiesibsargs/temu-klasifikators)
+JOMAS_LV = {
+    "BT": "Bērnu tiesības", "PPT": "Pilsoniskās un politiskās tiesības",
+    "SEK": "Sociālās, ekonomiskās un kultūras tiesības",
+    "TV": "Tiesiskā vienlīdzība un diskriminācijas novēršana",
+}
+
 VALUE_LV = {
     "bernu-tiesibas": "bērnu tiesības", "diskriminacijas-noversana": "diskriminācijas novēršana",
     "laba-parvaldiba": "laba pārvaldība", "socialas-tiesibas": "sociālās tiesības",
@@ -848,7 +856,8 @@ async def handle_ai_draft(ctx: dict) -> dict:
     values = _Blank(
         datums=datetime.now(timezone.utc).strftime("%d.%m.%Y"),
         registracijas_nr=inp.get("registrationNumber") or "[…]",
-        joma=VALUE_LV.get(inp.get("topic"), inp.get("topic") or "[…]"),
+        joma=(inp.get("kategorijasNosaukums") or JOMAS_LV.get(inp.get("joma"))
+              or VALUE_LV.get(inp.get("topic"), inp.get("topic") or "[…]")).lower(),
         nodala=inp.get("department") or "[…]",
         termins=inp.get("responseDays") or "[…]",
         pamatojums=(inp.get("reason") or "[…]").lower(),
@@ -915,6 +924,7 @@ async def handle_task_request(ctx: dict) -> dict:
         "stepId": step_id,
         "role": inp.get("role") or inp.get("loma") or inp.get("reviewerRole"),
         "department": inp.get("department") or inp.get("strukturvieniba"),
+        "unitId": inp.get("vieniba"),
         "proposal": proposal,
         "requestedAt": datetime.now(timezone.utc).isoformat(),
     }

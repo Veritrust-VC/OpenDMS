@@ -2479,14 +2479,17 @@ function SettingsPage({ notify, brand, setBrand }) {
 // Result of a ProcessGit process run on this document (whatever its DMN
 // tables decided) and — when a step waits for a person — the decision buttons.
 const RESULT_LABELS = {
+  joma: "Joma", kategorija: "Kategorija", kategorijasNosaukums: "Kategorijas nosaukums",
   topic: "Joma", confidence: "Pārliecība", jurisdiction: "Piekritība", reason: "Pamatojums",
   priority: "Prioritāte", responseDays: "Atbildes termiņš (dienās)", outcome: "Virzības priekšlikums",
-  department: "Nodaļa", role: "Loma", klasifikacijasIndekss: "Klasifikācijas indekss",
+  department: "Nodaļa", vieniba: "Struktūrvienības ID", role: "Loma", klasifikacijasIndekss: "Klasifikācijas indekss",
   klasifikacijasNosaukums: "Lieta", strukturvieniba: "Struktūrvienība", loma: "Loma",
   plusma: "Plūsma", termins: "Termiņš (dienās)", glabasanasTermins: "Glabāšanas termiņš",
   templateId: "Atbildes veidne",
 };
 const VALUE_LABELS = {
+  BT: "Bērnu tiesības", PPT: "Pilsoniskās un politiskās tiesības",
+  SEK: "Sociālās, ekonomiskās un kultūras tiesības", TV: "Tiesiskā vienlīdzība un diskriminācijas novēršana",
   "bernu-tiesibas": "Bērnu tiesības", "diskriminacijas-noversana": "Diskriminācijas novēršana",
   "laba-parvaldiba": "Laba pārvaldība", "socialas-tiesibas": "Sociālās tiesības",
   "civilas-tiesibas": "Civilās un politiskās tiesības", "neskaidrs": "Neskaidrs",
@@ -2508,7 +2511,7 @@ function ProcessResultCard({ doc, notify }) {
   const [review, setReview] = useState(doc.metadata.uapf_review || null);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
-  const rows = Object.keys(RESULT_LABELS).filter((k) => result[k] !== undefined && result[k] !== null);
+  const rows = Object.keys(RESULT_LABELS).filter((k) => result[k] !== undefined && result[k] !== null && result[k] !== "");
   const show = (k) => {
     const v = result[k];
     if (k === "confidence" && typeof v === "number") return `${Math.round(v * 100)}%`;
