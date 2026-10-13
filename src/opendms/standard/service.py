@@ -419,7 +419,9 @@ async def browse_storage(org_id: int, path: str = "") -> dict:
     storage = get_storage()
     if not parts:
         listing = await storage.list(PACKAGE_ROOT)
-        folders = [{"name": f, "path": f, "document": owned[f]} for f in listing["folders"] if f in owned]
+        # Newest first: the folder name ends with the document's UUIDv7, which sorts by creation time.
+        folders = [{"name": f, "path": f, "document": owned[f]}
+                   for f in sorted(listing["folders"], reverse=True) if f in owned]
         return {"root": PACKAGE_ROOT, "path": "", "document": None, "folders": folders, "files": []}
     if parts[0] not in owned:
         raise LookupError("Folder not found")
