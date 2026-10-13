@@ -241,7 +241,7 @@ Respond ONLY with JSON:
 
 def _code_lines(klas: dict) -> str:
     return "\n".join(f"{c['kods']} | {c['nosaukums']} | {c['jomasNosaukums']} › {c['cels']}"
-                     for c in klas["kodi"])
+                     for c in klas["kodi"] if c["izvelams"])
 
 
 def _result_from_code(klas: dict, kods: str) -> Optional[dict]:
