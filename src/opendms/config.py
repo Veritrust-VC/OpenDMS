@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     processgit_token: Optional[str] = None
     # ProcessGit this instance takes its processes from (the sync dialog default).
     processgit_url: str = "https://processgit.org"
+    # Extra CA certificate for a ProcessGit with a private CA (reference data reads).
+    processgit_ca_file: Optional[str] = None
 
     model_config = {"env_prefix": "OPENDMS_", "env_file": ".env"}
 

@@ -21,6 +21,7 @@ import io
 import json
 import logging
 import re
+import ssl
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -64,7 +65,11 @@ async def fetch_file(ref: str) -> bytes:
     url = f"{s.processgit_url.rstrip('/')}/api/v1/repos/{owner}/{repo}/archive/main.zip"
     headers = {"Authorization": f"token {s.processgit_token}"} if s.processgit_token else {}
     try:
-        async with httpx.AsyncClient(timeout=60.0) as hc:
+        verify: object = True
+        if s.processgit_ca_file:
+            verify = ssl.create_default_context()
+            verify.load_verify_locations(s.processgit_ca_file)
+        async with httpx.AsyncClient(timeout=60.0, verify=verify) as hc:
             r = await hc.get(url, headers=headers)
             r.raise_for_status()
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
