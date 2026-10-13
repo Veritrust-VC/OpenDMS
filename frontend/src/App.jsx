@@ -7,6 +7,7 @@ import AgentPage from "./AgentPage.jsx";
 import StoragePage from "./StoragePage.jsx";
 import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
+import ActiveClassifiers from "./ClassifiersPage.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -264,7 +265,8 @@ export default function App() {
         {page==="users" && <UsersPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="organizations" && <OrgsPage notify={notify} onViewLogs={(filters)=>{ setAuditFilters(filters); setPage("audit"); }} />}
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
-        {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
+        {page==="classifications" && <><ActiveClassifiers notify={notify} />
+          <StructurePage type="classifications" notify={notify} /></>}
         {page==="archive" && <ArchivePage notify={notify} />}
         {page==="storage" && <StoragePage notify={notify} route={route} navigate={navigate} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}

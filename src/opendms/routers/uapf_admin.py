@@ -601,6 +601,71 @@ async def regenerate_semantics(doc_id: int, user=Depends(get_current_user)):
     return out.get("output") or {}
 
 
+@router.get("/classifiers")
+async def active_classifiers(user=Depends(get_current_user)):
+    """The classifiers this DVS works with: every ProcessGit XML that an installed
+    process names in its mappings (schemaRef), read from ProcessGit as it is now.
+    A process with an active trigger makes the classifier active."""
+    import csv, io, re, yaml, zipfile
+    from lxml import etree
+    from opendms.uapf.learning import fetch_file, fetch_repo_zip, parse_klasifikators, parse_strukturvienibas
+    from opendms.uapf.package_inspector import PACKAGES_DIR
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        active = {r["package_id"] for r in await conn.fetch(
+            "SELECT DISTINCT package_id FROM process_triggers WHERE is_active = TRUE")}
+    refs: dict[str, dict] = {}
+    for path in sorted(PACKAGES_DIR.glob("*.uapf")) if PACKAGES_DIR.exists() else []:
+        try:
+            with zipfile.ZipFile(path) as z:
+                pkg = yaml.safe_load(z.read(next(n for n in z.namelist() if n.endswith("uapf.yaml")))) or {}
+                mname = next((n for n in z.namelist() if n.endswith("resources/mappings.yaml")), None)
+                m = yaml.safe_load(z.read(mname)) if mname else {}
+        except Exception:
+            continue
+        pid = pkg.get("id") or path.stem
+        for b in (m or {}).get("bindings") or []:
+            for ref in re.split(r"[,\s]+", str(b.get("schemaRef") or "")):
+                if ref.startswith("processgit:") and ref.endswith(".xml"):
+                    e = refs.setdefault(ref[len("processgit:"):], {"packages": {}, "steps": set()})
+                    e["packages"][pid] = {"id": pid, "version": pkg.get("version"), "active": pid in active}
+                    e["steps"].add((b.get("source") or {}).get("ref"))
+    s = get_settings()
+    out = []
+    for ref, use in sorted(refs.items()):
+        owner, repo, file = ref.split("/", 2)
+        item = {"ref": ref, "repo": f"{owner}/{repo}", "file": file,
+                "url": f"{s.processgit_url.rstrip('/')}/{owner}/{repo}/src/branch/main/{file}",
+                "packages": sorted(use["packages"].values(), key=lambda p: p["id"]),
+                "steps": sorted(x for x in use["steps"] if x),
+                "active": any(p["active"] for p in use["packages"].values())}
+        try:
+            data = await fetch_file(ref)
+            root = etree.fromstring(data)
+            local = etree.QName(root).localname
+            item["namespace"] = etree.QName(root).namespace
+            item["root"] = local
+            if local == "Klasifikators":
+                k = parse_klasifikators(data)
+                item.update({"kind": "klasifikators", "version": k["versija"], "codes": k["kodi"]})
+            elif local == "Strukturvienibas":
+                item.update({"kind": "strukturvienibas", "version": root.get("versija") or "",
+                             "units": parse_strukturvienibas(data), "institution": root.get("iestade")})
+            else:
+                item.update({"kind": "cits", "elements": len(list(root.iter()))})
+            zdata = await fetch_repo_zip(owner, repo)
+            with zipfile.ZipFile(io.BytesIO(zdata)) as z:
+                item["revision"] = (z.comment or b"").decode("ascii", "ignore")[:12]
+                name = next((n for n in z.namelist() if n.split("/", 1)[-1] == "kartejumi/eurovoc.csv"), None)
+                if name:
+                    item["eurovoc"] = list(csv.DictReader(z.read(name).decode("utf-8").splitlines()))
+        except Exception as e:  # show what failed, not an empty page
+            item["error"] = str(e)[:300]
+        out.append(item)
+    return {"classifiers": out}
+
+
 @router.get("/precedents")
 async def list_precedents(user=Depends(get_current_user)):
     """Reviewer corrections the classifier learns from (newest first)."""
