@@ -291,121 +291,137 @@ async def handle_semantics_generate(ctx: dict) -> dict:
         await _save(doc_id, {"lokals": None, "kludas": ["modelis neatgrieza derīgu JSON"], "generets": _now()})
         return {"output": {"semantikaDeriga": False, "semantikaKluda": "modelis neatgrieza derīgu JSON"}}
 
-    pages = split_pages(original)
-    primary = c["files"][0] if c["files"] else None
-    doc = c["doc"]
-    voc = m["vardnica"]
-    preds = {**(voc.get("predikati") or {}), **(profile.get("predikati") or {})}
-    people = []
-    for i, d in enumerate(ans.get("dalibnieki") or [], 1):
-        d = {k: v for k, v in d.items() if k in ("id", "loma", "tips", "nosaukums", "grupa", "identifikators") and v not in (None, "")}
-        d.setdefault("id", f"D{i}")
-        if d.get("tips") not in ("fiziska-persona", "juridiska-persona", "iestade", "nav-zinams"):
-            d["tips"] = "nav-zinams"
-        if d["tips"] in ("fiziska-persona", "nav-zinams"):
-            d.pop("nosaukums", None)
-            d.pop("identifikators", None)
-        if d.get("grupa") and d["grupa"] not in (voc.get("grupas") or {}):
-            d.pop("grupa")
-        people.append(d)
-    ids = {d["id"] for d in people}
-    dropped = []
-    claims = []
-    for i, a in enumerate(ans.get("apgalvojumi") or [], 1):
-        p = preds.get(a.get("predikats"))
-        if not p or a.get("statuss") not in (p.get("statusi") or []):
-            dropped.append(a.get("predikats"))
-            continue
-        ev = []
-        for e in a.get("pieradijumi") or []:
-            loc = locate(e.get("fragments", ""), pages)
-            ev.append({"datne": primary["std_id"] if primary else (doc.get("doc_uid") or str(doc_id)),
-                       **({"lapa": loc["lapa"]} if loc.get("lapa") else {}),
-                       "fragments": str(e.get("fragments", ""))[:300],
-                       **({k: loc[k] for k in ("sakums", "beigas") if k in loc}),
-                       "metode": loc["metode"]})
-        claim = {"id": a.get("id") or f"A{i}", "subjekts": a.get("subjekts") if a.get("subjekts") in ids else "dokuments",
-                 "predikats": a["predikats"], "vertiba": str(a.get("vertiba") or ""),
-                 "apgalvo": a.get("apgalvo") if a.get("apgalvo") in ids else "dokuments",
-                 "statuss": a["statuss"], "pieradijumi": ev,
-                 "novertejums": {"metode": "modelis", "parbaudits": False,
-                                 **({"parlieciba": float(a["parlieciba"])} if isinstance(a.get("parlieciba"), (int, float)) else {})}}
-        if a.get("vertibasKods"):
-            claim["vertibasKods"] = str(a["vertibasKods"])
-        if isinstance(a.get("laiks"), dict) and a["laiks"].get("precizitate") in ("diena", "menesis", "gads", "nav-zinama"):
-            claim["laiks"] = {k: str(v) for k, v in a["laiks"].items() if k in ("datums", "no", "lidz", "precizitate", "apraksts") and v}
-        if a.get("nosacijumi"):
-            claim["nosacijumi"] = str(a["nosacijumi"])
-        claims.append(claim)
-    facets_spec = profile.get("pazimes") or {}
-    facets = [f for f in (ans.get("pazimes") or []) if isinstance(f, dict) and f.get("kods") in facets_spec]
-    facets = [{"kods": f["kods"], "vertiba": str(f.get("vertiba")).lower() if isinstance(f.get("vertiba"), bool) else str(f.get("vertiba"))} for f in facets]
-    groups_voc = set((voc.get("grupas") or {}))
-    kept = []
-    for f in facets:   # a value outside the profile's list is dropped and noted, not guessed
-        spec = facets_spec[f["kods"]]
-        allowed = groups_voc if spec.get("vertibas_no") == "vardnica.grupas" else {str(x) for x in (spec.get("vertibas") or {})}
-        if f["vertiba"] in allowed:
-            kept.append(f)
-        else:
-            kept_note = {"lauks": f"pazimes/{f['kods']}", "iemesls": "pretrunigs",
-                         "piezime": f"Modeļa vērtība '{f['vertiba']}' nav profila sarakstā."}
-            ans.setdefault("nenoteiktibas", []).append(kept_note)
-    facets = kept
-    ev_known = fmt.get("eurovoc_candidates") or {}
-    ev_rx = re.compile(m["tematika"]["shemas"]["eurovoc"].get("koda_paraugs") or r"^(\d+|c_[0-9a-f]{8})$")
-    temas = []
-    for t in (ans.get("temas") or [])[:3]:
-        k = str(t.get("kods"))
-        if (k in ev_known) if ev_known else bool(ev_rx.match(k)):
-            temas.append({"shema": "http://eurovoc.europa.eu/", "kods": k, "nosaukums": ev_known.get(k, ""),
-                          "loma": "galvena" if not temas else "papildu", "avots": "modelis"})
-    inst = _institution_topic(fmt, inp, "noteikumi" if inp.get("klasifikacijasAvots") == "noteikumi" else "modelis")
-    if inst:
-        temas.append(inst)
-    mapped = _mapped_eurovoc(fmt, inp.get("kategorija"))
-    if mapped and not any(t["kods"] == mapped["kods"] and t["shema"] == mapped["shema"] for t in temas):
-        temas.append(mapped)
-    unc = [{"lauks": str(u.get("lauks")), "iemesls": u.get("iemesls"), **({"piezime": str(u["piezime"])} if u.get("piezime") else {})}
-           for u in ans.get("nenoteiktibas") or []
-           if isinstance(u, dict) and u.get("iemesls") in ("nav-noradits", "nav-salasams", "nav-attiecinams", "slepts", "pretrunigs")]
-    if dropped:
-        unc.append({"lauks": "apgalvojumi", "iemesls": "pretrunigs",
-                    "piezime": f"Izlaisti {len(dropped)} apgalvojumi ar nederīgu predikātu vai statusu."})
-    created = doc.get("created_at") or datetime.now(timezone.utc)
-    local = {
-        "formataVersija": m["versija"],
-        "profils": f"{profile['profils']}/{profile['versija']}",
-        "slanis": "lokals",
-        "dokuments": {
-            "id": doc.get("doc_uid") or f"DVS:{doc_id}",
-            "dvsId": str(doc_id),
-            "metadatuVersija": 1,
-            "dokumentaVeids": ans.get("dokumentaVeids") if ans.get("dokumentaVeids") in (profile.get("dokumenta_veidi") or []) else profile["profils"],
-            "valoda": str(ans.get("valoda") or "lv")[:2],
-            "datums": created.date().isoformat(),
-            "virsraksts": doc.get("title") or "",
-            "datnes": [{"id": f["std_id"], "sha256": f["checksum_sha256"], "lapas": len(pages)} for f in c["files"][:1]
-                       if f.get("std_id") and f.get("checksum_sha256")],
-        },
-        "kopsavilkums": {"teksts": str(ans.get("kopsavilkums") or ""), "valoda": "lv",
-                         "balstitsUz": [a["id"] for a in claims], "generets": True},
-        "temas": temas, "dalibnieki": people, "apgalvojumi": claims, "pazimes": facets,
-        "nenoteiktibas": unc,
-        "izcelsme": {
-            "generators": f"OpenDMS ({doc.get('org_name') or 'iestāde'})",
-            "procesaVersija": c["package"] or "nezinams",
-            "noteikumuVersija": f"{fmt['repo']}@{fmt['revision']}",
-            "modelis": _cfg().get("model"),
-            "generetsUz": _now(),
-            "ievade": "aizklats-teksts",
-            "parskatisana": {"statuss": "neparskatits"},
-        },
-        "piekluve": {"klase": "lokals-ierobezots"},
-    }
-    if not local["dokuments"]["datnes"]:
-        local["dokuments"].pop("datnes")
-    errs = dsf.check(local, m, fmt["schemas"]["lokals"])
+    def _assemble(ans: dict) -> tuple[dict, list[str]]:
+        pages = split_pages(original)
+        primary = c["files"][0] if c["files"] else None
+        doc = c["doc"]
+        voc = m["vardnica"]
+        preds = {**(voc.get("predikati") or {}), **(profile.get("predikati") or {})}
+        people = []
+        for i, d in enumerate(ans.get("dalibnieki") or [], 1):
+            d = {k: v for k, v in d.items() if k in ("id", "loma", "tips", "nosaukums", "grupa", "identifikators") and v not in (None, "")}
+            d.setdefault("id", f"D{i}")
+            if d.get("tips") not in ("fiziska-persona", "juridiska-persona", "iestade", "nav-zinams"):
+                d["tips"] = "nav-zinams"
+            if d["tips"] in ("fiziska-persona", "nav-zinams"):
+                d.pop("nosaukums", None)
+                d.pop("identifikators", None)
+            if d.get("grupa") and d["grupa"] not in (voc.get("grupas") or {}):
+                d.pop("grupa")
+            people.append(d)
+        ids = {d["id"] for d in people}
+        dropped = []
+        claims = []
+        for i, a in enumerate(ans.get("apgalvojumi") or [], 1):
+            p = preds.get(a.get("predikats"))
+            if not p or a.get("statuss") not in (p.get("statusi") or []):
+                dropped.append(a.get("predikats"))
+                continue
+            ev = []
+            for e in a.get("pieradijumi") or []:
+                loc = locate(e.get("fragments", ""), pages)
+                ev.append({"datne": primary["std_id"] if primary else (doc.get("doc_uid") or str(doc_id)),
+                           **({"lapa": loc["lapa"]} if loc.get("lapa") else {}),
+                           "fragments": str(e.get("fragments", ""))[:300],
+                           **({k: loc[k] for k in ("sakums", "beigas") if k in loc}),
+                           "metode": loc["metode"]})
+            claim = {"id": a.get("id") or f"A{i}", "subjekts": a.get("subjekts") if a.get("subjekts") in ids else "dokuments",
+                     "predikats": a["predikats"], "vertiba": str(a.get("vertiba") or ""),
+                     "apgalvo": a.get("apgalvo") if a.get("apgalvo") in ids else "dokuments",
+                     "statuss": a["statuss"], "pieradijumi": ev,
+                     "novertejums": {"metode": "modelis", "parbaudits": False,
+                                     **({"parlieciba": float(a["parlieciba"])} if isinstance(a.get("parlieciba"), (int, float)) else {})}}
+            if a.get("vertibasKods"):
+                claim["vertibasKods"] = str(a["vertibasKods"])
+            if isinstance(a.get("laiks"), dict) and a["laiks"].get("precizitate") in ("diena", "menesis", "gads", "nav-zinama"):
+                claim["laiks"] = {k: str(v) for k, v in a["laiks"].items() if k in ("datums", "no", "lidz", "precizitate", "apraksts") and v}
+            if a.get("nosacijumi"):
+                claim["nosacijumi"] = str(a["nosacijumi"])
+            claims.append(claim)
+        facets_spec = profile.get("pazimes") or {}
+        facets = [f for f in (ans.get("pazimes") or []) if isinstance(f, dict) and f.get("kods") in facets_spec]
+        facets = [{"kods": f["kods"], "vertiba": str(f.get("vertiba")).lower() if isinstance(f.get("vertiba"), bool) else str(f.get("vertiba"))} for f in facets]
+        groups_voc = set((voc.get("grupas") or {}))
+        kept = []
+        for f in facets:   # a value outside the profile's list is dropped and noted, not guessed
+            spec = facets_spec[f["kods"]]
+            allowed = groups_voc if spec.get("vertibas_no") == "vardnica.grupas" else {str(x) for x in (spec.get("vertibas") or {})}
+            if f["vertiba"] in allowed:
+                kept.append(f)
+            else:
+                kept_note = {"lauks": f"pazimes/{f['kods']}", "iemesls": "pretrunigs",
+                             "piezime": f"Modeļa vērtība '{f['vertiba']}' nav profila sarakstā."}
+                ans.setdefault("nenoteiktibas", []).append(kept_note)
+        facets = kept
+        ev_known = fmt.get("eurovoc_candidates") or {}
+        ev_rx = re.compile(m["tematika"]["shemas"]["eurovoc"].get("koda_paraugs") or r"^(\d+|c_[0-9a-f]{8})$")
+        temas = []
+        for t in (ans.get("temas") or [])[:3]:
+            k = str(t.get("kods"))
+            if (k in ev_known) if ev_known else bool(ev_rx.match(k)):
+                temas.append({"shema": "http://eurovoc.europa.eu/", "kods": k, "nosaukums": ev_known.get(k, ""),
+                              "loma": "galvena" if not temas else "papildu", "avots": "modelis"})
+        inst = _institution_topic(fmt, inp, "noteikumi" if inp.get("klasifikacijasAvots") == "noteikumi" else "modelis")
+        if inst:
+            temas.append(inst)
+        mapped = _mapped_eurovoc(fmt, inp.get("kategorija"))
+        if mapped and not any(t["kods"] == mapped["kods"] and t["shema"] == mapped["shema"] for t in temas):
+            temas.append(mapped)
+        unc = [{"lauks": str(u.get("lauks")), "iemesls": u.get("iemesls"), **({"piezime": str(u["piezime"])} if u.get("piezime") else {})}
+               for u in ans.get("nenoteiktibas") or []
+               if isinstance(u, dict) and u.get("iemesls") in ("nav-noradits", "nav-salasams", "nav-attiecinams", "slepts", "pretrunigs")]
+        if dropped:
+            unc.append({"lauks": "apgalvojumi", "iemesls": "pretrunigs",
+                        "piezime": f"Izlaisti {len(dropped)} apgalvojumi ar nederīgu predikātu vai statusu."})
+        created = doc.get("created_at") or datetime.now(timezone.utc)
+        local = {
+            "formataVersija": m["versija"],
+            "profils": f"{profile['profils']}/{profile['versija']}",
+            "slanis": "lokals",
+            "dokuments": {
+                "id": doc.get("doc_uid") or f"DVS:{doc_id}",
+                "dvsId": str(doc_id),
+                "metadatuVersija": 1,
+                "dokumentaVeids": ans.get("dokumentaVeids") if ans.get("dokumentaVeids") in (profile.get("dokumenta_veidi") or []) else profile["profils"],
+                "valoda": str(ans.get("valoda") or "lv")[:2],
+                "datums": created.date().isoformat(),
+                "virsraksts": doc.get("title") or "",
+                "datnes": [{"id": f["std_id"], "sha256": f["checksum_sha256"], "lapas": len(pages)} for f in c["files"][:1]
+                           if f.get("std_id") and f.get("checksum_sha256")],
+            },
+            "kopsavilkums": {"teksts": str(ans.get("kopsavilkums") or ""), "valoda": "lv",
+                             "balstitsUz": [a["id"] for a in claims], "generets": True},
+            "temas": temas, "dalibnieki": people, "apgalvojumi": claims, "pazimes": facets,
+            "nenoteiktibas": unc,
+            "izcelsme": {
+                "generators": f"OpenDMS ({doc.get('org_name') or 'iestāde'})",
+                "procesaVersija": c["package"] or "nezinams",
+                "noteikumuVersija": f"{fmt['repo']}@{fmt['revision']}",
+                "modelis": _cfg().get("model"),
+                "generetsUz": _now(),
+                "ievade": "aizklats-teksts",
+                "parskatisana": {"statuss": "neparskatits"},
+            },
+            "piekluve": {"klase": "lokals-ierobezots"},
+        }
+        if not local["dokuments"]["datnes"]:
+            local["dokuments"].pop("datnes")
+        errs = dsf.check(local, m, fmt["schemas"]["lokals"])
+        return local, errs
+
+    local, errs = _assemble(ans)
+    model_errs = [e for e in errs if not e.startswith(("dokuments", "izcelsme", "piekluve"))]
+    if model_errs:   # one correction round: the model gets the format's own error messages back
+        fix = await _complete_json(
+            "You write structured semantic descriptions of documents as JSON.",
+            build_prompt(fmt, redacted[:14000]) + "\n\n## Your previous answer\n" + json.dumps(ans, ensure_ascii=False)
+            + "\n\n## Problems found by the format check — return the COMPLETE corrected JSON\n"
+            + "\n".join(f"- {e}" for e in model_errs[:15]),
+            max_tokens=4000, timeout=240.0)
+        if fix:
+            local2, errs2 = _assemble(fix)
+            if len(errs2) < len(errs):
+                local, errs = local2, errs2
     await _save(doc_id, {"lokals": local, "kludas": errs, "generets": _now(), "schemaRef": ctx.get("schema_ref")})
     return {"output": {"semantikaDeriga": not errs, "semantikaVersija": 1,
                        "semantikaKopsavilkums": local["kopsavilkums"]["teksts"][:1000],
