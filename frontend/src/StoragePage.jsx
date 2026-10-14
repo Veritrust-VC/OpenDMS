@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import Icon from "./Icon.jsx";
+import StorageSettings from "./StorageSettings.jsx";
 import StandardXmlView, { hasReadableView } from "./StandardXmlView.jsx";
 
 const token = () => localStorage.getItem("opendms_token") || "";
@@ -105,6 +106,8 @@ export default function StoragePage({ notify, route, navigate }) {
         <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Meklēt šajā mapē…"
           className="text-sm border rounded-md px-3 py-1.5 w-64" />
       </div>
+
+      {!path && <StorageSettings notify={notify} />}
 
       {/* breadcrumbs */}
       <div className="flex flex-wrap items-center gap-1 text-sm font-mono bg-white border rounded-lg px-3 py-2">
