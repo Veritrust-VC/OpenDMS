@@ -40,7 +40,7 @@ from decimal import Decimal
 from typing import Any
 
 from opendms.database import get_pool
-from opendms.storage import get_storage
+from opendms.storage import get_storage, layout
 
 FORMAT = "opendms-konteiners/1"
 
@@ -139,12 +139,14 @@ async def collect() -> tuple[list[dict], dict]:
                                    jc.get(t, set()))
                 counts[t] = counts.get(t, 0) + len(tabulas[t])
             pk = (d.get("metadata") or {}).get("standartaPakotne") or {}
-            folder = pk.get("pakotnesMape") or f"DVS-{d['id']}"
+            folder = layout.folder(d["id"], d.get("doc_uid"))
             base = f"dokumenti/{folder}"
             doc_objs, in_pkg = [], set()
             if pk.get("pakotnesAtslega"):
                 for k in await _walk(st, pk["pakotnesAtslega"]):
                     rel = k[len(pk["pakotnesAtslega"]):].lstrip("/")
+                    if rel == "dvs-ieraksts.json":
+                        continue
                     data = await st.get(k)
                     if data is None:
                         problems.append(f"{folder}: {rel} nav nolasāms")
@@ -239,6 +241,19 @@ def _put_all(client, bucket: str, objs: list[dict], dry: bool) -> dict:
     return {"rakstiti": written, "nemainiti": skipped, "kludas": errors}
 
 
+def _prune(client, bucket: str, objs: list[dict], dry: bool) -> list[str]:
+    """Objects under dokumenti/ that belong to no document any more (e.g. a folder renamed when
+    the document got its LV-DOK identifier). Deleted with versioning on, so history stays."""
+    want = {o["key"] for o in objs}
+    stale = []
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix="dokumenti/"):
+        stale += [o["Key"] for o in page.get("Contents", []) if o["Key"] not in want]
+    if not dry:
+        for k in stale:
+            client.delete_object(Bucket=bucket, Key=k)
+    return stale
+
+
 def _verify(client, bucket: str, objs: list[dict]) -> dict:
     ok, bad = 0, []
     for o in objs:
@@ -264,10 +279,14 @@ async def run(dry_run: bool = True) -> dict:
     objs, manifest = await collect()
     client = sset._client(cfg)
     put = await asyncio.to_thread(_put_all, client, cfg["bucket"], objs, dry_run)
+    from opendms.config import get_settings
+    copy_only = get_settings().storage_backend != "s3"     # never prune the active storage
+    stale = await asyncio.to_thread(_prune, client, cfg["bucket"], objs, dry_run or not copy_only)
     ver = None if dry_run else await asyncio.to_thread(_verify, client, cfg["bucket"], objs)
     res = {"izmēģinājums": dry_run, "konteiners": cfg["bucket"], "dokumenti": len(manifest["dokumenti"]),
            "rindas": manifest["rindas"], "objekti": len(objs), "baiti": sum(len(o["data"]) for o in objs), **put,
-           "parbaude": ver, "problemas": manifest["problemas"], "ilgums_s": round(time.perf_counter() - t, 1)}
+           "parbaude": ver, "lieki": {"skaits": len(stale), "dzesti": not dry_run and copy_only, "piemeri": stale[:10]},
+           "problemas": manifest["problemas"], "ilgums_s": round(time.perf_counter() - t, 1)}
     if not dry_run:
         await sset.ensure_schema()
         pool = await get_pool()

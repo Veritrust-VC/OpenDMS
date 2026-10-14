@@ -33,9 +33,9 @@ from opendms.standard.ids import (
     make_id,
     org_code_kind,
 )
-from opendms.storage import get_storage
+from opendms.storage import get_storage, layout
 
-PACKAGE_ROOT = "pakotnes"
+PACKAGE_ROOT = layout.ROOT   # packages live in the document's own folder (storage/layout.py)
 
 
 class StandardError(Exception):
@@ -151,20 +151,33 @@ async def prepare_storage(doc_id: int) -> dict:
         if not doc.get("doc_uid"):
             raise StandardError("Assign the document identifier (identifier.assign) before preparing storage")
         files = await conn.fetch(
-            "SELECT file_name, storage_key FROM document_files WHERE document_id = $1 ORDER BY is_primary DESC, id",
+            "SELECT id, file_name, storage_key FROM document_files WHERE document_id = $1 ORDER BY is_primary DESC, id",
             doc["id"])
 
     folder = pkg.folder_name(doc["doc_uid"])
     prefix = f"{PACKAGE_ROOT}/{folder}"
-    copied = []
+    copied, moved = [], []
     for f in files:
         target = f"{prefix}/datnes/{f['file_name']}"
-        if not await storage.exists(target):
-            data = await storage.get(f["storage_key"])
-            if data is None:
-                raise StandardError(f"File not found in storage: {f['storage_key']}")
-            await storage.put(target, data)
+        if f["storage_key"] != target:
+            if not await storage.exists(target):
+                data = await storage.get(f["storage_key"])
+                if data is None:
+                    raise StandardError(f"File not found in storage: {f['storage_key']}")
+                await storage.put(target, data)
+            moved.append((f["id"], f["storage_key"], target))
         copied.append(f"datnes/{f['file_name']}")
+    # The file now lives in the document's LV-DOK folder: point the records there and
+    # drop the temporary DVS-<id> copy (older layouts are left for the relayout step).
+    if moved:
+        async with pool.acquire() as conn:
+            for fid, old, new in moved:
+                await conn.execute("UPDATE document_files SET storage_key = $1 WHERE id = $2", new, fid)
+                await conn.execute("UPDATE documents SET storage_key = $1 WHERE id = $2 AND storage_key = $3",
+                                   new, doc["id"], old)
+        for _fid, old, _new in moved:
+            if old.startswith(f"{layout.ROOT}/DVS-"):
+                await storage.delete(old)
     return {"pakotnesMape": folder, "pakotnesAtslega": prefix, "datnes": copied}
 
 

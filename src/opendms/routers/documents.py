@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from pydantic import BaseModel
 from opendms.database import get_pool
 from opendms.middleware.auth import get_current_user, require_role
-from opendms.storage import get_storage, generate_storage_key
+from opendms.storage import get_storage, layout
 from opendms.config import get_settings
 from opendms import sdk_client
 from opendms.audit import log_integration_event, summarize_payload
@@ -390,13 +390,13 @@ async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(ge
 
     storage = get_storage()
     content = await file.read()
-    key = generate_storage_key(doc["org_id"] or 0, file.filename)
+    key, fname = await layout.file_key(storage, doc_id, doc["doc_uid"], file.filename, content)
     await storage.put(key, content, file.content_type or "")
 
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE documents SET storage_key=$1, storage_backend=$2, file_name=$3, file_size=$4, mime_type=$5 WHERE id=$6",
-            key, get_settings().storage_backend, file.filename, len(content), file.content_type, doc_id)
+            key, get_settings().storage_backend, fname, len(content), file.content_type, doc_id)
 
     # UAPF: the document now has a file and is processable. Fire the
     # 'document.received' lifecycle event so matching process_triggers run.
@@ -408,7 +408,7 @@ async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(ge
         except Exception as _uapf_err:
             logging.getLogger(__name__).warning("UAPF bridge error on upload: %s", _uapf_err)
 
-    return {"status": "uploaded", "key": key, "size": len(content), "filename": file.filename}
+    return {"status": "uploaded", "key": key, "size": len(content), "filename": fname}
 
 
 @router.get("/{doc_id}/download")
@@ -454,14 +454,14 @@ async def add_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_c
     pool = await get_pool()
     async with pool.acquire() as conn:
         doc = await conn.fetchrow(
-            "SELECT id, org_id FROM documents WHERE id = $1 AND org_id = $2",
+            "SELECT id, org_id, doc_uid FROM documents WHERE id = $1 AND org_id = $2",
             doc_id, default_org["id"])
         if not doc:
             raise HTTPException(404, "Document not found")
 
     content = await file.read()
-    key = generate_storage_key(doc["org_id"], file.filename)
     storage = get_storage()
+    key, fname = await layout.file_key(storage, doc_id, doc["doc_uid"], file.filename, content)
     await storage.put(key, content, file.content_type or "")
 
     import hashlib as _hl
@@ -478,7 +478,7 @@ async def add_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_c
                 storage_backend, checksum_sha256, is_primary, uploaded_by)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                RETURNING id, file_uid, file_name, mime_type, file_size, is_primary, created_at""",
-            doc_id, file.filename, file.content_type, len(content),
+            doc_id, fname, file.content_type, len(content),
             key, get_settings().storage_backend, checksum, is_primary, user["id"])
 
     # UAPF: first file attached — the document is processable. Fire the
