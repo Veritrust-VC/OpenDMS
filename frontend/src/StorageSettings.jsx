@@ -36,8 +36,8 @@ function ExportResult({ r }) {
   const ok = !r.kludas?.length && !r.problemas?.length && (!v || !v.nesakrit?.length);
   return (
     <div className={`mt-3 border rounded-md p-3 text-sm ${ok ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
-      <div className="font-medium mb-1">{r["izmēģinājums"] ? "Pārnešanas izmēģinājums (nekas netika rakstīts)" : "Dati pārnesti uz spaini"}
-        <span className="text-xs text-ink-500 font-normal ml-2">{r.spainis} · {r.ilgums_s} s</span></div>
+      <div className="font-medium mb-1">{r["izmēģinājums"] ? "Pārnešanas izmēģinājums (nekas netika rakstīts)" : "Dati pārnesti uz S3 konteineru"}
+        <span className="text-xs text-ink-500 font-normal ml-2">{r.konteiners} · {r.ilgums_s} s</span></div>
       <div className="text-xs grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
         <span className="text-ink-500">Dokumenti</span><span>{r.dokumenti}</span>
         <span className="text-ink-500">Objekti</span><span>{r.objekti} · {size(r.baiti)}</span>
@@ -78,7 +78,7 @@ export default function StorageSettings({ notify }) {
   };
   const runExport = async (dry) => {
     setBusy(true);
-    try { setExp(await call(`/storage/settings/s3/eksports?izmeginajums=${dry}`, { method: "POST" })); if (!dry) notify?.("Dati pārnesti uz spaini"); }
+    try { setExp(await call(`/storage/settings/s3/eksports?izmeginajums=${dry}`, { method: "POST" })); if (!dry) notify?.("Dati pārnesti uz S3 konteineru"); }
     catch (e) { notify?.(e.message, "error"); } finally { setBusy(false); }
   };
   const save = async () => {
@@ -114,14 +114,14 @@ export default function StorageSettings({ notify }) {
           {!open ? (
             <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-xs mt-1">
               <dt className="text-ink-500">Adrese</dt><dd className="font-mono break-all">{s3.endpoint || "nav iestatīta"}</dd>
-              <dt className="text-ink-500">Spainis</dt><dd className="font-mono">{s3.bucket || "—"}</dd>
+              <dt className="text-ink-500">Konteiners</dt><dd className="font-mono">{s3.bucket || "—"}</dd>
               <dt className="text-ink-500">Piekļuves atslēga</dt><dd className="font-mono">{s3.accessKey || "—"}</dd>
               <dt className="text-ink-500">Slepenā atslēga</dt><dd>{s3.secretSet ? "iestatīta" : "nav"}</dd>
               <dt className="text-ink-500">Avots</dt><dd>{s3.source}</dd>
             </dl>
           ) : (
             <div className="space-y-2 mt-2 text-xs">
-              {[["endpoint", "Adrese (S3 endpoint)", "http://10.20.30.160:8333"], ["bucket", "Spainis", "dvs-…"], ["region", "Reģions", "us-east-1"], ["accessKey", "Piekļuves atslēga", ""]].map(([k, l, ph]) => (
+              {[["endpoint", "Adrese (S3 endpoint)", "http://10.20.30.160:8333"], ["bucket", "Konteiners (bucket)", "dvs-…"], ["region", "Reģions", "us-east-1"], ["accessKey", "Piekļuves atslēga", ""]].map(([k, l, ph]) => (
                 <label key={k} className="block"><span className="text-ink-500">{l}</span>
                   <input className="w-full border rounded px-2 py-1 font-mono" value={form[k]} placeholder={ph} onChange={set(k)} /></label>
               ))}
@@ -143,7 +143,7 @@ export default function StorageSettings({ notify }) {
       <TestResult r={result} />
       {s3.endpoint && result?.ok && (
         <div className="mt-3 border rounded-md p-3 text-sm">
-          <div className="font-medium">Pārnest datus uz spaini</div>
+          <div className="font-medium">Pārnest datus uz S3 konteineru</div>
           <p className="text-xs text-ink-500">Visi dokumenti ar pakotnēm (metadati.xml, izsekosana.xml, kontrolsummas, datnes), DVS ieraksts (metadati, semantika, notikumi, procesi), ievades žurnāls un precedenti. Esošie dati diskā paliek; nemainītie objekti netiek rakstīti atkārtoti.</p>
           <div className="flex gap-2 mt-2">
             <button disabled={busy} onClick={() => runExport(true)} className="text-xs px-3 py-1.5 border rounded">Izmēģināt</button>

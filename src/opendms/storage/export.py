@@ -1,23 +1,29 @@
-"""Copy this DVS into its S3 bucket — the bucket becomes the complete record.
+"""Copy this DVS into its S3 bucket (konteiners) — the container becomes the complete record.
 
-Layout (one bucket per system):
+Layout (one container per system):
 
     dokumenti/<mape>/                    <mape> = package folder (LV-DOK_…) or DVS-<id>
         metadati.xml, izsekosana.xml, SHA256SUMS, datnes/…   ← the standard package, as is
         datnes/…                         ← any document file not in a package yet
-        dvs-ieraksts.json                ← the DVS record: document row (metadata incl.
-                                           semantics, intake, forwarding, process results),
-                                           files with ids and checksums, all events,
-                                           process sessions, intake record
+        dvs-ieraksts.json                ← the DVS record of the document: its row
+                                           (metadata incl. semantics, intake, forwarding,
+                                           process results) and every row that belongs
+                                           to it — files, events, process sessions,
+                                           classifications, agent runs, AI log
     ievade/<id>.json                     ← every intake item, also rejected ones
     zinasanas/precedenti/<id>.json       ← staff corrections the classifier learns from
+    lietas/<id>.json                     ← case nomenclature (lietas)
+    arhivs/partijas/<id>.json            ← archive batches with their documents
+    vesture/integracijas/<YYYY-MM>.json  ← integration audit log
     indekss.json                         ← manifest: documents, objects, sha256
 
-Not copied: users, passwords, connector secrets, settings — configuration, not knowledge.
+Not copied — configuration, restored from deployment: users, organisation and
+structure, classifiers, templates, process triggers and sources, AI instructions,
+connections and secrets, settings.
 
-Each object carries x-amz-meta-sha256. A re-run skips objects whose content is
-unchanged, so the bucket's version history only grows when something changed.
-After writing, every object is read back and its SHA-256 compared.
+Each object carries x-amz-meta-sha256. A re-run skips unchanged objects, so the
+version history only grows when something changed. After writing, every object
+is read back and its SHA-256 compared. rebuild.py reads the same layout back.
 """
 
 from __future__ import annotations
@@ -34,7 +40,34 @@ from typing import Any
 from opendms.database import get_pool
 from opendms.storage import get_storage
 
-FORMAT = "opendms-bucket/1"
+FORMAT = "opendms-konteiners/1"
+
+# Rows that belong to one document, stored in its dvs-ieraksts.json under "tabulas".
+DOC_TABLES = [
+    ("document_files", "document_id = $1"),
+    ("document_events", "document_id = $1"),
+    ("uapf_sessions", "document_id = $1"),
+    ("complaint_classifications", "document_id = $1"),
+    ("ai_processing_log", "document_id = $1"),
+    ("agent_runs", "document_id = $1"),
+    ("agent_steps", "run_id IN (SELECT id FROM agent_runs WHERE document_id = $1)"),
+    ("agent_messages", "run_id IN (SELECT id FROM agent_runs WHERE document_id = $1)"),
+]
+
+# Knowledge not tied to one document: (table, key prefix, object naming)
+SHARED = [
+    ("intake_items", "ievade", "id"),
+    ("uapf_precedents", "zinasanas/precedenti", "id"),
+    ("standard_cases", "lietas", "id"),
+    ("archive_batches", "arhivs/partijas", "id"),          # + archive_batch_documents inside
+    ("integration_audit_log", "vesture/integracijas", "month"),
+]
+
+# Everything rebuild.py restores, in an order that satisfies foreign keys.
+KNOWLEDGE_TABLES = ["standard_cases", "documents", "uapf_sessions", "document_files", "document_events",
+                    "complaint_classifications", "ai_processing_log", "agent_runs", "agent_steps",
+                    "agent_messages", "archive_batches", "archive_batch_documents", "intake_items",
+                    "uapf_precedents", "integration_audit_log"]
 
 
 def _json(o: Any) -> bytes:
@@ -42,21 +75,31 @@ def _json(o: Any) -> bytes:
         if isinstance(x, (datetime, date)):
             return x.isoformat()
         if isinstance(x, Decimal):
-            return float(x)
+            return str(x)            # exact; rebuild casts back to numeric
         if isinstance(x, (bytes, bytearray)):
             return x.hex()
         return str(x)
     return json.dumps(o, ensure_ascii=False, indent=2, default=default).encode()
 
 
-def _rows(rows) -> list[dict]:
+async def _jsonb_cols(conn) -> dict[str, set]:
+    rows = await conn.fetch("""SELECT table_name, column_name FROM information_schema.columns
+                               WHERE table_schema = 'public' AND data_type IN ('jsonb', 'json')""")
+    out: dict[str, set] = {}
+    for r in rows:
+        out.setdefault(r["table_name"], set()).add(r["column_name"])
+    return out
+
+
+def _rows(rows, jcols: set) -> list[dict]:
+    """Rows as dicts; json/jsonb columns decoded (asyncpg returns them as text)."""
     out = []
     for r in rows:
         d = dict(r)
-        for k, v in d.items():
-            if isinstance(v, str) and v[:1] in "{[":
+        for k in jcols & d.keys():
+            if isinstance(d[k], str):
                 try:
-                    d[k] = json.loads(v)
+                    d[k] = json.loads(d[k])
                 except Exception:
                     pass
         out.append(d)
@@ -77,77 +120,95 @@ async def _walk(storage, prefix: str) -> list[str]:
 
 
 async def collect() -> tuple[list[dict], dict]:
-    """Everything to write: [{key, data, mime, src}] and the manifest."""
+    """Everything to write: [{key, data, mime}] and the manifest."""
     st = get_storage()
     pool = await get_pool()
+    objs, manifest_docs, problems, counts = [], [], [], {}
     async with pool.acquire() as conn:
-        docs = _rows(await conn.fetch("SELECT * FROM documents ORDER BY id"))
-        files = _rows(await conn.fetch("SELECT * FROM document_files ORDER BY document_id, created_at"))
-        events = _rows(await conn.fetch("SELECT * FROM document_events ORDER BY document_id, id"))
-        sessions = _rows(await conn.fetch("SELECT * FROM uapf_sessions ORDER BY id"))
-        intake = _rows(await conn.fetch("SELECT * FROM intake_items ORDER BY id"))
-        prec = _rows(await conn.fetch("SELECT * FROM uapf_precedents ORDER BY id"))
+        jc = await _jsonb_cols(conn)
+        docs = _rows(await conn.fetch("SELECT * FROM documents ORDER BY id"), jc.get("documents", set()))
         org = dict(await conn.fetchrow("SELECT id, name, code, org_did, std_code FROM organizations WHERE is_default LIMIT 1") or {})
+        counts["documents"] = len(docs)
 
-    by = lambda rows, k: {r[k]: [x for x in rows if x[k] == r[k]] for r in rows}  # noqa: E731
-    f_by, e_by = by(files, "document_id") if files else {}, by(events, "document_id") if events else {}
-    s_by = by([s for s in sessions if s.get("document_id")], "document_id") if sessions else {}
-    i_by = by([i for i in intake if i.get("document_id")], "document_id") if intake else {}
-
-    objs, manifest_docs, problems = [], [], []
-    for d in docs:
-        pk = (d.get("metadata") or {}).get("standartaPakotne") or {}
-        folder = pk.get("pakotnesMape") or f"DVS-{d['id']}"
-        base = f"dokumenti/{folder}"
-        doc_objs = []
-        in_pkg = set()
-        if pk.get("pakotnesAtslega"):
-            for k in await _walk(st, pk["pakotnesAtslega"]):
-                rel = k[len(pk["pakotnesAtslega"]):].lstrip("/")
-                data = await st.get(k)
-                if data is None:
-                    problems.append(f"{folder}: {rel} nav nolasāms")
+        for d in docs:
+            tabulas = {}
+            for t, where in DOC_TABLES:
+                tabulas[t] = _rows(await conn.fetch(f"SELECT * FROM {t} WHERE {where} ORDER BY id", d["id"]),
+                                   jc.get(t, set()))
+                counts[t] = counts.get(t, 0) + len(tabulas[t])
+            pk = (d.get("metadata") or {}).get("standartaPakotne") or {}
+            folder = pk.get("pakotnesMape") or f"DVS-{d['id']}"
+            base = f"dokumenti/{folder}"
+            doc_objs, in_pkg = [], set()
+            if pk.get("pakotnesAtslega"):
+                for k in await _walk(st, pk["pakotnesAtslega"]):
+                    rel = k[len(pk["pakotnesAtslega"]):].lstrip("/")
+                    data = await st.get(k)
+                    if data is None:
+                        problems.append(f"{folder}: {rel} nav nolasāms")
+                        continue
+                    doc_objs.append({"key": f"{base}/{rel}", "data": data})
+                    if rel.startswith("datnes/"):
+                        in_pkg.add(rel[len("datnes/"):])
+            for f in tabulas["document_files"]:
+                if f["file_name"] in in_pkg:
                     continue
-                doc_objs.append({"key": f"{base}/{rel}", "data": data, "src": k})
-                if rel.startswith("datnes/"):
-                    in_pkg.add(rel[len("datnes/"):])
-        for f in f_by.get(d["id"], []):
-            if f["file_name"] in in_pkg:
-                continue
-            data = await st.get(f["storage_key"]) if f.get("storage_key") else None
-            if data is None:
-                problems.append(f"{folder}: datne {f['file_name']} nav nolasāma")
-                continue
-            if f.get("checksum_sha256") and hashlib.sha256(data).hexdigest() != f["checksum_sha256"]:
-                problems.append(f"{folder}: datne {f['file_name']} — kontrolsumma neatbilst DVS ierakstam")
-            doc_objs.append({"key": f"{base}/datnes/{f['file_name']}", "data": data, "src": f["storage_key"]})
-        record = {"formats": FORMAT, "dokuments": d, "datnes": f_by.get(d["id"], []),
-                  "notikumi": e_by.get(d["id"], []), "procesi": s_by.get(d["id"], []),
-                  "ievade": i_by.get(d["id"], [])}
-        doc_objs.append({"key": f"{base}/dvs-ieraksts.json", "data": _json(record), "mime": "application/json"})
-        objs += doc_objs
-        manifest_docs.append({"mape": folder, "dvsId": d["id"], "registracijasNr": d.get("registration_number"),
-                              "dokumentaId": d.get("doc_uid"), "registraDid": d.get("doc_did"),
-                              "objekti": [{"key": o["key"][len(base) + 1:], "sha256": hashlib.sha256(o["data"]).hexdigest(),
-                                           "baiti": len(o["data"])} for o in doc_objs]})
-    for i in intake:
-        objs.append({"key": f"ievade/{i['id']:06d}.json", "data": _json(i), "mime": "application/json"})
-    for p in prec:
-        objs.append({"key": f"zinasanas/precedenti/{p['id']:06d}.json", "data": _json(p), "mime": "application/json"})
+                data = await st.get(f["storage_key"]) if f.get("storage_key") else None
+                if data is None:
+                    problems.append(f"{folder}: datne {f['file_name']} nav nolasāma")
+                    continue
+                if f.get("checksum_sha256") and hashlib.sha256(data).hexdigest() != f["checksum_sha256"]:
+                    problems.append(f"{folder}: datne {f['file_name']} — kontrolsumma neatbilst DVS ierakstam")
+                doc_objs.append({"key": f"{base}/datnes/{f['file_name']}", "data": data})
+            record = {"formats": FORMAT, "dokuments": d, "tabulas": tabulas}
+            doc_objs.append({"key": f"{base}/dvs-ieraksts.json", "data": _json(record), "mime": "application/json"})
+            objs += doc_objs
+            manifest_docs.append({"mape": folder, "dvsId": d["id"], "registracijasNr": d.get("registration_number"),
+                                  "dokumentaId": d.get("doc_uid"), "registraDid": d.get("doc_did"),
+                                  "objekti": [{"key": o["key"][len(base) + 1:], "sha256": hashlib.sha256(o["data"]).hexdigest(),
+                                               "baiti": len(o["data"])} for o in doc_objs]})
+
+        for t, prefix, naming in SHARED:
+            rows = _rows(await conn.fetch(f"SELECT * FROM {t} ORDER BY id"), jc.get(t, set()))
+            counts[t] = len(rows)
+            if t == "archive_batches":
+                links = await conn.fetch("SELECT batch_id, document_id FROM archive_batch_documents ORDER BY batch_id, document_id")
+                counts["archive_batch_documents"] = len(links)
+                for r in rows:
+                    r["dokumenti"] = [ln["document_id"] for ln in links if ln["batch_id"] == r["id"]]
+            if naming == "month":
+                by: dict[str, list] = {}
+                for r in rows:
+                    by.setdefault(r["created_at"].strftime("%Y-%m"), []).append(r)
+                for m, rs in by.items():
+                    objs.append({"key": f"{prefix}/{m}.json", "data": _json({"formats": FORMAT, "tabula": t, "rindas": rs}),
+                                 "mime": "application/json"})
+            else:
+                for r in rows:
+                    objs.append({"key": f"{prefix}/{r['id']:06d}.json", "data": _json(r), "mime": "application/json"})
+
     manifest = {"formats": FORMAT, "organizacija": org, "izveidots": datetime.utcnow().isoformat() + "Z",
-                "dokumenti": manifest_docs, "ievade": len(intake), "precedenti": len(prec), "problemas": problems}
+                "rindas": counts, "dokumenti": manifest_docs, "problemas": problems}
     objs.append({"key": "indekss.json", "data": _json(manifest), "mime": "application/json"})
     return objs, manifest
+
+
+def _content_sha(o: dict) -> str:
+    """SHA-256 used to decide 'unchanged'. The manifest is compared without its creation time."""
+    if o["key"] == "indekss.json":
+        return hashlib.sha256(_json({**json.loads(o["data"]), "izveidots": None})).hexdigest()
+    return hashlib.sha256(o["data"]).hexdigest()
 
 
 def _put_all(client, bucket: str, objs: list[dict], dry: bool) -> dict:
     written = skipped = 0
     errors = []
     for o in objs:
-        sha = hashlib.sha256(o["data"]).hexdigest()
+        sha, cmp = hashlib.sha256(o["data"]).hexdigest(), _content_sha(o)
+        o["_written"] = False
         try:
-            cur = client.head_object(Bucket=bucket, Key=o["key"])
-            if cur.get("Metadata", {}).get("sha256") == sha:
+            cur = client.head_object(Bucket=bucket, Key=o["key"]).get("Metadata", {})
+            if cur.get("sha256-saturs", cur.get("sha256")) == cmp:
                 skipped += 1
                 continue
         except Exception:
@@ -157,7 +218,9 @@ def _put_all(client, bucket: str, objs: list[dict], dry: bool) -> dict:
             continue
         try:
             mime = o.get("mime") or mimetypes.guess_type(o["key"])[0] or "application/octet-stream"
-            client.put_object(Bucket=bucket, Key=o["key"], Body=o["data"], ContentType=mime, Metadata={"sha256": sha})
+            client.put_object(Bucket=bucket, Key=o["key"], Body=o["data"], ContentType=mime,
+                              Metadata={"sha256": sha, "sha256-saturs": cmp})
+            o["_written"] = True
             written += 1
         except Exception as e:
             errors.append(f"{o['key']}: {type(e).__name__}: {str(e)[:120]}")
@@ -169,7 +232,9 @@ def _verify(client, bucket: str, objs: list[dict]) -> dict:
     for o in objs:
         try:
             data = client.get_object(Bucket=bucket, Key=o["key"])["Body"].read()
-            if hashlib.sha256(data).hexdigest() == hashlib.sha256(o["data"]).hexdigest():
+            same = (hashlib.sha256(data).hexdigest() == hashlib.sha256(o["data"]).hexdigest()
+                    if o["_written"] else _content_sha({"key": o["key"], "data": data}) == _content_sha(o))
+            if same:
                 ok += 1
             else:
                 bad.append(o["key"])
@@ -188,8 +253,8 @@ async def run(dry_run: bool = True) -> dict:
     client = sset._client(cfg)
     put = await asyncio.to_thread(_put_all, client, cfg["bucket"], objs, dry_run)
     ver = None if dry_run else await asyncio.to_thread(_verify, client, cfg["bucket"], objs)
-    res = {"izmēģinājums": dry_run, "spainis": cfg["bucket"], "dokumenti": len(manifest["dokumenti"]),
-           "objekti": len(objs), "baiti": sum(len(o["data"]) for o in objs), **put,
+    res = {"izmēģinājums": dry_run, "konteiners": cfg["bucket"], "dokumenti": len(manifest["dokumenti"]),
+           "rindas": manifest["rindas"], "objekti": len(objs), "baiti": sum(len(o["data"]) for o in objs), **put,
            "parbaude": ver, "problemas": manifest["problemas"], "ilgums_s": round(time.perf_counter() - t, 1)}
     if not dry_run:
         await sset.ensure_schema()

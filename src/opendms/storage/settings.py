@@ -108,7 +108,7 @@ def _test_sync(cfg: dict) -> dict:
     b = cfg["bucket"]
     key = f"_parbaude/opendms-{uuid.uuid4().hex[:8]}.txt"
     body = f"OpenDMS savienojuma pārbaude {time.strftime('%Y-%m-%d %H:%M:%S')}".encode()
-    if not step("Spainis pieejams", lambda: c.head_bucket(Bucket=b) and "ok"):
+    if not step("Konteiners pieejams", lambda: c.head_bucket(Bucket=b) and "ok"):
         return {"ok": False, "soli": steps}
     step("Rakstīšana", lambda: c.put_object(Bucket=b, Key=key, Body=body).get("VersionId") and "versija piešķirta" or "ierakstīts")
     step("Lasīšana", lambda: "saturs sakrīt" if c.get_object(Bucket=b, Key=key)["Body"].read() == body else (_ for _ in ()).throw(ValueError("saturs atšķiras")))
