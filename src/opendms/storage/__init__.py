@@ -3,6 +3,7 @@ Pluggable document storage backend.
 Supports: local filesystem, S3-compatible (MinIO/AWS), Azure Blob.
 """
 
+import asyncio
 import os, uuid, logging, shutil
 from typing import Optional, BinaryIO
 from abc import ABC, abstractmethod
@@ -76,64 +77,77 @@ class LocalStorage(StorageBackend):
 
 
 class S3Storage(StorageBackend):
+    """S3-compatible object storage (SeaweedFS, MinIO, AWS). Path-style addressing; boto3
+    calls run in a worker thread so a slow store never blocks the API's event loop.
+    The bucket must already exist — a system's key is allowed only its own bucket."""
+
     def __init__(self, endpoint: str, bucket: str, access_key: str, secret_key: str, region: str):
         try:
             import boto3
             from botocore.config import Config
-            session = boto3.session.Session()
-            self.client = session.client(
-                "s3", endpoint_url=endpoint, aws_access_key_id=access_key,
-                aws_secret_access_key=secret_key, region_name=region,
-                config=Config(signature_version="s3v4"),
-            )
-            self.bucket = bucket
-            # Ensure bucket exists
-            try:
-                self.client.head_bucket(Bucket=bucket)
-            except Exception:
-                self.client.create_bucket(Bucket=bucket)
-            logger.info("S3 storage: %s/%s", endpoint, bucket)
         except ImportError:
             raise RuntimeError("boto3 required for S3 storage: pip install boto3")
+        self.client = boto3.session.Session().client(
+            "s3", endpoint_url=endpoint, aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key, region_name=region,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"},
+                          connect_timeout=5, read_timeout=30, retries={"max_attempts": 3, "mode": "standard"}),
+        )
+        self.bucket = bucket
+        logger.info("S3 storage: %s/%s", endpoint, bucket)
 
     async def put(self, key: str, data: bytes, content_type: str = "") -> str:
         extra = {"ContentType": content_type} if content_type else {}
-        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, **extra)
+        await asyncio.to_thread(self.client.put_object, Bucket=self.bucket, Key=key, Body=data, **extra)
         return key
 
     async def get(self, key: str) -> Optional[bytes]:
-        try:
-            resp = self.client.get_object(Bucket=self.bucket, Key=key)
-            return resp["Body"].read()
-        except Exception:
-            return None
+        def _get():
+            try:
+                return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+            except self.client.exceptions.NoSuchKey:
+                return None
+            except Exception as e:
+                code = getattr(e, "response", {}).get("Error", {}).get("Code") if hasattr(e, "response") else None
+                if code in ("NoSuchKey", "404", "NotFound"):
+                    return None
+                raise
+        return await asyncio.to_thread(_get)
 
     async def delete(self, key: str) -> bool:
         try:
-            self.client.delete_object(Bucket=self.bucket, Key=key)
+            await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=key)
             return True
         except Exception:
             return False
 
     async def exists(self, key: str) -> bool:
-        try:
-            self.client.head_object(Bucket=self.bucket, Key=key)
-            return True
-        except Exception:
-            return False
+        def _head():
+            try:
+                self.client.head_object(Bucket=self.bucket, Key=key)
+                return True
+            except Exception as e:
+                code = getattr(e, "response", {}).get("Error", {}).get("Code") if hasattr(e, "response") else None
+                if code in ("404", "NoSuchKey", "NotFound"):
+                    return False
+                raise
+        return await asyncio.to_thread(_head)
 
     async def list(self, prefix: str) -> dict:
         prefix = prefix.strip("/") + "/" if prefix.strip("/") else ""
-        folders, files = [], []
-        for page in self.client.get_paginator("list_objects_v2").paginate(
-                Bucket=self.bucket, Prefix=prefix, Delimiter="/"):
-            for cp in page.get("CommonPrefixes", []):
-                folders.append(cp["Prefix"][len(prefix):].rstrip("/"))
-            for o in page.get("Contents", []):
-                name = o["Key"][len(prefix):]
-                if name:
-                    files.append({"name": name, "size": o["Size"], "modified": o["LastModified"].isoformat()})
-        return {"folders": sorted(folders), "files": sorted(files, key=lambda f: f["name"])}
+
+        def _list():
+            folders, files = [], []
+            for page in self.client.get_paginator("list_objects_v2").paginate(
+                    Bucket=self.bucket, Prefix=prefix, Delimiter="/"):
+                for cp in page.get("CommonPrefixes", []):
+                    folders.append(cp["Prefix"][len(prefix):].rstrip("/"))
+                for o in page.get("Contents", []):
+                    name = o["Key"][len(prefix):]
+                    if name:
+                        files.append({"name": name, "size": o["Size"], "modified": o["LastModified"].isoformat()})
+            return {"folders": sorted(folders), "files": sorted(files, key=lambda f: f["name"])}
+        return await asyncio.to_thread(_list)
 
 
 class AzureStorage(StorageBackend):
