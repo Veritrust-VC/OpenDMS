@@ -54,6 +54,10 @@ def read_container(client, bucket: str) -> dict:
                 else:
                     files_ok += 1
             continue
+        if k.startswith("agenti/") and k.endswith(".json"):
+            for t, rows in json.loads(get(k))["tabulas"].items():
+                tables[t] += rows
+            continue
         for p, t in PREFIXES.items():
             if k.startswith(p) and k.endswith(".json"):
                 obj = json.loads(get(k))

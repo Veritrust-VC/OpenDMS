@@ -12,6 +12,8 @@ Layout (one container per system):
                                            classifications, agent runs, AI log
     ievade/<id>.json                     ← every intake item, also rejected ones
     zinasanas/precedenti/<id>.json       ← staff corrections the classifier learns from
+    agenti/<id>.json                     ← agent conversations not tied to a document
+                                           (run with its steps and messages)
     lietas/<id>.json                     ← case nomenclature (lietas)
     arhivs/partijas/<id>.json            ← archive batches with their documents
     vesture/integracijas/<YYYY-MM>.json  ← integration audit log
@@ -186,6 +188,16 @@ async def collect() -> tuple[list[dict], dict]:
             else:
                 for r in rows:
                     objs.append({"key": f"{prefix}/{r['id']:06d}.json", "data": _json(r), "mime": "application/json"})
+
+        # agent conversations without a document: run + steps + messages in one object
+        runs = _rows(await conn.fetch("SELECT * FROM agent_runs WHERE document_id IS NULL ORDER BY id"), jc.get("agent_runs", set()))
+        for r in runs:
+            steps = _rows(await conn.fetch("SELECT * FROM agent_steps WHERE run_id = $1 ORDER BY id", r["id"]), jc.get("agent_steps", set()))
+            msgs = _rows(await conn.fetch("SELECT * FROM agent_messages WHERE run_id = $1 ORDER BY id", r["id"]), jc.get("agent_messages", set()))
+            for t, n in (("agent_runs", 1), ("agent_steps", len(steps)), ("agent_messages", len(msgs))):
+                counts[t] = counts.get(t, 0) + n
+            objs.append({"key": f"agenti/{r['id']:06d}.json", "mime": "application/json",
+                         "data": _json({"formats": FORMAT, "tabulas": {"agent_runs": [r], "agent_steps": steps, "agent_messages": msgs}})})
 
     manifest = {"formats": FORMAT, "organizacija": org, "izveidots": datetime.utcnow().isoformat() + "Z",
                 "rindas": counts, "dokumenti": manifest_docs, "problemas": problems}
