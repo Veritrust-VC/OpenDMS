@@ -255,7 +255,7 @@
     <xs:annotation>
       <xs:documentation>
         Izdevēja paraksts. Publisko atslēgu iegūst no izdevēja DID dokumenta
-        (did:web:{org}.pac.kis.gov.lv). Var tikt pievienots vēlāk (piem., kad
+        (did:web:{org}.pac.kisc.gov.lv). Var tikt pievienots vēlāk (piem., kad
         notikumu iesniedz centrālajam dokumentu reģistram).
       </xs:documentation>
     </xs:annotation>
@@ -270,9 +270,9 @@
   </xs:complexType>
 
   <xs:simpleType name="VerifikacijasMetodeType">
-    <xs:annotation><xs:documentation>Organizācijas DID ar atslēgas fragmentu, piem., did:web:vrm.pac.kis.gov.lv#key-1.</xs:documentation></xs:annotation>
+    <xs:annotation><xs:documentation>Organizācijas DID ar atslēgas fragmentu, piem., did:web:vrm.pac.kisc.gov.lv#key-1.</xs:documentation></xs:annotation>
     <xs:restriction base="xs:string">
-      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kis\.gov\.lv#[A-Za-z0-9._\-]+"/>
+      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kisc\.gov\.lv#[A-Za-z0-9._\-]+"/>
     </xs:restriction>
   </xs:simpleType>
 

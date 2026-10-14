@@ -53,8 +53,8 @@ def test_year_is_riga_time():
 
 def test_document_did_and_folder():
     doc = make_id("LV-DOK", "05-0000")
-    did = document_did("did:web:ombud.pac.kis.gov.lv", doc)
-    assert did == "did:web:ombud.pac.kis.gov.lv:doc:" + doc[len("LV-DOK:"):]
+    did = document_did("did:web:ombud.pac.kisc.gov.lv", doc)
+    assert did == "did:web:ombud.pac.kisc.gov.lv:doc:" + doc[len("LV-DOK:"):]
     assert document_did("did:web:example.org", doc) is None
     assert package_folder(doc) == doc.replace(":", "_")
 
@@ -63,7 +63,7 @@ def test_document_did_and_folder():
 
 CREATED = datetime(2026, 10, 12, 9, 0, tzinfo=timezone.utc)
 ORG = {"id": 1, "std_code": "05-0000", "name": "Latvijas Republikas Tiesībsarga birojs",
-       "org_did": "did:web:ombud.pac.kis.gov.lv", "reg_number": "90000055101"}
+       "org_did": "did:web:ombud.pac.kisc.gov.lv", "reg_number": "90000055101"}
 
 
 def _package(files_bytes=None):
@@ -93,7 +93,7 @@ def _package(files_bytes=None):
         e["std_id"] = make_id("LV-NOT", "05-0000", e["created_at"])
     users = {3: {"id": 3, "email": "lietvede@tiesibsargs.lv", "full_name": "Lietvede Paraugs"}}
     meta = pkg.build_metadata_xml(org=ORG, document=document, files=files, rules=rules,
-                                  creator=users[3], system={"instance": "ombud.pac.kis.gov.lv"},
+                                  creator=users[3], system={"instance": "ombud.pac.kisc.gov.lv"},
                                   generated_at=CREATED)
     track = pkg.build_tracking_xml(org=ORG, document=document, events=events, users=users,
                                    generated_at=CREATED)
@@ -170,7 +170,7 @@ def test_browse_storage_shows_only_owned_folders(tmp_path, monkeypatch):
     from opendms.standard import service
     from opendms.storage import LocalStorage
     st = LocalStorage(str(tmp_path))
-    for key in ["pakotnes/MINE/metadati.xml", "pakotnes/MINE/datnes/a.docx", "pakotnes/OTHER/metadati.xml",
+    for key in ["dokumenti/MINE/metadati.xml", "dokumenti/MINE/datnes/a.docx", "dokumenti/OTHER/metadati.xml",
                 "org/1/secret.bin"]:
         asyncio.run(st.put(key, b"x"))
 

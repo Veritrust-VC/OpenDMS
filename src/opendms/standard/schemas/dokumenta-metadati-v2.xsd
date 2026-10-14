@@ -57,7 +57,7 @@
         <xs:annotation><xs:documentation>DVS produkts, piem., "OpenDMS", "Namejs", "Lietvaris", "DocLogix".</xs:documentation></xs:annotation>
       </xs:element>
       <xs:element name="SistemasInstance" type="dm:NetuksTeksts" minOccurs="0">
-        <xs:annotation><xs:documentation>Konkrētās instances nosaukums vai adrese, piem., "vrm.pac.kis.gov.lv".</xs:documentation></xs:annotation>
+        <xs:annotation><xs:documentation>Konkrētās instances nosaukums vai adrese, piem., "vrm.pac.kisc.gov.lv".</xs:documentation></xs:annotation>
       </xs:element>
       <xs:element name="Vide" type="dm:VideType"/>
     </xs:sequence>
@@ -653,13 +653,13 @@
 
   <xs:simpleType name="OrgDIDType">
     <xs:restriction base="xs:string">
-      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kis\.gov\.lv"/>
+      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kisc\.gov\.lv"/>
     </xs:restriction>
   </xs:simpleType>
 
   <xs:simpleType name="DokumentaDIDType">
     <xs:restriction base="xs:string">
-      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kis\.gov\.lv:doc:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kisc\.gov\.lv:doc:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
     </xs:restriction>
   </xs:simpleType>
 

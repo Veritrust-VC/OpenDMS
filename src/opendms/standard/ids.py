@@ -37,7 +37,7 @@ ID_RE = re.compile(
     r"^(LV-DOK|LV-LIETA|LV-DATNE|LV-NOT):"
     r"([0-9]{2}(?:-[0-9]{4}|[0-9]{5}|[0-9]{9})):([0-9]{4}):(" + UUID7_RE + r")$"
 )
-ORG_DID_RE = re.compile(r"^did:web:[a-z0-9-]+\.pac\.kis\.gov\.lv$")
+ORG_DID_RE = re.compile(r"^did:web:[a-z0-9-]+\.pac\.kisc\.gov\.lv$")
 
 
 def org_code_kind(code: str) -> str:
