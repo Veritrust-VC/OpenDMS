@@ -32,6 +32,9 @@ def create_app() -> FastAPI:
     settings = get_settings()
     logging.basicConfig(level=logging.DEBUG if settings.debug else logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    # storage client libraries: no per-request debug lines (they also carry the access key id)
+    for noisy in ("botocore", "boto3", "s3transfer", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
