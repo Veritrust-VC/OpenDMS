@@ -355,6 +355,12 @@ function DocumentsPage({ notify, user, route, navigate }) {
   const [sdkStatus, setSdkStatus] = useState(null);
   const load = useCallback(async () => { try { const p = new URLSearchParams({page:"1",page_size:"200"}); if(statusF) p.set("status",statusF); if(search) p.set("search",search); const d = await api(`/documents?${p}`); setDocs(d.items); setTotal(d.total); } catch(e){notify(e.message,"error");} }, [statusF,search]);
   useEffect(()=>{load();},[load]);
+  const anyBusy = docs.some(docBusy);
+  useEffect(() => {
+    if (!anyBusy) return;
+    const t = setInterval(() => load(), 4000);
+    return () => clearInterval(t);
+  }, [anyBusy, load]);
   useEffect(()=>{ api("/sdk/setup-status").then(setSdkStatus).catch(()=>{}); },[]);
   const loadDetail = async(id) => { try { setSel(await api(`/documents/${id}`)); } catch(e){notify(e.message,"error");} };
   useEffect(() => {
@@ -398,6 +404,23 @@ const REVIEW_PILL = {
 };
 const MIME_LV = { "application/pdf": "PDF", "text/plain": "Teksts", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX" };
 
+// A document is "being processed" while the background processes started by the
+// upload (identifier, register, redaction, classification, description) have not
+// reached a decision yet. Bounded in time so a stuck process never spins forever.
+function docBusy(d) {
+  if (!d || !d.created_at) return false;
+  const age = Date.now() - new Date(d.created_at).getTime();
+  const reviewed = !!(d.metadata && d.metadata.uapf_review && d.metadata.uapf_review.status);
+  if (age < 2 * 60 * 1000 && !reviewed) return true;
+  return age < 15 * 60 * 1000 && Number(d.file_count || 0) > 0 && !reviewed;
+}
+
+function BusyNote({ label = "Apstrāde notiek…" }) {
+  return (<span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+    <span className="inline-block w-3 h-3 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" aria-hidden="true" />
+    {label}</span>);
+}
+
 function DocumentTable({ docs, sel, onOpen }) {
   const [sort, setSort] = useState({ key: "created_at", dir: -1 });
   const [unit, setUnit] = useState(""); const [review, setReview] = useState("");
@@ -413,6 +436,7 @@ function DocumentTable({ docs, sel, onOpen }) {
       sem: sem.lokals ? (sem.kludas?.length ? "kļūdas" : "ir") : (sem.kludas?.length ? "nav" : ""),
       reg: reg.nodots ? (reg.semantika ? "ar aprakstu" : "metadati") : "", events: Number(d.event_count || 0),
       status: d.status || "",
+      busy: docBusy(d),
     };
   };
   const rows = docs.map(row).filter(x => (!unit || x.unit === unit) && (!review || x.review === review));
@@ -450,7 +474,7 @@ function DocumentTable({ docs, sel, onOpen }) {
                 <td className="px-3 py-2 max-w-[280px]">
                   <div className={`truncate font-medium ${x.title ? "text-gray-900" : "text-gray-400 italic"}`} title={x.title}>
                     <Icon name="document" size={15} className="inline -mt-0.5 mr-1.5 text-gray-400" />{x.title || "Bez nosaukuma"}</div>
-                  <div className="text-[11px] text-gray-400 truncate" title={x.uid}>{x.uid || "identifikators vēl nav piešķirts"}</div>
+                  <div className="text-[11px] text-gray-400 truncate" title={x.uid}>{x.uid || (x.busy ? <BusyNote /> : "identifikators vēl nav piešķirts")}</div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">{x.number || "—"}<div className="mt-0.5"><Badge s={x.status} /></div></td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-600">{fmtDT(x.created_at)}</td>
@@ -460,7 +484,7 @@ function DocumentTable({ docs, sel, onOpen }) {
                   {x.priority && <div className={`text-[11px] ${x.priority === "steidzams" ? "text-red-600" : "text-gray-400"}`}>{x.priority}</div>}</td>
                 <td className="px-3 py-2 max-w-[200px]"><div className="truncate" title={x.dept}>{x.dept || "—"}</div>
                   {x.unit && <div className="text-[11px] text-gray-400 font-mono">{x.unit}</div>}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{x.review ? <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${REVIEW_PILL[x.review]?.[1] || "bg-gray-100"}`}>{REVIEW_PILL[x.review]?.[0] || x.review}</span> : <span className="text-gray-300">—</span>}</td>
+                <td className="px-3 py-2 whitespace-nowrap">{!x.review && x.busy ? <BusyNote label="apstrādā" /> : x.review ? <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${REVIEW_PILL[x.review]?.[1] || "bg-gray-100"}`}>{REVIEW_PILL[x.review]?.[0] || x.review}</span> : <span className="text-gray-300">—</span>}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-xs">{x.sem === "ir" ? <span className="text-green-700">✓ ir</span> : x.sem ? <span className="text-red-600">{x.sem}</span> : <span className="text-gray-300">—</span>}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-xs">{x.reg ? <span className="text-gray-700">{x.reg}</span> : <span className="text-gray-300">—</span>}</td>
                 <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{x.files || "—"}{x.mime && <div className="text-[11px] text-gray-400">{MIME_LV[x.mime] || x.mime.split("/").pop()}</div>}</td>
