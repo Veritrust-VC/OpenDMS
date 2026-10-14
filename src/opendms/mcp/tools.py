@@ -104,6 +104,9 @@ TOOLS: list[dict[str, Any]] = [
     },
 ]
 
+from opendms.mcp import lietveda as _lietveda  # noqa: E402
+
+TOOLS += _lietveda.TOOLS
 TOOL_INDEX = {t["name"]: t for t in TOOLS}
 
 
@@ -250,4 +253,5 @@ HANDLERS = {
     "classify_document": _classify_document,
     "start_agent_run": _start_agent_run,
     "agent_run_status": _agent_run_status,
+    **_lietveda.HANDLERS,
 }

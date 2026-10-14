@@ -20,6 +20,7 @@ the weaker authority.
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 from typing import Any, Optional
@@ -64,8 +65,21 @@ async def _authenticate(authorization: Optional[str]) -> dict:
     token = authorization.split(" ", 1)[1].strip()
 
     node_token = (getattr(s, "mcp_node_token", "") or "").strip()
-    if node_token and token == node_token:
+    if node_token and hmac.compare_digest(token, node_token):
         return {"ok": True, "principal": "node-token", "scope": "read", "user": None}
+
+    agent_token = (getattr(s, "mcp_agent_token", "") or "").strip()
+    agent_user = (getattr(s, "mcp_agent_user", "") or "").strip().lower()
+    if agent_token and agent_user and hmac.compare_digest(token, agent_token):
+        from opendms.database import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            user = await conn.fetchrow(
+                "SELECT id, email, full_name, role, org_id, is_active FROM users WHERE lower(email) = $1",
+                agent_user)
+        if not user or not user["is_active"]:
+            return {"ok": False, "reason": "agent user inactive or not found"}
+        return {"ok": True, "principal": user["email"], "scope": "full", "user": dict(user)}
 
     try:
         from opendms.database import get_pool
@@ -140,7 +154,7 @@ async def _dispatch(body: dict, auth: dict) -> Optional[dict]:
                 "isError": True,
             })
 
-        ctx = {"principal": auth.get("principal"), "org_did": await _org_did()}
+        ctx = {"principal": auth.get("principal"), "user": auth.get("user"), "org_did": await _org_did()}
         try:
             result = await HANDLERS[name](args, ctx)
         except KeyError as exc:

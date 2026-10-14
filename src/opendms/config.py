@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     # a credential this coarse must not be able to start work. Blank disables it.
     mcp_node_token: str = ""
 
+    # An agent that acts in this DVS (e.g. the Lietvedības aģents). Its token
+    # authenticates as ONE named, active DVS user, so every write it makes is
+    # recorded under that user. Deactivating the user, or blanking either value,
+    # revokes it on the next call. Approve/decide/send/archive stay unavailable.
+    mcp_agent_token: str = ""
+    mcp_agent_user: str = ""
+
     # Branding
     brand_name: str = "Dokumentu vadības aģents"
     brand_logo_url: str = ""
