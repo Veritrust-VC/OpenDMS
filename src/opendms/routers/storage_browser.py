@@ -55,7 +55,12 @@ class S3In(BaseModel):
 @router.get("/settings")
 async def storage_settings(user=Depends(require_role("admin", "superadmin"))):
     from opendms.storage import settings as st
-    return {"aktiva": await st.active(), "s3": await st.s3_config()}
+    from opendms.storage import sync
+    try:
+        ier = await sync.status()
+    except Exception:
+        ier = None
+    return {"aktiva": await st.active(), "s3": await st.s3_config(), "ieraksti": ier}
 
 
 @router.put("/settings/s3")

@@ -104,6 +104,10 @@ export default function StorageSettings({ notify }) {
             <dt className="text-ink-500">Vieta</dt><dd className="font-mono">{a.backend === "local" ? a.vieta : "—"}</dd>
             <dt className="text-ink-500">Dokumenti</dt><dd>{a.dokumenti} · pakotnes {a.pakotnes}</dd>
             <dt className="text-ink-500">Datnes</dt><dd>{a.datnes} · {size(a.datnuApjoms)}</dd>
+            {data.ieraksti && <><dt className="text-ink-500">Zināšanu ieraksti</dt>
+              <dd>{data.ieraksti.ieraksti} sinhronizēti{data.ieraksti.gaida ? `, ${data.ieraksti.gaida} gaida` : ""}
+                {data.ieraksti.pedejaSinhronizacija && <span className="text-ink-400"> · {new Date(data.ieraksti.pedejaSinhronizacija).toLocaleString("lv-LV")}</span>}
+                {data.ieraksti.pedejaKluda && <div className="text-red-700">{data.ieraksti.pedejaKluda}</div>}</dd></>}
           </dl>
         </div>
         <div className="border rounded-md p-3">

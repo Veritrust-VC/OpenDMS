@@ -37,7 +37,7 @@ import mimetypes
 import time
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 from opendms.database import get_pool
 from opendms.storage import get_storage, layout
@@ -56,14 +56,9 @@ DOC_TABLES = [
     ("agent_messages", "run_id IN (SELECT id FROM agent_runs WHERE document_id = $1)"),
 ]
 
-# Knowledge not tied to one document: (table, key prefix, object naming)
-SHARED = [
-    ("intake_items", "ievade", "id"),
-    ("uapf_precedents", "zinasanas/precedenti", "id"),
-    ("standard_cases", "lietas", "id"),
-    ("archive_batches", "arhivs/partijas", "id"),          # + archive_batch_documents inside
-    ("integration_audit_log", "vesture/integracijas", "month"),
-]
+# Tables counted in the manifest besides the per-document ones
+SHARED_COUNTS = ["intake_items", "uapf_precedents", "standard_cases", "archive_batches",
+                 "archive_batch_documents", "integration_audit_log", "agent_runs", "agent_steps", "agent_messages"]
 
 # Everything rebuild.py restores, in an order that satisfies foreign keys.
 KNOWLEDGE_TABLES = ["standard_cases", "documents", "uapf_sessions", "document_files", "document_events",
@@ -121,6 +116,71 @@ async def _walk(storage, prefix: str) -> list[str]:
     return keys
 
 
+# ── builders shared by the export and the record sync (storage/sync.py) ──
+
+KINDS = {  # kind → (table, key prefix)
+    "ievade": ("intake_items", "ievade"),
+    "precedents": ("uapf_precedents", "zinasanas/precedenti"),
+    "lieta": ("standard_cases", "lietas"),
+    "arhivs": ("archive_batches", "arhivs/partijas"),
+}
+
+
+async def doc_record(conn, jc: dict, doc_id: int) -> Optional[tuple[str, dict, dict]]:
+    """(folder, document row, rows by table) — or None if the document no longer exists."""
+    rows = _rows(await conn.fetch("SELECT * FROM documents WHERE id = $1", doc_id), jc.get("documents", set()))
+    if not rows:
+        return None
+    d = rows[0]
+    tabulas = {t: _rows(await conn.fetch(f"SELECT * FROM {t} WHERE {where} ORDER BY id", doc_id), jc.get(t, set()))
+               for t, where in DOC_TABLES}
+    return layout.folder(d["id"], d.get("doc_uid")), d, tabulas
+
+
+def record_bytes(d: dict, tabulas: dict) -> bytes:
+    return _json({"formats": FORMAT, "dokuments": d, "tabulas": tabulas})
+
+
+async def shared_object(conn, jc: dict, kind: str, ref: int) -> tuple[str, Optional[bytes]]:
+    """(key, bytes) of one shared object; bytes None = the source rows are gone (delete the object)."""
+    if kind == "integracijas":                        # ref = YYYYMM
+        y, m = divmod(ref, 100)
+        rows = _rows(await conn.fetch(
+            """SELECT * FROM integration_audit_log WHERE created_at >= make_timestamptz($1, $2, 1, 0, 0, 0, 'UTC')
+                 AND created_at < make_timestamptz($1, $2, 1, 0, 0, 0, 'UTC') + interval '1 month' ORDER BY id""", y, m),
+            jc.get("integration_audit_log", set()))
+        return f"vesture/integracijas/{y:04d}-{m:02d}.json", (
+            _json({"formats": FORMAT, "tabula": "integration_audit_log", "rindas": rows}) if rows else None)
+    if kind == "agents":                              # agent conversation without a document
+        key = f"agenti/{ref:06d}.json"
+        r = _rows(await conn.fetch("SELECT * FROM agent_runs WHERE id = $1 AND document_id IS NULL", ref), jc.get("agent_runs", set()))
+        if not r:
+            return key, None
+        steps = _rows(await conn.fetch("SELECT * FROM agent_steps WHERE run_id = $1 ORDER BY id", ref), jc.get("agent_steps", set()))
+        msgs = _rows(await conn.fetch("SELECT * FROM agent_messages WHERE run_id = $1 ORDER BY id", ref), jc.get("agent_messages", set()))
+        return key, _json({"formats": FORMAT, "tabulas": {"agent_runs": r, "agent_steps": steps, "agent_messages": msgs}})
+    table, prefix = KINDS[kind]
+    key = f"{prefix}/{ref:06d}.json"
+    r = _rows(await conn.fetch(f"SELECT * FROM {table} WHERE id = $1", ref), jc.get(table, set()))
+    if not r:
+        return key, None
+    if kind == "arhivs":
+        r[0]["dokumenti"] = [x["document_id"] for x in await conn.fetch(
+            "SELECT document_id FROM archive_batch_documents WHERE batch_id = $1 ORDER BY document_id", ref)]
+    return key, _json(r[0])
+
+
+async def shared_refs(conn) -> list[tuple[str, int]]:
+    """Every shared object that should exist now."""
+    refs = []
+    for kind, (table, _p) in KINDS.items():
+        refs += [(kind, r["id"]) for r in await conn.fetch(f"SELECT id FROM {table} ORDER BY id")]
+    refs += [("integracijas", int(r["m"])) for r in await conn.fetch(
+        "SELECT DISTINCT to_char(created_at AT TIME ZONE 'UTC', 'YYYYMM') m FROM integration_audit_log ORDER BY 1")]
+    refs += [("agents", r["id"]) for r in await conn.fetch("SELECT id FROM agent_runs WHERE document_id IS NULL ORDER BY id")]
+    return refs
+
+
 async def collect() -> tuple[list[dict], dict]:
     """Everything to write: [{key, data, mime}] and the manifest."""
     st = get_storage()
@@ -128,19 +188,14 @@ async def collect() -> tuple[list[dict], dict]:
     objs, manifest_docs, problems, counts = [], [], [], {}
     async with pool.acquire() as conn:
         jc = await _jsonb_cols(conn)
-        docs = _rows(await conn.fetch("SELECT * FROM documents ORDER BY id"), jc.get("documents", set()))
         org = dict(await conn.fetchrow("SELECT id, name, code, org_did, std_code FROM organizations WHERE is_default LIMIT 1") or {})
-        counts["documents"] = len(docs)
-
-        for d in docs:
-            tabulas = {}
-            for t, where in DOC_TABLES:
-                tabulas[t] = _rows(await conn.fetch(f"SELECT * FROM {t} WHERE {where} ORDER BY id", d["id"]),
-                                   jc.get(t, set()))
-                counts[t] = counts.get(t, 0) + len(tabulas[t])
+        for (doc_id,) in await conn.fetch("SELECT id FROM documents ORDER BY id"):
+            folder, d, tabulas = await doc_record(conn, jc, doc_id)
+            counts["documents"] = counts.get("documents", 0) + 1
+            for t, rows in tabulas.items():
+                counts[t] = counts.get(t, 0) + len(rows)
             pk = (d.get("metadata") or {}).get("standartaPakotne") or {}
-            folder = layout.folder(d["id"], d.get("doc_uid"))
-            base = f"dokumenti/{folder}"
+            base = f"{layout.ROOT}/{folder}"
             doc_objs, in_pkg = [], set()
             if pk.get("pakotnesAtslega"):
                 for k in await _walk(st, pk["pakotnesAtslega"]):
@@ -164,42 +219,18 @@ async def collect() -> tuple[list[dict], dict]:
                 if f.get("checksum_sha256") and hashlib.sha256(data).hexdigest() != f["checksum_sha256"]:
                     problems.append(f"{folder}: datne {f['file_name']} — kontrolsumma neatbilst DVS ierakstam")
                 doc_objs.append({"key": f"{base}/datnes/{f['file_name']}", "data": data})
-            record = {"formats": FORMAT, "dokuments": d, "tabulas": tabulas}
-            doc_objs.append({"key": f"{base}/dvs-ieraksts.json", "data": _json(record), "mime": "application/json"})
+            doc_objs.append({"key": f"{base}/dvs-ieraksts.json", "data": record_bytes(d, tabulas), "mime": "application/json"})
             objs += doc_objs
             manifest_docs.append({"mape": folder, "dvsId": d["id"], "registracijasNr": d.get("registration_number"),
                                   "dokumentaId": d.get("doc_uid"), "registraDid": d.get("doc_did"),
                                   "objekti": [{"key": o["key"][len(base) + 1:], "sha256": hashlib.sha256(o["data"]).hexdigest(),
                                                "baiti": len(o["data"])} for o in doc_objs]})
-
-        for t, prefix, naming in SHARED:
-            rows = _rows(await conn.fetch(f"SELECT * FROM {t} ORDER BY id"), jc.get(t, set()))
-            counts[t] = len(rows)
-            if t == "archive_batches":
-                links = await conn.fetch("SELECT batch_id, document_id FROM archive_batch_documents ORDER BY batch_id, document_id")
-                counts["archive_batch_documents"] = len(links)
-                for r in rows:
-                    r["dokumenti"] = [ln["document_id"] for ln in links if ln["batch_id"] == r["id"]]
-            if naming == "month":
-                by: dict[str, list] = {}
-                for r in rows:
-                    by.setdefault(r["created_at"].strftime("%Y-%m"), []).append(r)
-                for m, rs in by.items():
-                    objs.append({"key": f"{prefix}/{m}.json", "data": _json({"formats": FORMAT, "tabula": t, "rindas": rs}),
-                                 "mime": "application/json"})
-            else:
-                for r in rows:
-                    objs.append({"key": f"{prefix}/{r['id']:06d}.json", "data": _json(r), "mime": "application/json"})
-
-        # agent conversations without a document: run + steps + messages in one object
-        runs = _rows(await conn.fetch("SELECT * FROM agent_runs WHERE document_id IS NULL ORDER BY id"), jc.get("agent_runs", set()))
-        for r in runs:
-            steps = _rows(await conn.fetch("SELECT * FROM agent_steps WHERE run_id = $1 ORDER BY id", r["id"]), jc.get("agent_steps", set()))
-            msgs = _rows(await conn.fetch("SELECT * FROM agent_messages WHERE run_id = $1 ORDER BY id", r["id"]), jc.get("agent_messages", set()))
-            for t, n in (("agent_runs", 1), ("agent_steps", len(steps)), ("agent_messages", len(msgs))):
-                counts[t] = counts.get(t, 0) + n
-            objs.append({"key": f"agenti/{r['id']:06d}.json", "mime": "application/json",
-                         "data": _json({"formats": FORMAT, "tabulas": {"agent_runs": [r], "agent_steps": steps, "agent_messages": msgs}})})
+        for kind, ref in await shared_refs(conn):
+            key, data = await shared_object(conn, jc, kind, ref)
+            if data is not None:
+                objs.append({"key": key, "data": data, "mime": "application/json"})
+        for t in SHARED_COUNTS:
+            counts[t] = await conn.fetchval(f"SELECT COUNT(*) FROM {t}")
 
     manifest = {"formats": FORMAT, "organizacija": org, "izveidots": datetime.utcnow().isoformat() + "Z",
                 "rindas": counts, "dokumenti": manifest_docs, "problemas": problems}
