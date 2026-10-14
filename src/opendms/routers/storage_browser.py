@@ -81,3 +81,14 @@ async def test_s3(body: Optional[S3In] = None, user=Depends(require_role("admin"
     if not body:
         await st.record_test(res)
     return res
+
+
+@router.post("/settings/s3/eksports")
+async def export_to_s3(izmeginajums: bool = True, user=Depends(require_role("admin", "superadmin"))):
+    """Copy all documents, packages, records, intake and precedents into the S3 bucket.
+    ?izmeginajums=true (default) only counts what would be written."""
+    from opendms.storage import export
+    try:
+        return await export.run(dry_run=izmeginajums)
+    except ValueError as e:
+        raise HTTPException(422, str(e))

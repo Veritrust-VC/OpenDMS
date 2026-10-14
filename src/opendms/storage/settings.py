@@ -20,6 +20,10 @@ from opendms.database import get_pool
 SECRET_REF = "storage-s3"
 
 
+def _j(v):
+    return json.loads(v) if isinstance(v, str) else v
+
+
 async def ensure_schema() -> None:
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -28,7 +32,8 @@ async def ensure_schema() -> None:
                 id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
                 s3_endpoint TEXT, s3_bucket TEXT, s3_region TEXT, s3_access_key TEXT,
                 last_test JSONB, updated_by TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
-            )""")
+            );
+            ALTER TABLE storage_settings ADD COLUMN IF NOT EXISTS last_export JSONB""")
 
 
 async def s3_config(with_secret: bool = False) -> dict[str, Any]:
@@ -41,13 +46,15 @@ async def s3_config(with_secret: bool = False) -> dict[str, Any]:
         cfg = {"endpoint": row["s3_endpoint"], "bucket": row["s3_bucket"], "region": row["s3_region"] or "us-east-1",
                "accessKey": row["s3_access_key"], "source": "saglabāts DVS",
                "lastTest": json.loads(row["last_test"]) if isinstance(row["last_test"], str) else row["last_test"],
+               "lastExport": _j(row["last_export"]),
                "updatedBy": row["updated_by"], "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None}
         from opendms.connectors.secrets import get_secret
         secret = (await get_secret(SECRET_REF)).get("secretKey")
     else:
         cfg = {"endpoint": s.storage_s3_endpoint, "bucket": s.storage_s3_bucket if s.storage_s3_endpoint else None,
                "region": s.storage_s3_region, "accessKey": s.storage_s3_access_key, "source": "vide (env)",
-               "lastTest": json.loads(row["last_test"]) if row and isinstance(row["last_test"], str) else (row["last_test"] if row else None)}
+               "lastTest": json.loads(row["last_test"]) if row and isinstance(row["last_test"], str) else (row["last_test"] if row else None),
+               "lastExport": _j(row["last_export"]) if row else None}
         secret = s.storage_s3_secret_key
     cfg["secretSet"] = bool(secret)
     if with_secret:

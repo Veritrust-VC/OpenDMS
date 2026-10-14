@@ -30,6 +30,26 @@ function TestResult({ r }) {
   );
 }
 
+function ExportResult({ r }) {
+  if (!r) return null;
+  const v = r.parbaude;
+  const ok = !r.kludas?.length && !r.problemas?.length && (!v || !v.nesakrit?.length);
+  return (
+    <div className={`mt-3 border rounded-md p-3 text-sm ${ok ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+      <div className="font-medium mb-1">{r["izmēģinājums"] ? "Pārnešanas izmēģinājums (nekas netika rakstīts)" : "Dati pārnesti uz spaini"}
+        <span className="text-xs text-ink-500 font-normal ml-2">{r.spainis} · {r.ilgums_s} s</span></div>
+      <div className="text-xs grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5">
+        <span className="text-ink-500">Dokumenti</span><span>{r.dokumenti}</span>
+        <span className="text-ink-500">Objekti</span><span>{r.objekti} · {size(r.baiti)}</span>
+        <span className="text-ink-500">{r["izmēģinājums"] ? "Būtu jāraksta" : "Ierakstīti"}</span><span>{r.rakstiti} (nemainīti {r.nemainiti})</span>
+        {v && <><span className="text-ink-500">Kontrolsummas</span><span>{v.sakrit} sakrīt{v.nesakrit?.length ? `, ${v.nesakrit.length} nesakrīt` : ""}</span></>}
+      </div>
+      {[...(r.kludas || []), ...(r.problemas || []), ...((v && v.nesakrit) || [])].slice(0, 20).map((x, i) =>
+        <div key={i} className="text-xs text-red-700 font-mono break-all">{x}</div>)}
+    </div>
+  );
+}
+
 export default function StorageSettings({ notify }) {
   const [data, setData] = useState(null);
   const [denied, setDenied] = useState(false);
@@ -37,11 +57,13 @@ export default function StorageSettings({ notify }) {
   const [form, setForm] = useState({ endpoint: "", bucket: "", region: "us-east-1", accessKey: "", secretKey: "" });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const [exp, setExp] = useState(null);
 
   const load = () => call("/storage/settings").then(d => {
     setData(d);
     setForm({ endpoint: d.s3.endpoint || "", bucket: d.s3.bucket || "", region: d.s3.region || "us-east-1", accessKey: d.s3.accessKey || "", secretKey: "" });
     setResult(d.s3.lastTest || null);
+    setExp(e => e || d.s3.lastExport || null);
   }).catch(e => { if (e.status === 403) setDenied(true); else notify?.(e.message, "error"); });
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -52,6 +74,11 @@ export default function StorageSettings({ notify }) {
   const test = async (unsaved) => {
     setBusy(true);
     try { setResult(await call("/storage/settings/s3/test", { method: "POST", body: unsaved ? JSON.stringify({ ...form, secretKey: form.secretKey || null }) : undefined })); }
+    catch (e) { notify?.(e.message, "error"); } finally { setBusy(false); }
+  };
+  const runExport = async (dry) => {
+    setBusy(true);
+    try { setExp(await call(`/storage/settings/s3/eksports?izmeginajums=${dry}`, { method: "POST" })); if (!dry) notify?.("Dati pārnesti uz spaini"); }
     catch (e) { notify?.(e.message, "error"); } finally { setBusy(false); }
   };
   const save = async () => {
@@ -114,7 +141,18 @@ export default function StorageSettings({ notify }) {
         </div>
       </div>
       <TestResult r={result} />
-      <p className="text-[11px] text-ink-400 mt-3">Pārslēgt aktīvo glabātuvi uz S3 varēs pēc esošo datņu un metadatu pārnešanas uz spaini.</p>
+      {s3.endpoint && result?.ok && (
+        <div className="mt-3 border rounded-md p-3 text-sm">
+          <div className="font-medium">Pārnest datus uz spaini</div>
+          <p className="text-xs text-ink-500">Visi dokumenti ar pakotnēm (metadati.xml, izsekosana.xml, kontrolsummas, datnes), DVS ieraksts (metadati, semantika, notikumi, procesi), ievades žurnāls un precedenti. Esošie dati diskā paliek; nemainītie objekti netiek rakstīti atkārtoti.</p>
+          <div className="flex gap-2 mt-2">
+            <button disabled={busy} onClick={() => runExport(true)} className="text-xs px-3 py-1.5 border rounded">Izmēģināt</button>
+            <button disabled={busy} onClick={() => runExport(false)} className="text-xs px-3 py-1.5 bg-emerald-700 text-white rounded disabled:opacity-50">{busy ? "Notiek…" : "Pārnest"}</button>
+          </div>
+          <ExportResult r={exp} />
+        </div>
+      )}
+      <p className="text-[11px] text-ink-400 mt-3">Pārslēgt aktīvo glabātuvi uz S3 varēs pēc pārnešanas un atjaunošanas pārbaudes.</p>
     </div>
   );
 }
