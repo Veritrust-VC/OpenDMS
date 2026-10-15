@@ -58,13 +58,20 @@ def _parse_ts(v) -> Optional[datetime]:
 
 def decisions_of(review: dict) -> list[tuple[str, str]]:
     """The step's choices as (id, label). A process names them as "id=Label"
-    (lemumi: "nodot-izpildei=Nodot izpildei,nodot-iepazities=Nodot iepazīties")."""
+    (lemumi: "nodot-izpildei=Nodot izpildei,nodot-iepazities=Nodot iepazīties").
+    An id ending in * needs a comment ("nesaskanots*=Nesaskaņot")."""
+    return [(d, label) for d, label, _ in decision_specs(review)]
+
+
+def decision_specs(review: dict) -> list[tuple[str, str, bool]]:
     out = []
     for raw in review.get("decisions") or DEFAULT_DECISIONS:
         did, _, label = str(raw).partition("=")
         did = did.strip()
+        need = did.endswith("*")
+        did = did.rstrip("*").strip()
         if did:
-            out.append((did, label.strip() or DECISION_LABELS.get(did, did)))
+            out.append((did, label.strip() or DECISION_LABELS.get(did, did), need))
     return out
 
 
@@ -160,7 +167,8 @@ def _shape(r, now: datetime) -> dict:
         "role": review.get("role"),
         "department": review.get("department"),
         "proposal": review.get("proposal") or {},
-        "decisions": [{"id": d, "label": label} for d, label in decisions],
+        "decisions": [{"id": d, "label": label, "commentRequired": need} for d, label, need in decision_specs(review)],
+        "editable": review.get("editable"),
         "requestedAt": review.get("requestedAt"),
         "deadline": due.isoformat() if due else None,
         "overdue": bool(due and due < now),
@@ -219,9 +227,14 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
     review = _j(meta).get("uapf_review") or {}
     if review.get("status") != "gaida" or not review.get("sessionId"):
         raise TaskError(409, "No process step is waiting for a decision on this document")
-    allowed = tuple(d for d, _ in decisions_of(review))
-    if decision not in allowed:
-        raise TaskError(400, f"decision must be one of {', '.join(allowed)}")
+    specs = {d: need for d, _, need in decision_specs(review)}
+    if decision not in specs:
+        raise TaskError(400, f"decision must be one of {', '.join(specs)}")
+    if specs[decision] and not (comment or "").strip():
+        raise TaskError(400, "Šim lēmumam jānorāda komentārs (iebildumi vai iemesls)")
+    draft_text = (changes or {}).get("projektaTeksts")
+    if draft_text is not None and review.get("editable") != "projekts":
+        raise TaskError(400, "Šajā solī projektu labot nevar")
 
     actor = user.get("email") or user.get("username") or str(user.get("id"))
     reviewer = on_behalf_of or actor
@@ -230,6 +243,12 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
     if decision == "labots" and not (changes.get("labotsKods") or changes.get("labotaVieniba")):
         raise TaskError(400, "A correction needs labotsKods or labotaVieniba")
 
+    if draft_text is not None:   # the person's edit becomes the draft and its file before the process goes on
+        from opendms import outgoing
+        try:
+            await outgoing.update_draft_text(int(doc_id), str(draft_text), {"email": reviewer})
+        except ValueError as e:
+            raise TaskError(400, str(e))
     output = {"decision": decision, "comment": comment, "reviewer": reviewer, **changes}
     s = get_settings()
     client = UapfClient(s.uapf_engine_url, s.uapf_engine_auth_token)

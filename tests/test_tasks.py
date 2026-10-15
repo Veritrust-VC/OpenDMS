@@ -204,3 +204,25 @@ def test_process_names_next_event_and_source_package(db):
     br.on_document_event = ev
     asyncio.run(tasks.complete(2, "registrets", user={"id": 1, "email": "a@x.lv"}))
     assert calls == [(("document.decided", 2), {"exclude_package": "lv.x.pkg", "source_package": "lv.x.pkg"})]
+
+
+def test_comment_required_and_draft_edit_only_where_the_step_allows(db):
+    db["docs"][4] = _doc(4, {"status": "gaida", "sessionId": "s4", "stepId": "Saskanot", "requestedAt": T0, "proposal": {},
+                             "decisions": ["saskanots=Saskaņot", "nesaskanots*=Nesaskaņot"]})
+    t = asyncio.run(tasks.get_task(4))
+    assert t["decisions"][1] == {"id": "nesaskanots", "label": "Nesaskaņot", "commentRequired": True}
+    with pytest.raises(tasks.TaskError) as e:
+        asyncio.run(tasks.complete(4, "nesaskanots", user={"id": 1, "email": "a@x.lv"}))
+    assert "komentārs" in e.value.message
+    with pytest.raises(tasks.TaskError) as e:
+        asyncio.run(tasks.complete(4, "saskanots", user={"id": 1, "email": "a@x.lv"}, changes={"projektaTeksts": "x"}))
+    assert "labot nevar" in e.value.message
+
+
+def test_outgoing_capabilities_registered():
+    from opendms.uapf.handlers import HANDLERS
+    for k in ("document/outgoing", "visa/record", "document/sign", "document/sent"):
+        assert k in HANDLERS
+    from opendms.outgoing import VISA_OF
+    from opendms.archive.marks import VISA_RESULTS
+    assert set(VISA_OF.values()) <= set(VISA_RESULTS)

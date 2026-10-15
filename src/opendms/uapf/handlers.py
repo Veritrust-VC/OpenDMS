@@ -1020,6 +1020,8 @@ async def handle_task_request(ctx: dict) -> dict:
         lemumi = [x.strip() for x in lemumi.split(",") if x.strip()]
     if isinstance(lemumi, list) and lemumi:
         review["decisions"] = [str(x) for x in lemumi]
+    if inp.get("labojams"):          # the step lets the person edit e.g. the draft ("projekts")
+        review["editable"] = str(inp["labojams"])
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
@@ -1178,6 +1180,44 @@ def _forwarding(name: str):
     return run
 
 
+# ─────────────────────────────────────────────────────────────
+# Outgoing document: document.outgoing / visa.record / document.sign / document.sent
+# (opendms.outgoing). The person is the step's reviewer from the decision.
+# ─────────────────────────────────────────────────────────────
+
+async def handle_document_outgoing(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    if not inp.get("documentId"):
+        raise ValueError("document.outgoing requires documentId (the incoming document)")
+    r = await outgoing.create_from_draft(int(inp["documentId"]), ctx.get("session_id"))
+    # From here on the process works on the outgoing document.
+    return {"output": {"documentId": r["documentId"], "ienakosaisDokuments": int(inp["documentId"]),
+                       "izejosaRegistracijasNr": r.get("registrationNumber"), "izejosaisJauns": r["jauns"]}}
+
+
+async def handle_visa_record(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    r = await outgoing.visa(int(inp["documentId"]), str(inp.get("decision") or ""), inp.get("comment"),
+                            inp.get("reviewer"))
+    return {"output": {"vizaIerakstita": True, "vizasId": r.get("id")}}
+
+
+async def handle_document_sign(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    r = await outgoing.sign(int(inp["documentId"]), inp.get("comment"), inp.get("reviewer"))
+    return {"output": {"parakstits": True, "parakstaId": r.get("id")}}
+
+
+async def handle_document_sent(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    await outgoing.mark_sent(int(inp["documentId"]), inp.get("reviewer"), inp.get("comment"))
+    return {"output": {"nosutits": True}}
+
+
 HANDLERS = {
     "forward/request":   (_forwarding("handle_forward_request"), {"namespace": "forward", "operation": "request", "version": 1,
                                                      "summary": "Read a staff request to forward the document to another institution (e-adrese)."}),
@@ -1216,6 +1256,14 @@ HANDLERS = {
                                                      "summary": "Make the de-identified central layer and put the local layer in metadati.xml section 13."}),
     "learning/record":   (_learning("handle_learning_record"), {"namespace": "learning", "operation": "record", "version": 1,
                                                      "summary": "Store a reviewer's correction as a precedent and return the corrected values."}),
+    "document/outgoing": (handle_document_outgoing, {"namespace": "document", "operation": "outgoing", "version": 1,
+                                                     "summary": "Create the outgoing document from the reply draft; the process continues on it."}),
+    "visa/record":       (handle_visa_record,       {"namespace": "visa", "operation": "record", "version": 1,
+                                                     "summary": "Record the approver's vīza (saskanots, saskanots-ar-iebildumiem, nesaskanots)."}),
+    "document/sign":     (handle_document_sign,     {"namespace": "document", "operation": "sign", "version": 1,
+                                                     "summary": "DVS signature (MK 282 30. p.) by the person who decided the step."}),
+    "document/sent":     (handle_document_sent,     {"namespace": "document", "operation": "sent", "version": 1,
+                                                     "summary": "Mark the outgoing document as sent (no real dispatch)."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,
                                                      "summary": "Find the classification scheme entry, unit and retention (SIMULATED scheme)."}),
 }
