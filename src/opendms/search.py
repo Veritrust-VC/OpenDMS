@@ -37,25 +37,51 @@ Vārdu formas dod saīsinātas līdz saknei (piem. "bērnudārz", "diskrimin"), 
 Atbildi TIKAI ar JSON: {{"termini": ["…", "…"]}} — 3 līdz 10 termini, mazajiem burtiem."""
 
 
+STOP = {"ar", "un", "par", "no", "uz", "kas", "ka", "vai", "nav", "ir", "pie", "pēc", "bez", "to", "tā", "tas",
+        "kā", "jo", "lai", "arī", "bet", "gan", "tikai", "kur", "kad", "es", "mēs", "viņš", "viņa"}
+ENDINGS = sorted(["iem", "ām", "ēm", "īm", "ūm", "as", "es", "is", "us", "os", "ās", "ēs", "ai", "ei", "am", "em",
+                  "im", "um", "ij", "ja", "ju", "jā", "a", "e", "i", "u", "s", "š", "ā", "ē", "ī", "ū"],
+                 key=len, reverse=True)
+
+
+def stem(w: str) -> str:
+    """Drop a Latvian case ending so every form of the word matches (bērnudārzā → bērnudārz).
+    Numbers and short words stay as typed."""
+    if len(w) < 6 or any(ch.isdigit() for ch in w):
+        return w
+    for e in ENDINGS:
+        if w.endswith(e) and len(w) - len(e) >= 4:
+            return w[: -len(e)]
+    return w
+
+
 def _terms(q: str) -> list[str]:
-    return [t for t in re.split(r"[\s,;]+", q.lower().strip()) if len(t) >= 2][:10]
+    words = [t for t in re.split(r"[\s,;.!?()\"']+", q.lower().strip()) if len(t) >= 2 and t not in STOP]
+    return list(dict.fromkeys(stem(w) for w in words))[:10]
 
 
-async def expand(q: str) -> list[str]:
+async def expand(q: str) -> tuple[list[str], bool]:
+    """(terms, expanded): the model's terms plus the question's own words; only the
+    question's words when the model gives nothing."""
     from opendms.ai import _complete_json
     from opendms.org_context import org_label
-    out = await _complete_json(EXPAND_PROMPT.format(org=await org_label()), q[:500], max_tokens=300, timeout=30)
-    terms = [str(t).strip().lower() for t in ((out or {}).get("termini") or []) if str(t).strip()]
-    return list(dict.fromkeys(terms + _terms(q)))[:12] or _terms(q)
+    out = await _complete_json(EXPAND_PROMPT.format(org=await org_label()), q[:500], max_tokens=300, timeout=45)
+    terms = [stem(str(t).strip().lower()) for t in ((out or {}).get("termini") or []) if str(t).strip()]
+    terms = [t for t in terms if t not in STOP and len(t) >= 3]
+    return (list(dict.fromkeys(terms + _terms(q)))[:12], True) if terms else (_terms(q), False)
 
 
 async def search(q: str, *, mode: str = "teksts", limit: int = 30, status: Optional[str] = None) -> dict:
     q = (q or "").strip()
     if not q:
         return {"items": [], "terms": [], "mode": mode}
-    terms = await expand(q) if mode == "nozime" else _terms(q)
+    expanded = False
+    if mode == "nozime":
+        terms, expanded = await expand(q)
+    else:
+        terms = _terms(q)
     if not terms:
-        return {"items": [], "terms": [], "mode": mode}
+        return {"items": [], "terms": [], "mode": mode, "expanded": expanded}
     params: list = []
     hits = []
     for t in terms:
@@ -95,4 +121,4 @@ async def search(q: str, *, mode: str = "teksts", limit: int = 30, status: Optio
             "openStep": rev.get("stepId") if rev.get("status") == "gaida" else None,
             "score": r["score"],
         })
-    return {"items": items, "terms": terms, "mode": mode}
+    return {"items": items, "terms": terms, "mode": mode, "expanded": expanded}

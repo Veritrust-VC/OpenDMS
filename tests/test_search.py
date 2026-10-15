@@ -38,8 +38,8 @@ def test_text_mode_requires_all_words(monkeypatch):
         return Pool(st)
     monkeypatch.setattr(search, "get_pool", gp)
     r = asyncio.run(search.search("Bērnu tiesības", mode="teksts"))
-    assert r["terms"] == ["bērnu", "tiesības"]
-    assert ") = 2" in st["sql"] and st["params"][:2] == ("%bērnu%", "%tiesības%")
+    assert r["terms"] == ["bērnu", "tiesīb"]
+    assert ") = 2" in st["sql"] and st["params"][:2] == ("%bērnu%", "%tiesīb%")
 
 
 def test_meaning_mode_expands(monkeypatch):
@@ -49,7 +49,7 @@ def test_meaning_mode_expands(monkeypatch):
         return Pool(st)
 
     async def expand(q):
-        return ["bērnudārz", "pirmsskol", "rind"]
+        return ["bērnudārz", "pirmsskol", "rind"], True
     monkeypatch.setattr(search, "get_pool", gp)
     monkeypatch.setattr(search, "expand", expand)
     r = asyncio.run(search.search("vieta bērnudārzā", mode="nozime"))
@@ -58,3 +58,9 @@ def test_meaning_mode_expands(monkeypatch):
 
 def test_tool_listed():
     assert "meklet_dokumentus" in {t["name"] for t in tools.public_tools()}
+
+
+def test_stems_and_stopwords():
+    assert search.stem("bērnudārzā") == "bērnudārz" and search.stem("diskriminācija") == "diskrimināci"
+    assert search._terms("asistents skolā bērnam ar invaliditāti") == ["asistent", "skolā", "bērn", "invaliditāt"]
+    assert search._terms("1-00035") == ["1-00035"]
