@@ -240,8 +240,8 @@ async def record_precedent(*, package_id, document_id, session_id, kind, text, p
 
 # ─────────────────────────── ai.classify@1 ───────────────────────────
 
-CLASSIFY_PROMPT = """You classify a document received by the Office of the Ombudsman of Latvia
-(Tiesībsarga birojs) into the office's topic classifier (tēmu klasifikators).
+CLASSIFY_PROMPT = """You classify a document received by {org} into the organisation's
+topic classifier (tēmu klasifikators).
 
 You get: the classifier as a list of codes (code | name | path), earlier corrections made by
 staff on similar documents (precedents), and the PII-redacted document text.
@@ -340,8 +340,9 @@ async def handle_ai_classify(ctx: dict) -> dict:
         f"  wrongly proposed: {(p['predicted'] or {}).get('kods') or (p['predicted'] or {}).get('kategorija')}\n"
         f"  correct: {(p['corrected'] or {}).get('kods')}\n  why: {p['reason'] or '-'}"
         for p in precedents) or "(none)"
+    from opendms.org_context import org_label
     ans = await _complete_json(
-        CLASSIFY_PROMPT,
+        CLASSIFY_PROMPT.replace("{org}", await org_label()),
         f"--- CLASSIFIER ---\n{_code_lines(klas)}\n\n--- PRECEDENTS ---\n{prec_txt}\n\n"
         f"--- DOCUMENT ---\n{text}\n--- END ---")
     res = _result_from_code(klas, str((ans or {}).get("kods") or "").strip())

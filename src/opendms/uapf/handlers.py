@@ -349,14 +349,14 @@ Definitions:
 No markdown, no preamble, no commentary. Booleans must be true/false (not strings)."""
 
 
-INCOMING_FACETS_PROMPT = """You read a document received by a Latvian public institution
-(already PII-redacted) and answer a few yes/no questions about it.
+INCOMING_FACETS_PROMPT = """You read a document received by {org} (a Latvian organisation;
+the text is already PII-redacted) and answer a few yes/no questions about it.
 
 Respond ONLY with JSON:
 {
   "prasaAtbildi": <bool>,            // the sender asks for an answer, decision or action
   "irZinojums": <bool>,              // it is only for information (notice, report, FYI)
-  "irTermins": <bool>,               // the text sets or mentions a deadline for the institution
+  "irTermins": <bool>,               // the text sets or mentions a deadline for the organisation
   "terminsDokumenta": <bool>,        // the deadline is given in the document itself
   "iesniegumsNoFiziskasPersonas": <bool>, // the sender is a private individual (iesniegums)
   "kopsavilkums": "<one sentence in Latvian>"
@@ -389,7 +389,9 @@ async def _incoming_document_facets(text: str) -> dict:
         out = _incoming_facets_by_keywords("")
         out["_warning"] = "no text to extract from"
         return out
-    result = await _complete_json(INCOMING_FACETS_PROMPT, f"--- DOKUMENTS ---\n{text}\n--- BEIGAS ---")
+    from opendms.org_context import org_label
+    result = await _complete_json(INCOMING_FACETS_PROMPT.replace("{org}", await org_label()),
+                                  f"--- DOKUMENTS ---\n{text}\n--- BEIGAS ---")
     if not result:
         return _incoming_facets_by_keywords(text)
     out = {}
@@ -921,6 +923,11 @@ async def handle_ai_draft(ctx: dict) -> dict:
         pamatojums=(inp.get("reason") or "[…]").lower(),
         kompetenta_iestade=inp.get("competentAuthority") or "[norādīt kompetento iestādi]",
     )
+    # Any other process variable (scalar) may be named in a template, e.g.
+    # {adresats} or {temats}; the fixed names above win when both exist.
+    for k, v in inp.items():
+        if k not in values and isinstance(v, (str, int, float)) and not isinstance(v, bool):
+            values[k] = v
     draft = body.format_map(values)
 
     substance, source = "", "veidne"
@@ -931,8 +938,9 @@ async def handle_ai_draft(ctx: dict) -> dict:
             red = (await handle_ai_redact({"input": {"content": fetched.get("content") or ""}}))["output"]
             text = (red.get("redactedContent") or "")[:6000]
             if text:
+                from opendms.org_context import org_label
                 res = await _complete_json(
-                    "Tu raksti valsts iestādes atbildes projektu. Atbildi tikai ar JSON "
+                    f"Tu raksti organizācijas „{await org_label()}” izejošā dokumenta projektu. Atbildi tikai ar JSON "
                     '{"butiba": "<viens neitrāls teikums latviski par iesnieguma būtību, bez personas datiem>"}',
                     f"--- IESNIEGUMS (personas dati aizklāti) ---\n{text}\n--- BEIGAS ---")
                 if res and res.get("butiba"):
