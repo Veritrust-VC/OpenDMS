@@ -1,16 +1,17 @@
 """Lietvedība tools — what a records-management agent needs to work a DVS.
 
-READ   worklist, document_history, people_and_categories
-WRITE  assign_document, apply_classification, add_note
+READ   worklist, document_history, people_and_categories, mans_darbs, uzdevums
+WRITE  assign_document, apply_classification, add_note, pabeigt_uzdevumu
 
 Every write runs as the authenticated DVS user (for the Lietvedības aģents:
 its own named user, see config.mcp_agent_*), lands in document_events with a
 reason, and goes through the same code paths as the GUI — assigning uses the
 GUI's lifecycle transition, so the register gets the same lifecycle event.
 
-Deliberately absent: decide, send, archive, delete, approve. Those are
-decisions with legal or external effect; they stay with a named person in the
-DVS interface (see tools.py).
+Process steps (UAPF user tasks) are completed only with pabeigt_uzdevumu, which
+records the person who confirmed the decision in the Agent; the agent itself
+never decides. Deliberately absent: the document lifecycle actions decide,
+send, archive and delete — they belong to the processes, not to the agent.
 """
 
 from __future__ import annotations
@@ -104,6 +105,43 @@ TOOLS: list[dict[str, Any]] = [
             "document_id": {"type": "integer"},
             "text": {"type": "string", "maxLength": 4000},
         }, ["document_id", "text"]),
+    },
+    {
+        "name": "mans_darbs",
+        "class": "read",
+        "description": "Mans darbs: process steps waiting for a person (UAPF user tasks), earliest "
+                       "deadline first. Each item: document id and number, title, sender, process and "
+                       "step name, role, the AI proposal for the step, the decisions the person can "
+                       "take, deadline and whether it is overdue. Use for 'what do I have to do', "
+                       "'what is overdue'.",
+        "inputSchema": _schema({
+            "overdue_only": {"type": "boolean", "default": False},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+        }),
+    },
+    {
+        "name": "uzdevums",
+        "class": "read",
+        "description": "The process step waiting on one document: step, role, AI proposal, decisions "
+                       "allowed, deadline. Read before pabeigt_uzdevumu.",
+        "inputSchema": _schema({"document_id": {"type": "integer"}}, ["document_id"]),
+    },
+    {
+        "name": "pabeigt_uzdevumu",
+        "class": "write",
+        "description": "Complete the process step waiting on a document with the person's decision; "
+                       "the process continues (it may route, hand over or ask the next person). Only "
+                       "after the person has seen the document, the step and the decision and has "
+                       "confirmed it. decision must be one of the step's decisions (uzdevums). A "
+                       "correction (labots) needs labotsKods or labotaVieniba in changes.",
+        "inputSchema": _schema({
+            "document_id": {"type": "integer"},
+            "decision": {"type": "string"},
+            "comment": {"type": "string", "maxLength": 4000},
+            "changes": {"type": "object", "description": "labotsKods, labotaVieniba, labojumaIemesls"},
+            "person": {"type": "string", "description": "E-mail of the person who confirmed the decision."},
+            "confirmed": {"type": "boolean", "description": "True only when the person confirmed this exact decision."},
+        }, ["document_id", "decision", "person", "confirmed"]),
     },
 ]
 
@@ -312,6 +350,40 @@ async def _add_note(args: dict, ctx: dict) -> dict:
     return {"done": True, "document_id": doc_id}
 
 
+async def _mans_darbs(args: dict, ctx: dict) -> dict:
+    from opendms import tasks
+    items = await tasks.list_tasks(limit=int(args.get("limit") or 25),
+                                   overdue_only=bool(args.get("overdue_only")))
+    return {"count": len(items), "overdue": sum(1 for t in items if t["overdue"]), "items": items}
+
+
+async def _uzdevums(args: dict, ctx: dict) -> dict:
+    from opendms import tasks
+    t = await tasks.get_task(int(args["document_id"]))
+    return t or {"error": "no process step is waiting on this document", "document_id": args["document_id"]}
+
+
+async def _pabeigt_uzdevumu(args: dict, ctx: dict) -> dict:
+    from opendms import tasks
+    actor = _actor(ctx)
+    if args.get("confirmed") is not True:
+        return {"error": "the person has not confirmed this decision — show the document, step and "
+                         "decision and ask first"}
+    person = (args.get("person") or "").strip().lower()
+    if "@" not in person:
+        return {"error": "person must be the e-mail of the person who confirmed"}
+    try:
+        res = await tasks.complete(int(args["document_id"]), str(args["decision"]), user=actor,
+                                   comment=args.get("comment"), changes=args.get("changes"),
+                                   via="agent", on_behalf_of=person)
+    except tasks.TaskError as e:
+        return {"error": e.message, "document_id": args["document_id"]}
+    nxt = res.get("nextTask")
+    return {"done": True, "document_id": int(args["document_id"]), "decision": args["decision"],
+            "process_state": res["state"],
+            "next_step": ({"stepName": nxt["stepName"], "role": nxt["role"]} if nxt else None)}
+
+
 HANDLERS = {
     "worklist": _worklist,
     "document_history": _document_history,
@@ -319,4 +391,7 @@ HANDLERS = {
     "assign_document": _assign_document,
     "apply_classification": _apply_classification,
     "add_note": _add_note,
+    "mans_darbs": _mans_darbs,
+    "uzdevums": _uzdevums,
+    "pabeigt_uzdevumu": _pabeigt_uzdevumu,
 }

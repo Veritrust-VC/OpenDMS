@@ -1013,6 +1013,13 @@ async def handle_task_request(ctx: dict) -> dict:
         "references": ctx.get("schema_ref"),
         "requestedAt": datetime.now(timezone.utc).isoformat(),
     }
+    # The process may name the choices the person has at this step (the buttons);
+    # without them the step takes apstiprinats | labots | noraidits.
+    lemumi = inp.get("lemumi") or inp.get("decisions")
+    if isinstance(lemumi, str):
+        lemumi = [x.strip() for x in lemumi.split(",") if x.strip()]
+    if isinstance(lemumi, list) and lemumi:
+        review["decisions"] = [str(x) for x in lemumi]
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(

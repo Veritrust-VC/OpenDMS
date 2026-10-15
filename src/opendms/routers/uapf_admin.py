@@ -710,72 +710,14 @@ async def decide_review(doc_id: int, body: ReviewDecisionIn, user=Depends(get_cu
 
     Resumes the suspended engine session; the process continues from there
     (e.g. emits the routing event or ends as handed over for manual work).
+    Same as POST /api/tasks/{doc_id}/complete (opendms.tasks.complete).
     """
-    if body.decision not in REVIEW_DECISIONS:
-        raise HTTPException(400, f"decision must be one of {', '.join(REVIEW_DECISIONS)}")
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
-    if meta is None:
-        raise HTTPException(404, "Document not found")
-    meta = json.loads(meta) if isinstance(meta, str) else meta
-    review = (meta or {}).get("uapf_review") or {}
-    if review.get("status") != "gaida" or not review.get("sessionId"):
-        raise HTTPException(409, "No process step is waiting for a decision on this document")
-
-    reviewer = user.get("email") or user.get("username") or str(user.get("id"))
-    changes = {k: str(v).strip() for k, v in (body.changes or {}).items()
-               if k in CORRECTION_KEYS and v not in (None, "")}
-    if body.decision == "labots" and not (changes.get("labotsKods") or changes.get("labotaVieniba")):
-        raise HTTPException(400, "A correction needs labotsKods or labotaVieniba")
-    output = {"decision": body.decision, "comment": body.comment, "reviewer": reviewer, **changes}
-    s = get_settings()
-    client = UapfClient(s.uapf_engine_url, s.uapf_engine_auth_token)
+    from opendms.tasks import TaskError, complete
     try:
-        result = await client.resume_session(review["sessionId"], output)
-    except Exception as e:
-        raise HTTPException(502, f"Engine resume failed: {e}")
-
-    from datetime import datetime, timezone
-    review.update({"status": body.decision, "decidedBy": reviewer, "comment": body.comment,
-                   "decidedAt": datetime.now(timezone.utc).isoformat()})
-    state = result.get("state", "unknown")
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
-            json.dumps({"uapf_review": review}), doc_id,
-        )
-        await conn.execute(
-            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
-               VALUES ($1, 'uapf.review.decided', $2, FALSE, $3)""",
-            doc_id, user.get("id"), json.dumps(review),
-        )
-        await conn.execute(
-            """UPDATE uapf_sessions SET state = $2,
-                   output_payload = COALESCE($3::jsonb, output_payload),
-                   completed_at = CASE WHEN $2 IN ('completed','failed','aborted') THEN NOW() ELSE completed_at END
-               WHERE session_id = $1""",
-            review["sessionId"], state,
-            json.dumps(result.get("output")) if result.get("output") is not None else None,
-        )
-    # An approved proposal is a decision on the document: processes waiting for
-    # 'document.decided' (e.g. the response draft) start now.
-    if body.decision in ("apstiprinats", "labots") and state == "completed":
-        # The confirmed routing is a lifecycle fact for the central register.
-        out = result.get("output") or {}
-        dept = out.get("department") or out.get("strukturvieniba")
-        if dept:
-            try:
-                from opendms.uapf.handlers import _register_assignment
-                await _register_assignment(doc_id, {"department": dept, "vieniba": out.get("vieniba")},
-                                           review["sessionId"])
-            except Exception as exc:  # the register must not block the decision
-                logger.warning("register assignment for doc %s failed: %s", doc_id, exc)
-        async with pool.acquire() as conn:
-            finished_pkg = await conn.fetchval(
-                "SELECT package_id FROM uapf_sessions WHERE session_id = $1", review["sessionId"])
-        await on_document_event("document.decided", doc_id, exclude_package=finished_pkg)
-    return {"sessionId": review["sessionId"], "state": state, "review": review}
+        res = await complete(doc_id, body.decision, user=user, comment=body.comment, changes=body.changes)
+    except TaskError as e:
+        raise HTTPException(e.status, e.message)
+    return {"sessionId": res["sessionId"], "state": res["state"], "review": res["review"]}
 
 
 # ─────────────────────────────────────────────────────────────
