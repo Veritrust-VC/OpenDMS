@@ -939,7 +939,10 @@ async def handle_ai_draft(ctx: dict) -> dict:
     if doc_id:
         try:
             fetched = (await handle_document_fetch({"input": {"documentId": doc_id}}))["output"]
-            red = (await handle_ai_redact({"input": {"content": fetched.get("content") or ""}}))["output"]
+            # Only a document that has a file (a received letter) has a substance to
+            # summarise; an outgoing draft without one would only echo its own title.
+            has_file = bool(fetched.get("fileName"))
+            red = (await handle_ai_redact({"input": {"content": fetched.get("content") or ""}}))["output"] if has_file else {}
             text = (red.get("redactedContent") or "")[:6000]
             if text:
                 from opendms.org_context import org_label

@@ -79,3 +79,16 @@ def test_classify_uses_draft_text_when_no_file(monkeypatch):
     monkeypatch.setattr(org_context, "org_label", org)
     out = run(learning.handle_ai_classify({"input": {"draftText": "Atbilde uz sūdzību par apkuri"}}))["output"]
     assert out["kods"] == "02-02" and "Atbilde uz sūdzību" in seen["user"]
+
+
+def test_draft_without_file_has_no_substance_line(monkeypatch):
+    async def fetch(ctx):
+        return {"output": {"content": "Atbilde uz sūdzību", "fileName": None}}
+    called = {}
+    async def model(*a, **k):
+        called["yes"] = True
+        return {"butiba": "x"}
+    monkeypatch.setattr(handlers, "handle_document_fetch", fetch)
+    monkeypatch.setattr(handlers, "_complete_json", model)
+    out = run(handlers.handle_ai_draft({"input": {"templateBody": "Rekvizīti: {datums}\n\nTeksts", "documentId": 6}}))
+    assert "būtība" not in out["output"]["draftText"] and not called
