@@ -895,3 +895,21 @@ async def transfer_start(body: TransferStartIn = TransferStartIn(), user=Depends
         raise HTTPException(502, str(e))
     await _case_audit(user, org, "opendms.archive.transfer.process.start", r["sesija"] or "", {"stavoklis": r["stavoklis"], "gaida": r["gaida"]})
     return r
+
+
+# ───────────────────────── 7. solis: LNA savienojums ─────────────────────────
+#   GET  /api/archive/lna          savienojuma stāvoklis un iesniegumi
+#   POST /api/archive/lna/poll     nolasīt LNA lēmumus tūlīt (citādi — ik pēc OPENDMS_LNA_POLL_S)
+
+@router.get("/lna")
+async def lna_status(user=Depends(get_current_user)):
+    from opendms.archive import lna_client as lna
+    c = lna.cfg()
+    return {"konfigurets": lna.configured(), "adrese": c["url"] or None, "iestade": c["org"] or None,
+            "s3": bool(c["s3_endpoint"] and c["s3_access_key"]), "iesniegumi": await lna.list_submissions((await _org())["id"])}
+
+
+@router.post("/lna/poll")
+async def lna_poll(user=Depends(ADMIN)):
+    from opendms.archive import lna_client as lna
+    return await lna.poll_once()

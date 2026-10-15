@@ -70,7 +70,27 @@ function Settings({ api, notify }) {
         </label>
       </div>
       <EnginePanel api={api} notify={notify} />
+      <LnaPanel api={api} notify={notify} />
     </div>);
+}
+
+const LNA_KIND = { akts: "Iznīcināšanas akts", saraksts: "Uzskaites saraksts", plans: "Nodošanas vienošanās", nodosana: "Nodošana (OPEX)" };
+function LnaPanel({ api, notify }) {
+  const [l, setL] = useState(null);
+  const load = async () => { try { setL(await api("/archive/lna")); } catch { setL(null); } };
+  useEffect(() => { load(); }, []);
+  const poll = async () => { try { const r = await api("/archive/lna/poll", { method: "POST" }); notify(`Pārbaudīti ${r.parbauditi ?? 0}, turpināti ${r.turpinati ?? 0}`); load(); } catch (e) { notify(e.message, "error"); } };
+  if (!l) return null;
+  return (<div className="bg-white border rounded-lg p-4 space-y-2 text-sm">
+    <div className="font-medium">LNA savienojums</div>
+    {l.konfigurets
+      ? <div className="text-emerald-700">Savienots: {l.adrese} · iestāde {l.iestade}{l.s3 ? " · S3 ievades krātuve" : " · bez S3"} <span className="text-xs text-gray-500">(laboratorijas simulators)</span></div>
+      : <div className="text-amber-700">Nav konfigurēts — LNA lēmumus ievada lietotājs.</div>}
+    {l.konfigurets && <button onClick={poll} className="text-xs px-3 py-1 border rounded">Nolasīt LNA lēmumus tagad</button>}
+    {l.iesniegumi.length > 0 && <div className="border rounded divide-y text-xs">{l.iesniegumi.slice(0, 15).map((x) =>
+      <div key={x.id} className="px-2 py-1 flex justify-between gap-2"><span>{String(x.created_at).slice(0, 16).replace("T", " ")} · {LNA_KIND[x.kind] || x.kind} {x.object_id}</span>
+        <span className={x.status === "Noraidits" ? "text-red-700" : x.status === "Sanemts" ? "text-amber-700" : "text-emerald-700"}>{x.status}{x.decision?.atsauce ? ` · ${x.decision.atsauce}` : ""}{x.resumed_at ? " · process turpināts" : ""}{x.error ? ` · ${x.error.slice(0, 80)}` : ""}</span></div>)}</div>}
+  </div>);
 }
 
 function EnginePanel({ api, notify }) {
@@ -490,7 +510,7 @@ function ActDetail({ api, notify, id, onChanged }) {
       <div>Akts jālabo: mainiet lietu izvērtējumu (Lietas → Izvērtēt) un pārveidojiet aktu.</div>
       <button onClick={() => resume({})} className="px-3 py-1 border rounded">Pārveidot aktu</button></div>}
     {waiting === "AwaitLNA" && <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
-      <div className="font-medium">LNA lēmums par aktu</div><div className="text-xs text-gray-500">Līdz LNA savienojumam (7. solis) lēmumu reģistrē šeit.</div>
+      <div className="font-medium">LNA lēmums par aktu</div><div className="text-xs text-gray-500">Ar LNA savienojumu lēmums tiek ievadīts automātiski (Iestatījumi → LNA savienojums); citādi to reģistrē šeit.</div>
       <input value={f.lnaAtsauce || ""} onChange={(e) => setF({ ...f, lnaAtsauce: e.target.value })} placeholder="LNA vēstules / lēmuma atsauce" className="w-full text-sm border rounded px-2 py-1" />
       <div className="flex gap-2"><button onClick={() => resume({ lnaLemums: "Saskanots", lnaAtsauce: f.lnaAtsauce })} className="px-3 py-1 bg-emerald-600 text-white rounded">LNA saskaņoja</button>
         <button onClick={() => resume({ lnaLemums: "Noraidits", lnaAtsauce: f.lnaAtsauce })} className="px-3 py-1 border rounded">LNA noraidīja</button></div></div>}
@@ -600,7 +620,7 @@ function TransferDetail({ api, notify, id, onChanged }) {
       <label className="flex items-center gap-2"><input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />Pakotne pārbaudīta, apstiprinu nodošanu LNA</label>
       <button disabled={!confirm} onClick={() => resume({ apstiprinu: true })} className="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-40">Apstiprināt un nodot</button></TaskBox>}
     {waiting === "AwaitLNA" && <TaskBox title="LNA pieņemšanas rezultāts">
-      <div className="text-xs text-gray-500">Līdz LNA savienojumam (7. solis) pakotni nodod manuāli un rezultātu reģistrē šeit.</div>
+      <div className="text-xs text-gray-500">Ar LNA savienojumu pakotne tiek augšupielādēta LNA S3 ievades krātuvē un rezultāts atgriežas automātiski; citādi to reģistrē šeit.</div>
       <input value={f.lnaAtsauce || ""} onChange={(e) => setF({ ...f, lnaAtsauce: e.target.value })} placeholder="LNA pieņemšanas akta atsauce" className="w-full text-sm border rounded px-2 py-1" />
       <input value={f.piezimes || ""} onChange={(e) => setF({ ...f, piezimes: e.target.value })} placeholder="LNA atbildīgā persona / piezīmes" className="w-full text-sm border rounded px-2 py-1" />
       <div className="flex gap-2"><button onClick={() => resume({ lnaLemums: "Pienemts", ...f })} className="px-3 py-1 bg-emerald-600 text-white rounded">LNA pieņēma</button>

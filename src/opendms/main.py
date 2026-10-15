@@ -53,11 +53,15 @@ def create_app() -> FastAPI:
         import asyncio as _asyncio
         from opendms.intake.email_channel import run_forever as _intake_loop
         intake_task = _asyncio.create_task(_intake_loop())
+        from opendms.archive.lna_client import ensure_schema as _lna_schema, run_forever as _lna_loop
+        await _lna_schema()
+        lna_task = _asyncio.create_task(_lna_loop())
         from opendms.storage.sync import run_forever as _storage_sync
         sync_task = _asyncio.create_task(_storage_sync())
         yield
         intake_task.cancel()
         sync_task.cancel()
+        lna_task.cancel()
         await close_sdk()
         await close_db()
 

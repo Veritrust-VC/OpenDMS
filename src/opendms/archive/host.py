@@ -191,24 +191,29 @@ async def act_draft(ctx):
 
 
 async def lna_submit(ctx):
-    """LNA iesniegšana (akts P4b vai uzskaites saraksts P5). Savienojums ar LNA (simulatoru) ir 7. solis; līdz tam
-    objekts tiek atzīmēts kā iesniegts, un LNA lēmumu reģistrē lietotājs (uzdevums AwaitLNA)."""
+    """LNA iesniegšana (akts P4b vai uzskaites saraksts P5). Ar LNA savienojumu (simulatoru) — iesniedz XML un
+    lēmums atgriežas automātiski; bez tā objekts tiek atzīmēts kā iesniegts, un lēmumu ievada lietotājs."""
     from opendms.archive import destruction as ds
     from opendms.archive import finding_aid as fa
+    from opendms.archive import lna_client as lna
     from opendms.storage import get_storage
     i = _inp(ctx)
     org = await _org()
+    st = get_storage()
     if i.get("sarakstaId"):
-        lid = _int(i["sarakstaId"], "sarakstaId")
-        x = await fa.store_xml(org, lid, get_storage())
-        await fa.set_list(org["id"], lid, WHO, status="IesniegtsLNA")
-        return {"output": {"iesniegumaId": f"DVS-SARAKSTS-{lid}", "iesniegts": True, "kanals": "manuāli (LNA savienojums — 7. solis)",
+        kind, oid = "saraksts", _int(i["sarakstaId"], "sarakstaId")
+        x = await fa.store_xml(org, oid, st)
+        await fa.set_list(org["id"], oid, WHO, status="IesniegtsLNA")
+    else:
+        kind, oid = "akts", _int(i.get("aktaId") or i.get("objektaId"), "aktaId")
+        x = await ds.store_act_xml(org, oid, st)
+        await ds.set_act(org["id"], oid, WHO, status="IesniegtsLNA")
+    if not lna.configured():
+        return {"output": {"iesniegumaId": f"DVS-{kind.upper()}-{oid}", "iesniegts": True, "kanals": "manuāli (LNA savienojums nav konfigurēts)",
                            "xml": x["key"]}}
-    aid = _int(i.get("aktaId") or i.get("objektaId"), "aktaId")
-    x = await ds.store_act_xml(org, aid, get_storage())
-    await ds.set_act(org["id"], aid, WHO, status="IesniegtsLNA")
-    return {"output": {"iesniegumaId": f"DVS-AKTS-{aid}", "iesniegts": True, "kanals": "manuāli (LNA savienojums — 7. solis)",
-                       "aktaXml": x["key"]}}
+    r = await lna.submit_xml(org["id"], kind, oid, await st.get(x["key"]), ctx.get("session_id"))
+    return {"output": {"iesniegumaId": r["id"], "iesniegts": True, "kanals": "LNA (laboratorijas simulators)", "lnaStatuss": r["statuss"],
+                       "xml": x["key"]}}
 
 
 # ── P5 ──
@@ -234,9 +239,16 @@ async def finding_aid_approve(ctx):
 # ── P6 ──
 
 async def transfer_plan_check(ctx):
+    from opendms.archive import lna_client as lna
     from opendms.archive import transfer as tr
     i = _inp(ctx)
-    return {"output": await tr.plan_check(await _org(), _int(i.get("gads") or date.today().year, "gads"))}
+    org = await _org()
+    year = _int(i.get("gads") or date.today().year, "gads")
+    out = await tr.plan_check(org, year)
+    if not out["irPlans"] and lna.configured():   # pieprasīt LNA vienošanos (174. p.); atbilde turpinās AgreePlan
+        r = await lna.submit_plan(org["id"], year, out["lietuSkaits"], ctx.get("session_id"))
+        out["planaPieprasijums"] = r["id"]
+    return {"output": out}
 
 
 async def transfer_build(ctx):
@@ -254,18 +266,28 @@ async def transfer_validate(ctx):
 
 
 async def lna_deliver(ctx):
-    """Nodošana LNA: LNA pieņemšanas simulators ir 7. solis. Līdz tam pakotne ir lejupielādējama, un
-    LNA rezultātu reģistrē lietotājs (uzdevums AwaitLNA)."""
+    """Nodošana LNA: pakotni augšupielādē LNA S3 ievades krātuvē un iesniedz (simulators pārbauda un pieņem vai
+    noraida). Bez LNA savienojuma pakotne paliek lejupielādei, un rezultātu ievada lietotājs."""
     from datetime import datetime, timezone
+    from opendms.archive import lna_client as lna
     from opendms.archive import transfer as tr
+    from opendms.storage import get_storage
     org = await _org()
     pid = _int(_inp(ctx).get("pakotnesId"), "pakotnesId")
     p = await tr.get_package(org["id"], pid)
     if p["status"] != "Apstiprinata":
         raise ValueError("Nodot var tikai apstiprinātu pakotni")
+    if not lna.configured():
+        await tr.set_package(org["id"], pid, WHO, status="Nodota", delivered_at=datetime.now(timezone.utc),
+                             delivery_ref=f"manuāli:{p['zip_key']}")
+        return {"output": {"nodosanasId": f"DVS-NODOSANA-{pid}", "kanals": "manuāli (LNA savienojums nav konfigurēts)"}}
+    data = await get_storage().get(p["zip_key"])
+    if data is None:
+        raise ValueError("Pakotnes ZIP nav atrodams konteinerā")
+    r = await lna.deliver(org["id"], pid, data, p["sha256"], p["package_name"], ctx.get("session_id"))
     await tr.set_package(org["id"], pid, WHO, status="Nodota", delivered_at=datetime.now(timezone.utc),
-                         delivery_ref=f"manuāli:{p['zip_key']}")
-    return {"output": {"nodosanasId": f"DVS-NODOSANA-{pid}", "kanals": "manuāli (LNA savienojums — 7. solis)"}}
+                         delivery_ref=f"LNA:{r['id']} s3:{r['s3Key']}")
+    return {"output": {"nodosanasId": r["id"], "kanals": "LNA S3 ievades krātuve (laboratorijas simulators)", "lnaStatuss": r["statuss"]}}
 
 
 async def transfer_record(ctx):
