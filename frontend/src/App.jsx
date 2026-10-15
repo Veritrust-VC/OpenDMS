@@ -47,7 +47,10 @@ async function api(path, opts = {}) {
   return res;
 }
 
-function Badge({ s }) { const c = { draft:"bg-gray-100 text-gray-600", registered:"bg-sky-100 text-sky-700", sent:"bg-amber-100 text-amber-700", received:"bg-violet-100 text-violet-700", assigned:"bg-teal-100 text-teal-700", decided:"bg-green-100 text-green-700", archived:"bg-gray-200 text-gray-600" }; return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c[s]||"bg-gray-100"}`}>{s}</span>; }
+// Status names come from the organisation's ProcessGit vocabulary (GET /api/vardnicas);
+// these are the fallback until it has loaded.
+let STATUS_LV = { draft:"Projekts", registered:"Reģistrēts", received:"Saņemts", assigned:"Nodots izpildei", decided:"Izlemts", sent:"Nosūtīts", archived:"Arhivēts" };
+function Badge({ s }) { const c = { draft:"bg-gray-100 text-gray-600", registered:"bg-sky-100 text-sky-700", sent:"bg-amber-100 text-amber-700", received:"bg-violet-100 text-violet-700", assigned:"bg-teal-100 text-teal-700", decided:"bg-green-100 text-green-700", archived:"bg-gray-200 text-gray-600" }; return <span title={s} className={`text-xs px-2 py-0.5 rounded-full font-medium ${c[s]||"bg-gray-100"}`}>{STATUS_LV[s] || s}</span>; }
 const EI = { DocumentCreated:"\u{1F4C4}", DocumentSent:"\u{1F4E4}", DocumentReceived:"\u{1F4E5}", DocumentAssigned:"\u{1F464}", DocumentDecided:"\u{2705}", DocumentArchived:"\u{1F5C4}\uFE0F" };
 
 // ── Document lifecycle log: compact per-event detail rendering ──
@@ -118,6 +121,11 @@ const BOOL_DISPLAY = (v) => v === true || v === "true" ? "Yes" : v === false || 
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [, setVocabTick] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    api("/vardnicas").then((v) => { if (v?.statusi) { STATUS_LV = { ...STATUS_LV, ...v.statusi }; setVocabTick((t) => t + 1); } }).catch(() => {});
+  }, [user]);
   const [route, setRoute] = useState(() => window.location.pathname.split("/").filter(Boolean));
   const navigate = useCallback((path, opts = {}) => {
     let p = (path.startsWith("/") ? path : "/" + path).replace(/\/+$/, "") || "/";
@@ -383,7 +391,7 @@ function DocumentsPage({ notify, user, route, navigate }) {
       <div className="flex gap-2">
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Meklēt nosaukumā vai numurā…" className="text-sm px-3 py-1.5 border rounded-md w-64" />
         <select value={statusF} onChange={e=>setStatusF(e.target.value)} className="text-sm px-2 py-1.5 border rounded-md">
-          {["","draft","registered","sent","received","assigned","decided","archived"].map(s=><option key={s} value={s}>{s||"All"}</option>)}
+          {["","draft","registered","sent","received","assigned","decided","archived"].map(s=><option key={s} value={s}>{s ? (STATUS_LV[s] || s) : "Visi statusi"}</option>)}
         </select>
         <button onClick={()=>setShowCreate(!showCreate)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">+ New</button>
       </div>
@@ -395,7 +403,7 @@ function DocumentsPage({ notify, user, route, navigate }) {
     </div>
     <DocumentTable docs={docs} sel={sel} onOpen={(d)=>navigate("/documents/"+encodeURIComponent(d.registration_number||d.id))} />
     <div className="mt-4 bg-white rounded-lg border">
-      {sel ? <DocumentDetail doc={sel} onAction={()=>{loadDetail(sel.id);load();}} notify={notify} /> : <div className="p-8 text-center text-gray-400 text-sm">Izvēlieties dokumentu sarakstā</div>}
+      {sel ? <DocumentDetail doc={sel} user={user} onAction={()=>{loadDetail(sel.id);load();}} notify={notify} /> : <div className="p-8 text-center text-gray-400 text-sm">Izvēlieties dokumentu sarakstā</div>}
     </div>
     </>}
   </div>);
@@ -1206,7 +1214,11 @@ function StandardPackagePanel({ doc, notify }) {
   );
 }
 
-function DocumentDetail({ doc, onAction, notify }) {
+// Everyday work happens in the Agent; the System shows where (concept "Sistēma un Aģents").
+const AGENT_URL = window.OPENDMS_AGENT_URL || "/agents/lietvediba/";
+
+function DocumentDetail({ doc, user, onAction, notify }) {
+  const isAdmin = ["superadmin", "admin"].includes(user?.role);
   const [sendDid, setSendDid] = useState("");
   const [assignId, setAssignId] = useState("");
   const [decision, setDecision] = useState("");
@@ -1308,7 +1320,7 @@ function DocumentDetail({ doc, onAction, notify }) {
           </div>
         )}
         {doc?.metadata?.uapf_result
-          ? <ProcessResultCard doc={doc} notify={notify} />
+          ? <ProcessResultCard doc={doc} notify={notify} isAdmin={isAdmin} />
           : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
         {doc?.metadata?.semantika && <SemanticDescriptionCard sem={doc.metadata.semantika} docId={doc.id} notify={notify} />}
         <ForwardingCard doc={doc} files={files} notify={notify} onAction={onAction} />
@@ -1428,8 +1440,13 @@ function DocumentDetail({ doc, onAction, notify }) {
         </div>
       )}
 
-      <div className="border-t pt-3 space-y-2">
-        <div className="text-xs font-medium text-gray-500">Actions</div>
+      {!isAdmin && (
+        <div className="border-t pt-3 text-xs text-gray-600">
+          Darbs ar šo dokumentu notiek <a className="text-sky-700 underline" href={AGENT_URL}>Lietvedības aģentā</a> (panelis „Mans darbs”).
+        </div>
+      )}
+      {isAdmin && <div className="border-t pt-3 space-y-2">
+        <div className="text-xs font-medium text-gray-500">Administratora darbības (ārpus procesa)</div>
         {doc.status === "registered" && (
           <div className="flex gap-2">
             <input value={sendDid} onChange={(e) => setSendDid(e.target.value)} placeholder="Recipient org DID" className="flex-1 text-xs px-2 py-1 border rounded" />
@@ -1451,7 +1468,7 @@ function DocumentDetail({ doc, onAction, notify }) {
         {["registered", "decided"].includes(doc.status) && (
           <button onClick={() => act("/archive", {})} className="text-xs px-3 py-1 bg-gray-500 text-white rounded">Archive</button>
         )}
-      </div>
+      </div>}
 
       <DocumentProcessPanel doc={doc} notify={notify} />
 
@@ -2615,7 +2632,7 @@ const REVIEW_STATUS = {
   noraidits: { label: "Noraidīts — manuāla virzība", cls: "bg-gray-200 text-gray-700" },
 };
 
-function ProcessResultCard({ doc, notify }) {
+function ProcessResultCard({ doc, notify, isAdmin }) {
   const result = doc.metadata.uapf_result || {};
   const [review, setReview] = useState(doc.metadata.uapf_review || null);
   const [comment, setComment] = useState("");
@@ -2717,6 +2734,11 @@ function ProcessResultCard({ doc, notify }) {
                 <button disabled={busy} onClick={sendFix} className="px-3 py-1.5 rounded bg-sky-600 text-white text-sm disabled:opacity-50">Saglabāt labojumu</button>
                 <button disabled={busy} onClick={() => setFix(null)} className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm">Atcelt</button>
               </div>
+            </div>
+          ) : review.status === "gaida" && (!isAdmin || (review.decisions || []).length) ? (
+            <div className="text-sm text-gray-700">
+              Gaida soli <b>{review.stepId}</b>{review.role ? <> ({review.role})</> : null}. To pabeidz{" "}
+              <a className="text-sky-700 underline" href={AGENT_URL}>Lietvedības aģentā</a> — panelī „Mans darbs”.
             </div>
           ) : review.status === "gaida" ? (
             <div className="space-y-2">

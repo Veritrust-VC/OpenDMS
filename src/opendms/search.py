@@ -106,13 +106,15 @@ async def search(q: str, *, mode: str = "teksts", limit: int = 30, status: Optio
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *params)
+    from opendms import vocab
+    labels = (await vocab.load())["statusi"]
     items = []
     for r in rows:
         j = lambda v: json.loads(v) if isinstance(v, str) else (v or {})
         sender, res, rev = j(r["sender"]), j(r["result"]), j(r["review"])
         items.append({
             "documentId": r["id"], "registrationNumber": r["registration_number"], "title": r["title"],
-            "status": r["status"], "statusLv": STATUS_LV.get(r["status"], r["status"]),
+            "status": r["status"], "statusLv": labels.get(r["status"], STATUS_LV.get(r["status"], r["status"])),
             "direction": "izejošais" if r["virziens"] == "izejosais" else "ienākošais",
             "date": r["created_at"].isoformat() if r["created_at"] else None,
             "sender": sender.get("name") or sender.get("organization") or sender.get("email"),

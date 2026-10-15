@@ -7,6 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from pydantic import BaseModel
 from opendms.database import get_pool
 from opendms.middleware.auth import get_current_user, require_role
+
+# Lifecycle actions by hand (send, assign, decide, archive) belong to the System:
+# everyday work moves documents through process steps in the Agent (concept
+# 'Sistēma un Aģents'), so only administrators may force a transition here.
+_SYSTEM_ADMIN = require_role("admin", "superadmin")
 from opendms.storage import get_storage, layout
 from opendms.config import get_settings
 from opendms import sdk_client
@@ -269,8 +274,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
             await _reg.require_case_for_new(conn, org_id, req.case_id)
         except _cases.CaseError as e:
             raise HTTPException(400, str(e))
-        count = await conn.fetchval("SELECT COUNT(*) FROM documents WHERE org_id = $1", org_id)
-        reg_num = f"{org_id}-{count + 1:05d}"
+        from opendms import vocab
+        reg_num = await vocab.next_number(conn, org_id, req.register_id)   # format from ProcessGit (numurs.json)
 
         await log_integration_event(
             trace_id=trace_id,
@@ -1143,7 +1148,7 @@ async def _transition(doc_id: int, event_type: str, new_status: str, user: dict,
 
 
 @router.post("/{doc_id}/send")
-async def send_document(doc_id: int, req: DocumentSend, user=Depends(get_current_user)):
+async def send_document(doc_id: int, req: DocumentSend, user=Depends(_SYSTEM_ADMIN)):
     return await _transition(doc_id, "DocumentSent", "sent", user,
         sdk_client.send_document, {"recipient_did": req.recipient_org_did, "method": req.delivery_method},
         {"recipient": req.recipient_org_did, "method": req.delivery_method}, action_name="opendms.doc.send")
@@ -1157,7 +1162,7 @@ async def receive_document(doc_id: int, req: DocumentReceive, user=Depends(get_c
 
 
 @router.post("/{doc_id}/assign")
-async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(get_current_user)):
+async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(_SYSTEM_ADMIN)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         assignee = await conn.fetchrow("SELECT id, full_name FROM users WHERE id = $1", req.user_id)
@@ -1168,14 +1173,14 @@ async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(get_cur
 
 
 @router.post("/{doc_id}/decide")
-async def decide_document(doc_id: int, req: DocumentDecide, user=Depends(get_current_user)):
+async def decide_document(doc_id: int, req: DocumentDecide, user=Depends(_SYSTEM_ADMIN)):
     return await _transition(doc_id, "DocumentDecided", "decided", user,
         sdk_client.decide_document, {"decision": req.decision, "resolution": req.resolution or ""},
         {"decision": req.decision, "resolution": req.resolution}, action_name="opendms.doc.decide")
 
 
 @router.post("/{doc_id}/archive")
-async def archive_document(doc_id: int, archive_reference: Optional[str] = None, user=Depends(get_current_user)):
+async def archive_document(doc_id: int, archive_reference: Optional[str] = None, user=Depends(_SYSTEM_ADMIN)):
     return await _transition(doc_id, "DocumentArchived", "archived", user,
         sdk_client.archive_document, {"ref": archive_reference or ""},
         {"archive_reference": archive_reference}, action_name="opendms.doc.archive")

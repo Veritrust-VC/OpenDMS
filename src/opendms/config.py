@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     mcp_agent_token: str = ""
     mcp_agent_user: str = ""
 
+    # Lietvedības vārdnīcas in ProcessGit ("processgit:<org>/<repo>"): status names
+    # (statusi.json) and the registration number format (numurs.json). See opendms.vocab.
+    lietvediba_vardnicas: str = ""
+
     # Branding
     brand_name: str = "Dokumentu vadības aģents"
     brand_logo_url: str = ""
