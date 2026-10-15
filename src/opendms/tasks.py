@@ -235,6 +235,9 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
     draft_text = (changes or {}).get("projektaTeksts")
     if draft_text is not None and review.get("editable") != "projekts":
         raise TaskError(400, "Šajā solī projektu labot nevar")
+    resolution = (changes or {}).get("rezolucija")
+    if resolution is not None and review.get("editable") != "rezolucija":
+        raise TaskError(400, "Šajā solī rezolūciju norādīt nevar")
 
     actor = user.get("email") or user.get("username") or str(user.get("id"))
     reviewer = on_behalf_of or actor
@@ -249,7 +252,13 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
             await outgoing.update_draft_text(int(doc_id), str(draft_text), {"email": reviewer})
         except ValueError as e:
             raise TaskError(400, str(e))
-    output = {"decision": decision, "comment": comment, "reviewer": reviewer, **changes}
+    extra: dict = {}
+    if resolution is not None:   # the manager's resolution: a permanent mark, and the next step's assignee and deadline
+        try:
+            extra = await record_resolution(int(doc_id), resolution, reviewer)
+        except ValueError as e:
+            raise TaskError(400, str(e))
+    output = {"decision": decision, "comment": comment, "reviewer": reviewer, **changes, **extra}
     s = get_settings()
     client = UapfClient(s.uapf_engine_url, s.uapf_engine_auth_token)
     try:
@@ -329,3 +338,39 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
 
     nxt = await get_task(int(doc_id))   # the process may already wait for the next person
     return {"sessionId": review["sessionId"], "state": state, "review": review, "nextTask": nxt}
+
+
+async def record_resolution(doc_id: int, r: dict, manager_email: Optional[str]) -> dict:
+    """Rezolūcija (MK 282): executor, deadline and text as a permanent mark on the document;
+    the executor becomes the document's assignee. Returns what the process carries on."""
+    from opendms.archive import marks as mk
+    from opendms.outgoing import person
+    if not isinstance(r, dict):
+        raise ValueError("Rezolūcija: gaidīts {izpilditajaId, termins?, teksts}")
+    text = str(r.get("teksts") or "").strip()
+    try:
+        uid = int(r.get("izpilditajaId"))
+    except (TypeError, ValueError):
+        raise ValueError("Rezolūcijā jānorāda izpildītājs")
+    if not text:
+        raise ValueError("Rezolūcijā jānorāda teksts (uzdevums)")
+    term = str(r.get("termins") or "").strip() or None
+    if term:
+        try:
+            date.fromisoformat(term)
+        except ValueError:
+            raise ValueError("Termiņš jānorāda kā datums (GGGG-MM-DD)")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        who = await conn.fetchrow("SELECT id, full_name, email FROM users WHERE id = $1 AND is_active", uid)
+    if not who:
+        raise ValueError("Izpildītājs nav atrasts DVS lietotāju vidū")
+    actor, note = await person(manager_email)
+    try:
+        await mk.add_resolution(doc_id, actor["id"], [{"atbildigie": [uid], "apraksts": text, "termins": term}], note)
+    except mk.MarkError as e:
+        raise ValueError(str(e))
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE documents SET assigned_to = $1, updated_at = NOW() WHERE id = $2", uid, doc_id)
+    return {"izpilditajs": who["full_name"] or who["email"], "izpilditajaId": uid,
+            "rezolucija": text, **({"termins": term} if term else {})}

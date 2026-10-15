@@ -560,6 +560,8 @@ PROCESS_RESULT_KEYS = (
     "templateId", "templateVersion", "missingElements",
     # outgoing documents (RS UC-007): approval route and status
     "saskanotajs", "parakstitajs", "statuss", "dokumentaVeids",
+    # manager's resolution (rezolūcija)
+    "izpilditajs", "izpilditajaId", "rezolucija",
     # human step
     "decision", "comment",
 )

@@ -245,3 +245,10 @@ def test_failed_continuation_takes_the_step_off_the_list(db):
         asyncio.run(tasks.complete(1, "apstiprinats", user={"id": 1, "email": "a@x.lv"}))
     assert e.value.status == 502
     assert json.loads(db["docs"][1]["metadata"])["uapf_review"]["status"] == "kluda"
+
+
+def test_resolution_only_where_the_step_asks_for_it(db):
+    with pytest.raises(tasks.TaskError) as e:
+        asyncio.run(tasks.complete(1, "apstiprinats", user={"id": 1, "email": "a@x.lv"},
+                                   changes={"rezolucija": {"izpilditajaId": 2, "teksts": "x"}}))
+    assert "rezolūciju" in e.value.message

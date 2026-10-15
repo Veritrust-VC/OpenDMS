@@ -138,7 +138,9 @@ TOOLS: list[dict[str, Any]] = [
             "document_id": {"type": "integer"},
             "decision": {"type": "string"},
             "comment": {"type": "string", "maxLength": 4000},
-            "changes": {"type": "object", "description": "labotsKods, labotaVieniba, labojumaIemesls"},
+            "changes": {"type": "object", "description": "labotsKods, labotaVieniba, labojumaIemesls (correction); "
+                        "projektaTeksts (the draft, where the step allows editing it); rezolucija {izpilditajaId, "
+                        "termins YYYY-MM-DD, teksts} (where the step asks for a resolution; people from people_and_categories)"},
             "person": {"type": "string", "description": "E-mail of the person who confirmed the decision."},
             "confirmed": {"type": "boolean", "description": "True only when the person confirmed this exact decision."},
         }, ["document_id", "decision", "person", "confirmed"]),
