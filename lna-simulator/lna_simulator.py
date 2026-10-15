@@ -180,7 +180,7 @@ def review_list(xml: str) -> dict:
 
 def review_plan(data: dict) -> dict:
     year = int(data.get("gads") or date.today().year)
-    when = date(year, 1, 1) + timedelta(days=150)
+    when = max(date(year, 1, 1) + timedelta(days=150), date.today() + timedelta(days=30))   # ne pagātnē
     return {"lemums": "Saskanots", "piezimes": [], "vienosanasDatums": date.today().isoformat(),
             "nodosanasLaiks": when.isoformat(), "apjoms": data.get("apjoms"),
             "pamatojums": f"Vienošanās par {year}. gada nodošanu (174. p.)"}
