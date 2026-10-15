@@ -48,3 +48,34 @@ def test_draft_takes_document_metadata():
 def test_outgoing_route_fields_are_recorded():
     for k in ("saskanotajs", "parakstitajs", "statuss"):
         assert k in handlers.PROCESS_RESULT_KEYS
+
+
+def test_classify_uses_draft_text_when_no_file(monkeypatch):
+    seen = {}
+
+    async def ref(_):
+        return {"klasifikators": {"versija": "t", "kodi": [{"kods": "02-02", "nosaukums": "Sūdzības", "izvelams": True,
+                 "joma": "KAD", "jomasNosaukums": "Klienti", "kategorija": "02-02", "kategorijasNosaukums": "Sūdzības",
+                 "cels": "Sūdzības"}]}, "vienibas": None, "avoti": {}}
+
+    async def none(*a, **k):
+        return None
+
+    async def nothing(*a, **k):
+        return []
+
+    async def model(system, user):
+        seen["user"] = user
+        return {"kods": "02-02", "parliecība": 0.9, "pamatojums": "x"}
+
+    import opendms.ai as ai
+    monkeypatch.setattr(learning, "reference_data", ref)
+    monkeypatch.setattr(learning, "_package_of", none)
+    monkeypatch.setattr(learning, "similar_precedents", nothing)
+    monkeypatch.setattr(learning, "_structured_choice", none)
+    monkeypatch.setattr(ai, "_complete_json", model)
+    async def org():
+        return "AS RS"
+    monkeypatch.setattr(org_context, "org_label", org)
+    out = run(learning.handle_ai_classify({"input": {"draftText": "Atbilde uz sūdzību par apkuri"}}))["output"]
+    assert out["kods"] == "02-02" and "Atbilde uz sūdzību" in seen["user"]

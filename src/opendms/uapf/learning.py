@@ -297,7 +297,9 @@ async def handle_ai_classify(ctx: dict) -> dict:
     from opendms.ai import _complete_json
 
     inp = ctx.get("input") or {}
-    text = (inp.get("redactedContent") or inp.get("content") or "")[:12000]
+    # An outgoing draft has no file yet: classify its drafted text and title instead.
+    text = (inp.get("redactedContent") or inp.get("content") or inp.get("draftText")
+            or inp.get("title") or "")[:12000]
     ref = await reference_data(ctx.get("schema_ref"))
     klas = ref["klasifikators"]
     if not klas:
