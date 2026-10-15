@@ -49,54 +49,81 @@ class SchemeError(Exception):
 _PERM = re.compile(r"^\s*(pastāvīg|pastavig|past\.|p\s*$)", re.I)
 _YEARS = re.compile(r"(\d{1,3})\s*(g\b|g\.|gad|gads|gadi|gadus|y)", re.I)
 _BARE = re.compile(r"^\s*(\d{1,3})\s*$")
+_IDX_OK = re.compile(r"[0-9A-Z]{1,4}([.\-/][0-9A-Z]{1,4}){0,5}")
+
+
+_DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})|(\d{4})-(\d{2})-(\d{2})")
 
 
 def parse_retention(text: Any) -> dict:
-    """'Pastāvīgi' | '10 g.' | '5 g. EK' | '75 g. AI' | 10 → {kind, years, marks, ok, warning}."""
-    raw = "" if text is None else str(text).strip()
+    """'Pastāvīgi' | '10 g.' | '5 g. EK' | '75 g. AI' | 10 | 'līdz 31.12.2039. EK' | datums →
+    {kind, years, until, trigger, marks, ok, warning}. kind: Gadi | Pastavigi | LidzDatumam."""
+    if isinstance(text, (datetime, date)):
+        text = (text.date() if isinstance(text, datetime) else text).isoformat()
+    raw = "" if text is None else str(text).replace("\xa0", " ").strip()
     marks = [m for m in ("EK", "AI") if re.search(rf"\b{m}\b", raw)]
-    out = {"kind": None, "years": None, "marks": marks, "text": raw or None, "ok": False, "warning": None}
+    out = {"kind": None, "years": None, "until": None, "trigger": None, "marks": marks, "text": raw or None,
+           "ok": False, "warning": None}
     if not raw:
         out["warning"] = "nav glabāšanas termiņa"
         return out
     if _PERM.search(raw):
         out.update(kind="Pastavigi", ok=True)
+        if "?" in raw:
+            out["warning"] = f"termiņš '{raw}' ar jautājuma zīmi — jāprecizē"
         return out
+    d = _DATE.search(raw)
+    if d and (d.start() < 6 or raw.lower().startswith("līdz")):   # datums ir termiņš, nevis piezīme teksta beigās
+        try:
+            until = date(int(d.group(3)), int(d.group(2)), int(d.group(1))) if d.group(1) else \
+                date(int(d.group(4)), int(d.group(5)), int(d.group(6)))
+            out.update(kind="LidzDatumam", until=until, ok=True)
+            if _YEARS.search(raw[d.end():]):
+                out["warning"] = f"termiņā '{raw}' ir gan datums, gan gadi — pieņemts datums"
+            return out
+        except ValueError:
+            pass
     m = _YEARS.search(raw) or _BARE.match(raw)
     if m:
         y = int(m.group(1))
         if y > 0:
             out.update(kind="Gadi", years=y, ok=True)
+            rest = raw.lower()
+            if re.search(r"\bpēc\b|\bno dienas\b|\bkopš\b", rest):
+                out["trigger"] = "NoNotikuma"          # piem. "5 gadi pēc projekta noslēguma pārskata apstiprināšanas"
+            if "/" in raw:
+                out["warning"] = f"termiņā '{raw}' ir vairākas vērtības — pieņemts {y} gadi"
             return out
-    out["warning"] = f"termiņu '{raw}' nevar nolasīt — norādiet gadus vai 'Pastāvīgi'"
+    out["warning"] = f"termiņu '{raw}' nevar nolasīt — norādiet gadus, datumu vai 'Pastāvīgi'"
     return out
 
 
 # ───────────────────────── tabulas imports ─────────────────────────
 
 COLUMNS = {
-    "idx": ("indekss", "lietas indekss", "index", "nr. p. k", "kods"),
+    "idx": ("lietas indekss", "indekss", "index", "nr. p. k", "kods"),
     "name": ("lietas nosaukums", "nosaukums", "lieta", "līmeņa nosaukums"),
     "retention": ("glabāšanas termiņš", "termiņš", "glabāšanas", "termins"),
     "legal_basis": ("pants", "pamatojums", "normatīv", "tiesiskais"),
     "responsible": ("atbildīg", "struktūrvienīb", "strukturvienib"),
-    "medium": ("nesējs", "informācijas vide", "vide", "nesejs"),
-    "system": ("informācijas sistēm", "sistēma", " is"),
+    "medium": ("nesēj", "informācijas vide", "vide", "nesej"),
+    "system": ("is, kurā", "informācijas sistēm", " is", "sistēma"),
     "restriction": ("ierobežojum", "pieejamīb"),
     "notes": ("piezīmes", "piezimes", "komentār"),
 }
 
 
 def detect_columns(header: list[Any]) -> dict[str, int]:
-    """Kolonnu nosaukumi → lauki. Atgriež {lauks: kolonnas indekss}."""
+    """Kolonnu nosaukumi → lauki. Atgriež {lauks: kolonnas indekss}. Atslēgvārdi pēc prioritātes:
+    'Lietas nosaukums' ir priekšā 'Klasifikācijas līmeņa nosaukums'; pirmā kolonna ar 'indekss' ir indekss."""
     found: dict[str, int] = {}
     cells = [str(h or "").strip().lower() for h in header]
     for field, keys in COLUMNS.items():
-        for i, c in enumerate(cells):
-            if i in found.values() or not c:
-                continue
-            if any(k in c for k in keys):
-                found[field] = i
+        for k in keys:
+            hit = next((i for i, c in enumerate(cells) if c and i not in found.values() and k in c
+                        and (field == "idx" or "indekss" not in c)), None)
+            if hit is not None:
+                found[field] = hit
                 break
     return found
 
@@ -109,15 +136,17 @@ def _norm_idx(v: Any) -> str:
 
 
 def _idx_parts(idx: str) -> list[str]:
-    return [p for p in re.split(r"[.\-]", idx) if p]
+    return [p for p in re.split(r"[.\-/]", idx) if p]
 
 
 def _medium(v: Any) -> Optional[str]:
     s = str(v or "").strip().lower()
     if not s:
         return None
-    if s in ("e", "elektronisks", "elektroniska", "el.") or s.startswith("elektron"):
+    if s in ("e", "el", "el.", "elektronisks", "elektroniska") or s.startswith("elektron"):
         return "E"
+    if s in ("hl", "h") or s.startswith("hibr"):
+        return "H"
     if s in ("p", "papīrs", "papīra") or s.startswith("papīr"):
         return "P"
     if s.startswith("hibr") or s == "h":
@@ -125,7 +154,7 @@ def _medium(v: Any) -> Optional[str]:
     return "C"
 
 
-def rows_to_entries(rows: list[list[Any]]) -> dict:
+def rows_to_entries(rows: list[list[Any]], origin: Optional[list[str]] = None) -> dict:
     """Izklājlapas rindas → shēmas ieraksti. Rinda ar termiņu ir lieta; bez termiņa — līmenis.
     Līmeņa dziļums no indeksa (1 | 1.2 | 1.2.3); lietas vecāks — garākais līmeņa indekss, kas ir tās prefikss."""
     header_row = None
@@ -138,32 +167,47 @@ def rows_to_entries(rows: list[list[Any]]) -> dict:
         raise SchemeError("Neatradu galveni ar ailēm 'Indekss' un 'Nosaukums' (pirmajās 20 rindās)")
     entries, warnings, seen = [], [], set()
     get = lambda r, f: (r[mapping[f]] if f in mapping and mapping[f] < len(r) else None)
+    txt = lambda v: (str(v).replace("\xa0", " ").strip() or None) if v is not None else None
+    raw_rows = []
     for n, r in enumerate(rows[header_row + 1:], start=header_row + 2):
-        idx, name = _norm_idx(get(r, "idx")), str(get(r, "name") or "").strip()
+        at = origin[n - header_row - 2] if origin else f"{n}. rinda"
+        idx, name = _norm_idx(txt(get(r, "idx")) or ""), txt(get(r, "name")) or ""
         if not idx and not name:
             continue
         if not idx or not name:
-            warnings.append(f"{n}. rinda: trūkst indeksa vai nosaukuma — izlaista")
+            warnings.append(f"{at}: trūkst indeksa vai nosaukuma — izlaista")
+            continue
+        if not _IDX_OK.fullmatch(idx):
+            warnings.append(f"{at}: indekss '{idx}' neatbilst formai (piem. 1.2, P-1-3) — izlaista")
             continue
         if idx in seen:
-            warnings.append(f"{n}. rinda: indekss {idx} atkārtojas — izlaista")
+            warnings.append(f"{at}: indekss {idx} atkārtojas — izlaista")
             continue
         seen.add(idx)
+        raw_rows.append((at, idx, name, r))
+    # ieraksts ar apakšierakstiem ir līmenis; bez tiem — lieta (arī ja termiņš vēl nav norādīts)
+    parents = {"-".join(_idx_parts(i)[:k]) for _, i, _, _ in raw_rows for k in range(1, len(_idx_parts(i)))}
+    norm = lambda i: "-".join(_idx_parts(i))
+    for at, idx, name, r in raw_rows:
         ret_raw = get(r, "retention")
-        is_case = ret_raw not in (None, "") and str(ret_raw).strip() != ""
-        e = {"row": n, "idx": idx, "name": name, "kind": "lieta" if is_case else "limenis",
-             "level": min(len(_idx_parts(idx)), 3), "notes": (str(get(r, "notes")).strip() if get(r, "notes") else None),
-             "responsible_unit": (str(get(r, "responsible")).strip() if get(r, "responsible") else None),
-             "medium": _medium(get(r, "medium")), "information_system": (str(get(r, "system")).strip() if get(r, "system") else None),
-             "retention_legal_basis": (str(get(r, "legal_basis")).strip() if get(r, "legal_basis") else None),
-             "access_basis": (str(get(r, "restriction")).strip() if get(r, "restriction") else None)}
+        has_ret = txt(ret_raw) is not None or isinstance(ret_raw, (date, datetime))
+        is_case = norm(idx) not in parents
+        e = {"row": at, "idx": idx, "name": name, "kind": "lieta" if is_case else "limenis",
+             "level": min(len(_idx_parts(idx)), 3), "notes": txt(get(r, "notes")),
+             "responsible_unit": txt(get(r, "responsible")),
+             "medium": _medium(txt(get(r, "medium"))), "information_system": txt(get(r, "system")),
+             "retention_legal_basis": txt(get(r, "legal_basis")),
+             "access_basis": txt(get(r, "restriction"))}
+        if not is_case and has_ret:
+            e["notes"] = "; ".join(x for x in (e["notes"], f"Termiņš līmenim: {txt(ret_raw) or ret_raw}") if x)
         if is_case:
             p = parse_retention(ret_raw)
-            e.update(retention_kind=p["kind"], retention_years=p["years"], retention_marks=p["marks"], retention_text=p["text"])
+            e.update(retention_kind=p["kind"], retention_years=p["years"], retention_until=p["until"],
+                     retention_marks=p["marks"], retention_text=p["text"])
             if p["warning"]:
-                warnings.append(f"{n}. rinda ({idx}): {p['warning']}")
+                warnings.append(f"{at} ({idx}): {p['warning']}")
             e["disposition"] = "NodotArhivam" if p["kind"] == "Pastavigi" else ("Parskatit" if "EK" in p["marks"] else "Iznicinat")
-            e["retention_trigger"] = "NoLietasSlegsanas"
+            e["retention_trigger"] = p["trigger"] or ("NoDokumentaDatuma" if p["kind"] == "LidzDatumam" else "NoLietasSlegsanas")
             if e["access_basis"]:
                 e["default_info_status"] = "IerobezotasPieejamibas"
         entries.append(e)
@@ -179,26 +223,69 @@ def rows_to_entries(rows: list[list[Any]]) -> dict:
                 break
         e["parent_idx"] = parent
         if e["kind"] == "lieta" and parent is None:
-            warnings.append(f"{e['row']}. rinda ({e['idx']}): lietai nav līmeņa — tiks ievietota saknē")
+            warnings.append(f"{e['row']} ({e['idx']}): lietai nav līmeņa — tiks ievietota saknē")
     n_cases = sum(1 for e in entries if e["kind"] == "lieta")
     return {"entries": entries, "warnings": warnings, "columns": {k: rows[header_row][v] for k, v in mapping.items()},
             "summary": {"limeni": len(entries) - n_cases, "lietas": n_cases,
                         "pastavigi": sum(1 for e in entries if e.get("retention_kind") == "Pastavigi"),
+                        "lidz_datumam": sum(1 for e in entries if e.get("retention_kind") == "LidzDatumam"),
                         "bez_termina": sum(1 for e in entries if e["kind"] == "lieta" and not e.get("retention_kind"))}}
 
 
 def read_table(filename: str, data: bytes) -> list[list[Any]]:
+    """Viena tabula. Izklājlapai ar vairākām lapām — sk. read_sheets()."""
+    sheets = read_sheets(filename, data)
+    return sheets[0][1] if sheets else []
+
+
+_DEFAULT_SHEET = re.compile(r"^(sheet|lapa|list|лист)\s*\d+$", re.I)
+
+
+def read_sheets(filename: str, data: bytes) -> list[tuple[str, list[list[Any]]]]:
+    """[(lapas nosaukums, rindas)]. CSV — viena lapa."""
     name = filename.lower()
     if name.endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-        ws = wb.worksheets[0]
-        return [list(r) for r in ws.iter_rows(values_only=True)]
+        return [(ws.title, [list(r) for r in ws.iter_rows(values_only=True)]) for ws in wb.worksheets]
     if name.endswith(".csv"):
         text = data.decode("utf-8-sig", errors="replace")
         dialect = csv.Sniffer().sniff(text[:4000], delimiters=";,\t")
-        return [row for row in csv.reader(io.StringIO(text), dialect)]
+        return [("csv", [row for row in csv.reader(io.StringIO(text), dialect)])]
     raise SchemeError("Atbalstītie formāti: .xlsx, .csv, .xml (ark:KlasifikacijasShema)")
+
+
+def sheets_to_entries(sheets: list[tuple[str, list[list[Any]]]]) -> dict:
+    """Visas lapas ar galveni (indekss + nosaukums) vienā shēmā. Lapas ar noklusējuma nosaukumu (Sheet1, Lapa1) un
+    bez galvenes (saīsinājumi) izlaiž ar brīdinājumu."""
+    rows, origin, used, warnings = [], [], [], []
+    header = None
+    for title, rs in sheets:
+        hdr_i = next((i for i, r in enumerate(rs[:20]) if {"idx", "name"} <= detect_columns(r).keys()), None)
+        if hdr_i is None:
+            warnings.append(f"Lapa '{title}': nav galvenes ar indeksu un nosaukumu — izlaista")
+            continue
+        if _DEFAULT_SHEET.match(title.strip()) and len(sheets) > 1:
+            warnings.append(f"Lapa '{title}': noklusējuma nosaukums (melnraksts?) — izlaista")
+            continue
+        cols = detect_columns(rs[hdr_i])
+        # normalizē uz kopēju kolonnu secību
+        order = list(COLUMNS)
+        if header is None:
+            header = [order_name for order_name in order]
+        for n, r in enumerate(rs[hdr_i + 1:], start=hdr_i + 2):
+            origin.append(f"'{title}' {n}. rinda")
+            rows.append([r[cols[f]] if f in cols and cols[f] < len(r) else None for f in order] + [title])
+        used.append(title)
+    if not used:
+        raise SchemeError("Nevienā lapā neatradu galveni ar ailēm 'Indekss' un 'Nosaukums'")
+    hdr_names = {"idx": "Indekss", "name": "Lietas nosaukums", "retention": "Glabāšanas termiņš", "legal_basis": "Pamatojums",
+                 "responsible": "Atbildīgā struktūrvienība", "medium": "Nesējs", "system": "Informācijas sistēma",
+                 "restriction": "Piekļuves ierobežojums", "notes": "Piezīmes"}
+    out = rows_to_entries([[hdr_names[f] for f in COLUMNS] + ["Lapa"]] + rows, origin)
+    out["warnings"] = warnings + out["warnings"]
+    out["lapas"] = used
+    return out
 
 
 # ───────────────────────── ark XML ─────────────────────────
@@ -236,6 +323,7 @@ def parse_ark_xml(data: bytes) -> dict:
                     "idx": t(child, "a:Indekss"), "name": t(child, "a:Nosaukums"), "kind": "lieta", "level": None,
                     "parent_idx": parent_idx, "retention_kind": g.get("veids"),
                     "retention_years": int(g.text) if (g.text or "").strip() else None,
+                    "retention_until": g.get("lidz"),
                     "retention_marks": (g.get("atzimes") or "").split(), "retention_legal_basis": g.get("tiesiskaisPamatojums"),
                     "retention_trigger": t(child, "a:GlabasanasTriggeris"), "disposition": t(child, "a:Riciba"),
                     "responsible_unit": t(child, "a:Atbildigais/a:Strukturvieniba"),
@@ -293,6 +381,8 @@ def to_ark_xml(scheme: dict, entries: list[dict], org: dict, settings: dict) -> 
         g = etree.SubElement(c, A("GlabasanasTermins"))
         g.set("veids", e["retention_kind"])
         g.text = str(e["retention_years"]) if e["retention_kind"] == "Gadi" and e.get("retention_years") else ""
+        if e["retention_kind"] == "LidzDatumam" and e.get("retention_until"):
+            g.set("lidz", e["retention_until"].isoformat() if hasattr(e["retention_until"], "isoformat") else str(e["retention_until"]))
         if e.get("retention_marks"):
             g.set("atzimes", " ".join(e["retention_marks"]))
         if e.get("retention_legal_basis"):
@@ -354,7 +444,7 @@ def to_ark_xml(scheme: dict, entries: list[dict], org: dict, settings: dict) -> 
 
 SETTINGS_FIELDS = ("archive_code", "archive_name", "fonds_number", "fonds_name", "registration_number",
                    "enforce_registration_minimum")
-ENTRY_FIELDS = ("kind", "level", "idx", "name", "retention_kind", "retention_years", "retention_marks", "retention_text",
+ENTRY_FIELDS = ("kind", "level", "idx", "name", "retention_kind", "retention_years", "retention_until", "retention_marks", "retention_text",
                 "retention_legal_basis", "retention_trigger", "disposition", "responsible_unit", "responsible_person",
                 "medium", "information_system", "default_info_status", "access_basis", "access_until", "long_running",
                 "continues_from_year", "notes")
@@ -474,8 +564,9 @@ async def replace_entries(org_id: int, scheme_id: int, parsed: dict, source: dic
                 vals = {f: e.get(f) for f in ENTRY_FIELDS}
                 vals["retention_marks"] = vals["retention_marks"] or []
                 vals["long_running"] = bool(vals["long_running"])
-                if isinstance(vals.get("access_until"), str):
-                    vals["access_until"] = date.fromisoformat(vals["access_until"])
+                for dk in ("access_until", "retention_until"):
+                    if isinstance(vals.get(dk), str):
+                        vals[dk] = date.fromisoformat(vals[dk])
                 if vals["kind"] == "lieta" and not vals["retention_kind"]:
                     # termiņš nav nolasāms — ieraksts paliek, bet lietā; apstiprināt neļaus (sk. set_status)
                     vals["retention_kind"], vals["retention_years"] = "Gadi", None
@@ -499,6 +590,8 @@ async def problems(org_id: int, scheme_id: int) -> dict:
     for e in cases:
         if e["retention_kind"] == "Gadi" and not e["retention_years"]:
             issues.append(f"{e['idx']}: nav glabāšanas termiņa gados")
+        if e["retention_kind"] == "LidzDatumam" and not e.get("retention_until"):
+            issues.append(f"{e['idx']}: termiņam līdz datumam nav datuma")
         if e["default_info_status"] in ("IerobezotasPieejamibas", "DienestaVajadzibam") and not e["access_basis"]:
             issues.append(f"{e['idx']}: ierobežotai informācijai nav tiesiskā pamatojuma")
     return {"lietas": len(cases), "limeni": len(entries) - len(cases), "problemas": issues}

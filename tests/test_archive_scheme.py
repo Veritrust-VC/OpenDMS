@@ -1,6 +1,6 @@
 """Klasifikācijas shēma: termiņu nolasīšana, izklājlapas imports, ark XML eksports/imports."""
 
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -107,3 +107,43 @@ def test_transitions_follow_p1():
     assert sch.TRANSITIONS["Projekts"] == {"IzskatitsEK"}
     assert "Apstiprinats" in sch.TRANSITIONS["SaskanotsLNA"] and "Apstiprinats" in sch.TRANSITIONS["NavJasaskano"]
     assert "Apstiprinats" not in sch.TRANSITIONS["IesniegtsLNA"]
+
+
+@pytest.mark.parametrize("text,kind,years,until,trigger", [
+    ("līdz 31.12.2039. EK", "LidzDatumam", None, date(2039, 12, 31), None),
+    ("31.12.2030.", "LidzDatumam", None, date(2030, 12, 31), None),
+    (datetime(2031, 12, 31), "LidzDatumam", None, date(2031, 12, 31), None),
+    ("5 gadi pēc projekta noslēguma pārskata apstiprināšanas", "Gadi", 5, None, "NoNotikuma"),
+    ("10 gadi EK pēc līguma termiņa beigām", "Gadi", 10, None, "NoNotikuma"),
+    ("5gadi", "Gadi", 5, None, None),
+    ("Pastāvīgi?", "Pastavigi", None, None, None),
+])
+def test_parse_retention_varam(text, kind, years, until, trigger):
+    r = sch.parse_retention(text)
+    assert r["ok"] and r["kind"] == kind and r["years"] == years and r["until"] == until and r["trigger"] == trigger
+
+
+def test_sheets_varam_layout():
+    hdr = [" Klasifikācijas shēmas līmeņa un lietas indekss", "Klasifikācijas indekss citas-centralizētu pakalpojumu sistēmas",
+           "Klasifikācijas līmeņa nosaukums", "Lietas nosaukums", "Glabāšanas termiņš", "Atbildīgā struktūrvienība",
+           "Informācijas nesēja forma (HL-hibrīdlieta, El-elektroniska)", "IS, kurā atrodas elektroniskie dokumenti", "Piezīmes/apraksts"]
+    p = [[None, None, None, "2027. gada dokumentu klasifikācijas shēma"], hdr,
+         ["P", None, "Pārvaldība", "Iestādes pārvaldība", None],
+         ["P-1", None, "Iestādes vadība", "Iestādes vadība", "\xa0"],
+         ["P-1-1", None, "Iestādes vadība", "Nolikums", "Pastāvīgi", "VARAM", "El", "DVS Namejs"],
+         ["P-1-2", None, "Iestādes vadība", "Projekta lieta", None, "VARAM", "HL"],
+         ["P-5-3-2 P-5-3-3", None, "x", "Nederīgs", "5 gadi"]]
+    i = [hdr[:1] + hdr[2:], ["I1", "Investīciju programmu vadība", "Investīciju programmu vadība"],
+         ["I1-1", "Investīciju programmu vadība", "Tiesiskais regulējums", "Pastāvīgi"],
+         ["I1-1-1", "Investīciju programmu vadība", "Metodikas", "līdz 31.12.2039. EK", "IPD", "El"]]
+    r = sch.sheets_to_entries([("P Pārvalde", p), ("I1 Investīciju", i), ("Sheet1", [hdr]), ("Saīsinājumi", [["N.p.k.", "Saīsinājums"]])])
+    by = {e["idx"]: e for e in r["entries"]}
+    assert set(by) == {"P", "P-1", "P-1-1", "P-1-2", "I1", "I1-1", "I1-1-1"}
+    assert by["P-1-1"]["kind"] == "lieta" and by["P-1-1"]["medium"] == "E" and by["P-1-1"]["name"] == "Nolikums"
+    assert by["P-1-1"]["information_system"] == "DVS Namejs" and by["P-1-1"]["parent_idx"] == "P-1"
+    assert by["P-1-2"]["kind"] == "lieta" and by["P-1-2"]["retention_kind"] is None and by["P-1-2"]["medium"] == "H"
+    assert by["I1-1"]["kind"] == "limenis" and "Termiņš līmenim" in by["I1-1"]["notes"]
+    assert by["I1-1-1"]["retention_kind"] == "LidzDatumam" and by["I1-1-1"]["retention_until"] == date(2039, 12, 31)
+    w = " ".join(r["warnings"])
+    assert "Sheet1" in w and "Saīsinājumi" in w and "P-5-3-2 P-5-3-3" in w and "P-1-2" in w
+    assert r["lapas"] == ["P Pārvalde", "I1 Investīciju"]

@@ -116,7 +116,8 @@ function leafValue(el) {
   const name = el.localName;
   const raw = el.textContent.trim();
   if (name === "IzmersBaitos" && /^\d+$/.test(raw)) return fmtSize(+raw);
-  if (name === "GlabasanasTermins") return el.getAttribute("veids") === "Pastavigi" ? "Pastāvīgi" : `${raw} gadi`;
+  if (name === "GlabasanasTermins") return el.getAttribute("veids") === "Pastavigi" ? "Pastāvīgi"
+    : el.getAttribute("veids") === "LidzDatumam" ? `līdz ${fmtDate(el.getAttribute("lidz") || "")}` : `${raw} gadi`;
   if (name === "Kontrolsumma") return <Mono>{(el.getAttribute("algoritms") || "") + " " + raw}</Mono>;
   if (isDate(raw) || isDateTime(raw)) return fmtDate(raw);
   if (/^(LV-[A-Z]+:|did:|urn:|fmt\/)/.test(raw) || /ID$|DID$/.test(name)) return <Mono>{raw}</Mono>;

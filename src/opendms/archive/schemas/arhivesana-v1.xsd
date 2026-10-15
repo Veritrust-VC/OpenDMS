@@ -89,9 +89,11 @@
       <xs:extension base="ark:GaduSkaitsVaiTukss">
         <xs:attribute name="veids" use="required">
           <xs:simpleType><xs:restriction base="xs:string">
-            <xs:enumeration value="Gadi"/><xs:enumeration value="Pastavigi"/>
+            <xs:enumeration value="Gadi"/><xs:enumeration value="Pastavigi"/><xs:enumeration value="LidzDatumam"/>
           </xs:restriction></xs:simpleType>
         </xs:attribute>
+        <!-- veids="LidzDatumam": glabā līdz noteiktam datumam (piem. ES fondu projekti "līdz 31.12.2039."); teksts tukšs -->
+        <xs:attribute name="lidz" type="xs:date" use="optional"/>
         <xs:attribute name="atzimes" use="optional">
           <xs:simpleType><xs:list>
             <xs:simpleType><xs:restriction base="xs:string">

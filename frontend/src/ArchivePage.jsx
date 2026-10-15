@@ -22,6 +22,7 @@ function Pill({ s }) {
   return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[s] || "bg-gray-100"}`}>{STATUS_LV[s] || s}</span>;
 }
 const termins = (e) => e.retention_kind === "Pastavigi" ? "Pastāvīgi"
+  : e.retention_kind === "LidzDatumam" ? `līdz ${e.retention_until ? new Date(e.retention_until).toLocaleDateString("lv-LV") : "?"}` + (e.retention_marks?.length ? " " + e.retention_marks.join(" ") : "")
   : (e.retention_years ? `${e.retention_years} g.` : "—") + (e.retention_marks?.length ? " " + e.retention_marks.join(" ") : "");
 const field = "w-full text-sm px-3 py-2 border rounded";
 
@@ -148,13 +149,15 @@ function ImportBox({ api, notify, scheme, onDone }) {
   return (
     <div className="bg-white border rounded-lg p-3 space-y-2">
       <div className="text-sm font-semibold">Importēt no datnes</div>
-      <p className="text-xs text-gray-500">.xlsx vai .csv ar ailēm "Indekss", "Lietas nosaukums", "Glabāšanas termiņš" (neobligāti: pants, atbildīgā
-        struktūrvienība, informācijas vide, piezīmes) vai .xml (ark:KlasifikacijasShema). Rindas bez termiņa ir līmeņi. Imports aizstāj šīs shēmas ierakstus.</p>
+      <p className="text-xs text-gray-500">.xlsx (visas lapas ar galveni) vai .csv ar ailēm "Indekss", "Lietas nosaukums", "Glabāšanas termiņš" (neobligāti: pants, atbildīgā
+        struktūrvienība, informācijas vide, piezīmes) vai .xml (ark:KlasifikacijasShema). Ieraksts, kam ir apakšieraksti, ir līmenis; pārējie — lietas. Imports aizstāj šīs shēmas ierakstus.</p>
       <input type="file" accept=".xlsx,.csv,.xml" onChange={(e) => { setFile(e.target.files[0]); setPrev(null); }} className="text-sm" />
       {file && !prev && <button onClick={() => send(true)} className="text-sm px-3 py-1.5 bg-sky-600 text-white rounded">Priekšskatīt</button>}
       {prev && <div className="space-y-2">
         <div className="text-sm">Līmeņi: <b>{prev.kopsavilkums.limeni}</b> · lietas: <b>{prev.kopsavilkums.lietas}</b> · pastāvīgi: <b>{prev.kopsavilkums.pastavigi}</b>
+          {prev.kopsavilkums.lidz_datumam > 0 && <> · līdz datumam: <b>{prev.kopsavilkums.lidz_datumam}</b></>}
           {prev.kopsavilkums.bez_termina > 0 && <> · <span className="text-red-600">bez nolasāma termiņa: {prev.kopsavilkums.bez_termina}</span></>}</div>
+        {prev.lapas && <div className="text-xs text-gray-500">Lapas: {prev.lapas.join(", ")}</div>}
         {prev.ailes && <div className="text-xs text-gray-500">Atpazītās ailes: {Object.entries(prev.ailes).map(([k, v]) => `${k}="${v}"`).join(", ")}</div>}
         {prev.bridinajumi.length > 0 && <ul className="text-xs text-amber-800 bg-amber-50 rounded p-2 max-h-32 overflow-auto list-disc pl-5">
           {prev.bridinajumi.map((w, i) => <li key={i}>{w}</li>)}</ul>}
@@ -172,6 +175,7 @@ function EntryEditor({ api, notify, scheme, e, onSaved, onClose }) {
   const save = async () => {
     try {
       const body = { name: f.name, retention_kind: f.retention_kind, retention_years: f.retention_kind === "Gadi" ? Number(f.retention_years) || null : null,
+        retention_until: f.retention_kind === "LidzDatumam" ? (f.retention_until || "").slice(0, 10) || null : null,
         retention_marks: f.retention_marks.split(/\s+/).filter(Boolean), retention_legal_basis: f.retention_legal_basis || null,
         disposition: f.disposition, responsible_unit: f.responsible_unit || null, medium: f.medium || null,
         default_info_status: f.default_info_status || null, access_basis: f.access_basis || null, long_running: !!f.long_running, notes: f.notes || null };
@@ -183,8 +187,10 @@ function EntryEditor({ api, notify, scheme, e, onSaved, onClose }) {
     <tr><td colSpan={6} className="bg-sky-50 p-3">
       <div className="grid grid-cols-3 gap-2 text-sm">
         <input value={f.name} onChange={set("name")} className={field + " col-span-3"} />
-        <select value={f.retention_kind} onChange={set("retention_kind")} className={field}><option value="Gadi">Gadi</option><option value="Pastavigi">Pastāvīgi</option></select>
-        <input value={f.retention_years || ""} onChange={set("retention_years")} placeholder="gadi" disabled={f.retention_kind !== "Gadi"} className={field} />
+        <select value={f.retention_kind} onChange={set("retention_kind")} className={field}><option value="Gadi">Gadi</option><option value="Pastavigi">Pastāvīgi</option><option value="LidzDatumam">Līdz datumam</option></select>
+        {f.retention_kind === "LidzDatumam"
+          ? <input type="date" value={(f.retention_until || "").slice(0, 10)} onChange={set("retention_until")} className={field} />
+          : <input value={f.retention_years || ""} onChange={set("retention_years")} placeholder="gadi" disabled={f.retention_kind !== "Gadi"} className={field} />}
         <input value={f.retention_marks} onChange={set("retention_marks")} placeholder="EK AI" className={field} />
         <select value={f.disposition || ""} onChange={set("disposition")} className={field}>
           {Object.entries(RICIBA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>

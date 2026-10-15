@@ -135,13 +135,13 @@ async def import_scheme(scheme_id: int, file: UploadFile = File(...), izmeginaju
         raise HTTPException(413, "Datne lielāka par 10 MB")
     name = file.filename or "datne"
     try:
-        parsed = sch.parse_ark_xml(data) if name.lower().endswith(".xml") else sch.rows_to_entries(sch.read_table(name, data))
+        parsed = sch.parse_ark_xml(data) if name.lower().endswith(".xml") else sch.sheets_to_entries(sch.read_sheets(name, data))
     except sch.SchemeError as e:
         _err(e)
     except Exception as e:
         raise HTTPException(400, f"Datni nevar nolasīt: {type(e).__name__}: {e}")
     preview = {"datne": name, "kopsavilkums": parsed["summary"], "bridinajumi": parsed["warnings"],
-               "ailes": parsed.get("columns"), "ieraksti": parsed["entries"][:400]}
+               "ailes": parsed.get("columns"), "ieraksti": parsed["entries"][:1500], "lapas": parsed.get("lapas")}
     if izmeginajums:
         return {"izmeginajums": True, **preview}
     try:
@@ -197,6 +197,7 @@ class EntryIn(BaseModel):
     name: Optional[str] = None
     retention_kind: Optional[str] = None
     retention_years: Optional[int] = None
+    retention_until: Optional[date] = None
     retention_marks: Optional[list[str]] = None
     retention_legal_basis: Optional[str] = None
     retention_trigger: Optional[str] = None

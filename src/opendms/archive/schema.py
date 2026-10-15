@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS scheme_entries (
 );
 CREATE INDEX IF NOT EXISTS idx_sentries_scheme ON scheme_entries(scheme_id, sort_order);
 
+-- Termiņš līdz datumam (piem. ES fondu projekti "līdz 31.12.2039.") — standarts 0.1.2
+ALTER TABLE scheme_entries ADD COLUMN IF NOT EXISTS retention_until DATE;
+ALTER TABLE scheme_entries DROP CONSTRAINT IF EXISTS scheme_entries_retention_kind_check;
+DO $$ BEGIN
+  ALTER TABLE scheme_entries ADD CONSTRAINT scheme_entries_retention_kind_chk CHECK (retention_kind IN ('Gadi','Pastavigi','LidzDatumam'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+ALTER TABLE scheme_entries DROP CONSTRAINT IF EXISTS scheme_entries_level_check;
+DO $$ BEGIN
+  ALTER TABLE scheme_entries ADD CONSTRAINT scheme_entries_level_chk CHECK (level BETWEEN 1 AND 5);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- Lieta (standarts 03; MK 282 20.–26., 47. p.) — paplašina esošo standard_cases (LV-LIETA ID paliek)
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS scheme_entry_id BIGINT REFERENCES scheme_entries(id) ON DELETE SET NULL;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Atverta';
@@ -79,6 +90,7 @@ ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS retention_years INTEGER;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS retention_trigger TEXT;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS disposition TEXT;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS retention_end DATE;
+ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS retention_until DATE;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS long_running BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE standard_cases ADD COLUMN IF NOT EXISTS document_count INTEGER;

@@ -37,8 +37,11 @@ def _hist(action: str, who: str, **extra) -> str:
 
 
 def retention_end(kind: Optional[str], years: Optional[int], trigger: Optional[str],
-                  closed: date, date_to: Optional[date], case_year: Optional[int] = None) -> Optional[date]:
-    """Glabāšanas termiņa beigas (standarts 06, 6.1.). Pastāvīgi → None."""
+                  closed: date, date_to: Optional[date], case_year: Optional[int] = None,
+                  until: Optional[date] = None) -> Optional[date]:
+    """Glabāšanas termiņa beigas (standarts 06, 6.1.). Pastāvīgi → None; LidzDatumam → norādītais datums."""
+    if kind == "LidzDatumam":
+        return until
     if kind == "Pastavigi" or not years:
         return None
     if trigger == "NoDokumentaDatuma" and date_to:
@@ -174,21 +177,22 @@ async def open_case(org: dict, entry_id: int, year: int, who: str) -> dict:
             raise CaseError(f"Gads {year} nav shēmas periodā")
         row = await conn.fetchrow("SELECT * FROM standard_cases WHERE org_id = $1 AND case_index = $2 AND case_year = $3",
                                   org["id"], e["idx"], year)
-        vals = (entry_id, e["retention_kind"], e["retention_years"], e["retention_trigger"], e["disposition"], e["long_running"])
+        vals = (entry_id, e["retention_kind"], e["retention_years"], e["retention_trigger"], e["disposition"], e["long_running"],
+                e["retention_until"])
         if row:
             if row["status"] != "Atverta":
                 raise CaseError("Šī lieta jau ir slēgta")
             await conn.execute(
                 """UPDATE standard_cases SET scheme_entry_id = $2, retention_kind = $3, retention_years = $4,
-                          retention_trigger = $5, disposition = $6, long_running = $7, case_name = $8,
-                          history = history || $9::jsonb WHERE id = $1""",
+                          retention_trigger = $5, disposition = $6, long_running = $7, retention_until = $8, case_name = $9,
+                          history = history || $10::jsonb WHERE id = $1""",
                 row["id"], *vals, e["name"], _hist("SasaistitaArShemu", who, shema=entry_id))
             pk = row["id"]
         else:
             pk = await conn.fetchval(
                 """INSERT INTO standard_cases (org_id, case_index, case_year, case_id, case_name, scheme_entry_id,
-                          retention_kind, retention_years, retention_trigger, disposition, long_running, opened_at, history)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12) RETURNING id""",
+                          retention_kind, retention_years, retention_trigger, disposition, long_running, retention_until, opened_at, history)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13) RETURNING id""",
                 org["id"], e["idx"], year, make_id(PREFIX_CASE, org["std_code"], datetime.now(timezone.utc)), e["name"],
                 *vals, _hist("Atverta", who))
     return await get_case(org["id"], pk)
@@ -279,7 +283,8 @@ async def close_case(org: dict, settings: dict, case_pk: int, who: str, storage)
     today = datetime.now(timezone.utc)
     dates = [doc_date(d) for d in docs]
     dfrom, dto = (min(dates), max(dates)) if dates else (None, None)
-    end = retention_end(c["retention_kind"], c["retention_years"], c["retention_trigger"], today.date(), dto, c["case_year"])
+    end = retention_end(c["retention_kind"], c["retention_years"], c["retention_trigger"], today.date(), dto, c["case_year"],
+                        c.get("retention_until"))
     n_files = sum(len(v) for v in files.values())
     async with pool.acquire() as conn:
         async with conn.transaction():

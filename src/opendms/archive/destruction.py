@@ -189,7 +189,9 @@ def act_xml(org: dict, settings: dict, act: dict, evaluators: list[dict]) -> byt
         etree.SubElement(r, A("Apjoms"), mervieniba="dokumenti").text = str(c["dokumenti"])
         etree.SubElement(r, A("Apjoms"), mervieniba="datnes").text = str(c["datnes"])
         gt = etree.SubElement(r, A("GlabasanasTermins"), veids=c.get("retention_kind") or "Gadi")
-        gt.text = str(c["retention_years"]) if c.get("retention_kind") != "Pastavigi" and c.get("retention_years") else ""
+        gt.text = str(c["retention_years"]) if c.get("retention_kind") == "Gadi" and c.get("retention_years") else ""
+        if c.get("retention_kind") == "LidzDatumam" and c.get("retention_until"):
+            gt.set("lidz", c["retention_until"].isoformat())
         if c.get("retention_legal_basis"):
             etree.SubElement(r, A("Pamatojums")).text = c["retention_legal_basis"]
         etree.SubElement(r, A("LietasID")).text = c["case_id"]
