@@ -226,3 +226,22 @@ def test_outgoing_capabilities_registered():
     from opendms.outgoing import VISA_OF
     from opendms.archive.marks import VISA_RESULTS
     assert set(VISA_OF.values()) <= set(VISA_RESULTS)
+
+
+def test_failed_continuation_takes_the_step_off_the_list(db):
+    import opendms.uapf.client as uc
+
+    class Client:
+        def __init__(self, *a):
+            pass
+
+        async def resume_session(self, sid, output):
+            raise RuntimeError("UAPF engine returned 400: capability failed")
+
+        async def get_session(self, sid):
+            return {"state": "failed"}
+    uc.UapfClient = Client
+    with pytest.raises(tasks.TaskError) as e:
+        asyncio.run(tasks.complete(1, "apstiprinats", user={"id": 1, "email": "a@x.lv"}))
+    assert e.value.status == 502
+    assert json.loads(db["docs"][1]["metadata"])["uapf_review"]["status"] == "kluda"

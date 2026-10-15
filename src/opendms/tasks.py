@@ -255,7 +255,29 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
     try:
         result = await client.resume_session(review["sessionId"], output)
     except Exception as e:
-        raise TaskError(502, f"Engine resume failed: {e}")
+        # If the process broke while continuing (a later step failed), the step can no
+        # longer be completed: take it off the work list and say why, instead of
+        # leaving a task whose buttons can only fail.
+        try:
+            st = (await client.get_session(review["sessionId"])).get("state")
+        except Exception:
+            st = None
+        if st and st != "suspended":
+            review.update({"status": "kluda", "error": str(e)[:500], "decidedBy": reviewer,
+                           "decidedAt": datetime.now(timezone.utc).isoformat(), "decision": decision})
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """UPDATE documents SET metadata = metadata || $1::jsonb
+                        WHERE id = $2 AND metadata->'uapf_review'->>'requestedAt' IS NOT DISTINCT FROM $3""",
+                    json.dumps({"uapf_review": review}), int(doc_id), review.get("requestedAt"))
+                await conn.execute(
+                    "UPDATE uapf_sessions SET state = 'failed', error_message = $2, completed_at = NOW() WHERE session_id = $1",
+                    review["sessionId"], str(e)[:2000])
+                await conn.execute(
+                    """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+                       VALUES ($1, 'uapf.review.failed', $2, FALSE, $3)""",
+                    int(doc_id), user.get("id"), json.dumps(review))
+        raise TaskError(502, f"Process could not continue: {e}")
 
     review.update({"status": decision, "decidedBy": reviewer, "comment": comment,
                    "decidedAt": datetime.now(timezone.utc).isoformat(), "via": via})

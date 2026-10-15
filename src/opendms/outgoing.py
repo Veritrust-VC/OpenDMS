@@ -35,17 +35,26 @@ def _j(v) -> dict:
 
 
 async def person(email: Optional[str]) -> tuple[dict, Optional[str]]:
-    """(DVS user, note): the DVS account of this e-mail, else the system account
-    and a note naming the person."""
+    """(DVS user, note): the DVS account of this e-mail, else the Lietvedības aģents'
+    account (it recorded the decision) and a note naming the person. Marks need an
+    active account, so the intake system account (inactive) is the last resort."""
+    from opendms.config import get_settings
     from opendms.intake.service import system_user
-    if email:
-        pool = await get_pool()
-        async with pool.acquire() as conn:
+    pool = await get_pool()
+    note = f"Lēmumu pieņēma {email} (Aģents)" if email else None
+    async with pool.acquire() as conn:
+        if email:
             u = await conn.fetchrow(
                 "SELECT id, email, role, full_name FROM users WHERE lower(email) = lower($1) AND is_active", email)
-        if u:
-            return dict(u), None
-    return await system_user(), (f"Lēmumu pieņēma {email} (Aģents)" if email else None)
+            if u:
+                return dict(u), None
+        agent = (getattr(get_settings(), "mcp_agent_user", "") or "").strip()
+        if agent:
+            u = await conn.fetchrow(
+                "SELECT id, email, role, full_name FROM users WHERE lower(email) = lower($1) AND is_active", agent)
+            if u:
+                return dict(u), note
+    return await system_user(), note
 
 
 async def _write_file(conn, doc_id: int, doc_uid: Optional[str], text: str, actor_id: int) -> None:
