@@ -108,7 +108,7 @@ def step_names(package_id: Optional[str]) -> dict[str, str]:
 
 
 _TASKS_SQL = """
-SELECT d.id, d.registration_number, d.title, d.status, d.metadata, d.created_at,
+SELECT d.id, d.registration_number, d.title, d.status, d.metadata, d.created_at, d.content_summary,
        s.package_id, s.process_id, s.state AS session_state,
        cc.due_at AS classification_due
   FROM documents d
@@ -153,6 +153,10 @@ def _shape(r, now: datetime) -> dict:
         "deadline": due.isoformat() if due else None,
         "overdue": bool(due and due < now),
         "sessionState": r["session_state"],
+        "summary": r["content_summary"],
+        # the reply draft the step asks the person to review (atbildes projekts)
+        "draft": ({k: (meta.get("uapf_draft") or {}).get(k) for k in ("text", "missingElements", "templateId")}
+                  if (meta.get("uapf_draft") or {}).get("text") else None),
     }
 
 

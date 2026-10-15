@@ -57,7 +57,7 @@ class FakeConn:
 
     def _row(self, d):
         return {"id": d["id"], "registration_number": d["reg"], "title": d["title"], "status": "registered",
-                "metadata": d["metadata"], "created_at": None, "package_id": "lv.x.pkg",
+                "metadata": d["metadata"], "created_at": None, "content_summary": "Kopsavilkums", "package_id": "lv.x.pkg",
                 "process_id": "p", "session_state": "suspended", "classification_due": None}
 
 
