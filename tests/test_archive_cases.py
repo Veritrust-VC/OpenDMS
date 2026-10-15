@@ -20,12 +20,12 @@ DOC_UID = "LV-DOK:05-0000:2026:01928f3e-7b6a-7c3d-8e4f-0123456789ab"
     ("Gadi", 3, None, date(2026, 6, 1), None, date(2030, 1, 1)),
     ("Pastavigi", None, None, date(2026, 6, 1), None, None),
 ])
-def test_retention_end_early_close():
-    assert cs.retention_end("Gadi", 10, "NoLietasSlegsanas", date(2026, 10, 15), None, 2099) == date(2110, 1, 1)
-
-
 def test_retention_end(kind, years, trigger, closed, date_to, expected):
     assert cs.retention_end(kind, years, trigger, closed, date_to) == expected
+
+
+def test_retention_end_early_close():
+    assert cs.retention_end("Gadi", 10, "NoLietasSlegsanas", date(2026, 10, 15), None, 2099) == date(2110, 1, 1)
 
 
 def _doc(i, **kw):
