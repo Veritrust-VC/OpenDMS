@@ -44,6 +44,8 @@ def create_app() -> FastAPI:
         await _archive_schema()
         from opendms.archive.engine import ensure_schema as _archive_engine_schema
         await _archive_engine_schema()
+        from opendms.archive.destruction import ensure_schema as _archive_destruction_schema
+        await _archive_destruction_schema()
         import asyncio as _asyncio
         from opendms.intake.email_channel import run_forever as _intake_loop
         intake_task = _asyncio.create_task(_intake_loop())

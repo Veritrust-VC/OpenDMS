@@ -18,6 +18,7 @@ Layout (one container per system):
     arhivs/klasifikacijas-shemas/<id>.json ← lietu klasifikācijas shēmas ar ierakstiem
     arhivs/iestatijumi/<org>.json        ← arhīva kods, fonds, P2 slēdzis
     arhivs/lietu-registri/<id>.xml       ← slēgtas lietas dokumentu reģistrs (SHA-256 lietā)
+    arhivs/iznicinasanas-akti/<id>.json|.xml ← iznīcināšanas akti (ark:IznicinasanasAkts)
     arhivs/partijas/<id>.json            ← archive batches with their documents
     vesture/integracijas/<YYYY-MM>.json  ← integration audit log
     indekss.json                         ← manifest: documents, objects, sha256
@@ -66,7 +67,7 @@ SHARED_COUNTS = ["intake_items", "uapf_precedents", "standard_cases", "case_volu
 
 # Everything rebuild.py restores, in an order that satisfies foreign keys.
 KNOWLEDGE_TABLES = ["archive_settings", "classification_schemes", "scheme_entries", "standard_cases", "case_volumes",
-                    "documents", "uapf_sessions", "document_files", "document_events",
+                    "destruction_acts", "documents", "uapf_sessions", "document_files", "document_events",
                     "complaint_classifications", "ai_processing_log", "agent_runs", "agent_steps",
                     "agent_messages", "archive_batches", "archive_batch_documents", "intake_items",
                     "uapf_precedents", "integration_audit_log"]
@@ -129,6 +130,7 @@ KINDS = {  # kind → (table, key prefix)
     "lieta": ("standard_cases", "lietas"),
     "arhivs": ("archive_batches", "arhivs/partijas"),
     "shema": ("classification_schemes", "arhivs/klasifikacijas-shemas"),
+    "akts": ("destruction_acts", "arhivs/iznicinasanas-akti"),
 }
 
 

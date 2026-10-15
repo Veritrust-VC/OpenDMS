@@ -633,9 +633,122 @@ async def case_sessions(case_pk: int, user=Depends(get_current_user)):
     return await eng.case_sessions(case_pk)
 
 
+class ResumeIn(BaseModel):
+    output: dict = {}
+
+
+RESUME_RULES = {   # lietotāja uzdevums → atļautās vērtības
+    "EKDecision": {"ekLemums": {"Iznicinat", "Pagarinat", "NodotArhivam"}},
+    "AwaitLNA": {"lnaLemums": {"Saskanots", "Noraidits"}},
+}
+
+
 @router.post("/sessions/{sid}/resume")
-async def resume_session(sid: str, user=Depends(ADMIN)):
+async def resume_session(sid: str, body: ResumeIn = ResumeIn(), user=Depends(ADMIN)):
+    """Turpināt procesu pēc lietotāja uzdevuma. Uzdevuma rezultātu DVS pārbauda un ieraksta (EK protokols, LNA lēmums,
+    vadītāja apstiprinājums) pirms tas nonāk procesā."""
+    from datetime import datetime, timezone
+    from opendms.archive import destruction as ds
+    from opendms.database import get_pool
+    org = await _org()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM uapf_sessions WHERE session_id = $1", sid)
+        act_id = await conn.fetchval("SELECT id FROM destruction_acts WHERE session_id = $1 AND org_id = $2", sid, org["id"])
+    if not row:
+        raise HTTPException(404, "Sesija nav atrasta")
+    step = row["waiting_for"]
+    out = {k: v for k, v in (body.output or {}).items() if k in
+           ("ekLemums", "ekAkcepts", "ekProtokolaNr", "ekDatums", "lnaLemums", "lnaAtsauce", "apstiprinu", "piezimes")}
+    for k, allowed in (RESUME_RULES.get(step) or {}).items():
+        if out.get(k) not in allowed:
+            raise HTTPException(400, f"{step}: {k} jābūt vienam no {', '.join(sorted(allowed))}")
+    who = user.get("email")
     try:
-        return await eng.resume(sid, {"turpinaja": user.get("email")})
+        if step == "ReviewEK" and act_id:
+            ok = out.get("ekAkcepts") is True
+            if ok and not out.get("ekProtokolaNr"):
+                raise HTTPException(400, "EK akceptam vajadzīgs protokola numurs")
+            out["ekAkcepts"] = ok
+            await ds.set_act(org["id"], act_id, who, status="IzskatitsEK" if ok else "Labojams",
+                             ek_protocol_no=out.get("ekProtokolaNr"),
+                             ek_date=date.fromisoformat(out["ekDatums"]) if out.get("ekDatums") else date.today())
+        elif step == "AwaitLNA" and act_id:
+            await ds.set_act(org["id"], act_id, who, status="SaskanotsLNA" if out["lnaLemums"] == "Saskanots" else "NoraiditsLNA",
+                             lna_decision=out["lnaLemums"], lna_ref=out.get("lnaAtsauce"), lna_date=date.today())
+        elif step == "ApproveDestruction" and act_id:
+            if out.get("apstiprinu") is not True:
+                raise HTTPException(400, "Iznīcināšanu apstiprina ar apstiprinu: true")
+            a = await ds.get_act(org["id"], act_id)
+            if a["status"] == "IzskatitsEK":
+                await ds.set_act(org["id"], act_id, who, status="NavJasaskano")
+            await ds.set_act(org["id"], act_id, who, status="Apstiprinats", approved_by=user["id"],
+                             approved_at=datetime.now(timezone.utc))
+        r = await eng.resume(sid, {**out, "turpinaja": who})
     except RuntimeError as e:
         raise HTTPException(409, str(e))
+    await _case_audit(user, org, "opendms.archive.session.resume", sid, {"solis": step, "rezultats": out})
+    return r
+
+
+# ── P4a izvērtēšana, P4b iznīcināšanas akts ──
+
+@router.post("/cases/{case_pk}/process/appraise")
+async def process_appraise(case_pk: int, user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        c = await cs.get_case(org["id"], case_pk)
+        r = await eng.start("p4a-lietas-izvertesana", {"lietasId": case_pk}, case_id=case_pk)
+    except cs.CaseError as e:
+        raise HTTPException(404, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    await _case_audit(user, org, "opendms.archive.case.process.appraise", c["case_id"], {"sesija": r["sesija"], "stavoklis": r["stavoklis"]})
+    return r
+
+
+@router.get("/acts")
+async def acts(user=Depends(get_current_user)):
+    from opendms.archive import destruction as ds
+    return await ds.list_acts((await _org())["id"])
+
+
+@router.get("/acts/{act_id}")
+async def act(act_id: int, user=Depends(get_current_user)):
+    from opendms.archive import destruction as ds
+    org = await _org()
+    try:
+        a = await ds.get_act(org["id"], act_id)
+    except ds.ActError as e:
+        raise HTTPException(404, str(e))
+    a["sesija"] = None
+    if a.get("session_id"):
+        from opendms.database import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow("SELECT session_id, state, waiting_for FROM uapf_sessions WHERE session_id = $1", a["session_id"])
+        a["sesija"] = dict(r) if r else None
+    return a
+
+
+@router.get("/acts/{act_id}/act.xml")
+async def act_xml(act_id: int, user=Depends(get_current_user)):
+    from opendms.archive import destruction as ds
+    org = await _org()
+    try:
+        x = await ds.store_act_xml(org, act_id, get_storage())
+        data = await get_storage().get(x["key"])
+    except ds.ActError as e:
+        _err(e)
+    return Response(data, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="iznicinasanas-akts-{act_id}.xml"'})
+
+
+@router.post("/acts/process/start")
+async def act_start(user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        r = await eng.start("p4b-iznicinasanas-akts", {"sakaLietotajs": user["id"]})
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    await _case_audit(user, org, "opendms.archive.act.process.start", r["sesija"] or "", {"stavoklis": r["stavoklis"], "gaida": r["gaida"]})
+    return r

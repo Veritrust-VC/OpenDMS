@@ -169,6 +169,70 @@ async def case_task(ctx):
     return {"output": {"status": "pending", "reviewTaskId": f"{ctx.get('session_id')}:{ctx.get('step_id')}"}}
 
 
+# ── P4a / P4b ──
+
+async def appraisal_mark(ctx):
+    from opendms.archive import destruction as ds
+    i = _inp(ctx)
+    org = await _org()
+    c = await ds.mark_case(org, _int(i.get("lietasId"), "lietasId"), i.get("lietasStatuss"), i.get("iemesls") or "", WHO,
+                           [x for x in [i.get("ekLemums") and f"EK: {i.get('ekLemums')}"] if x])
+    return {"output": {"lietasStatuss": c["status"]}}
+
+
+async def act_draft(ctx):
+    from opendms.archive import destruction as ds
+    i = _inp(ctx)
+    org = await _org()
+    a = await ds.draft_act(org, WHO, i.get("sakaLietotajs"), i.get("aktaId"), ctx.get("session_id"))
+    return {"output": {"aktaId": a["id"], "aktaNumurs": a["number"], "lietas": len(a["lietas"]),
+                       "irPastavigiVaiIlgstosi": a["irPastavigiVaiIlgstosi"],
+                       "automatiskaIznicinasanaSaskanota": a["automatiskaIznicinasanaSaskanota"]}}
+
+
+async def lna_submit(ctx):
+    """LNA saskaņošana: savienojums ar LNA (simulatoru) ir 7. solis. Līdz tam akts tiek atzīmēts kā iesniegts,
+    un LNA lēmumu reģistrē lietotājs (uzdevums AwaitLNA)."""
+    from opendms.archive import destruction as ds
+    from opendms.storage import get_storage
+    i = _inp(ctx)
+    org = await _org()
+    aid = _int(i.get("aktaId") or i.get("objektaId"), "aktaId")
+    x = await ds.store_act_xml(org, aid, get_storage())
+    await ds.set_act(org["id"], aid, WHO, status="IesniegtsLNA")
+    return {"output": {"iesniegumaId": f"DVS-AKTS-{aid}", "iesniegts": True, "kanals": "manuāli (LNA savienojums — 7. solis)",
+                       "aktaXml": x["key"]}}
+
+
+async def destruction_execute(ctx):
+    from opendms.archive import destruction as ds
+    from opendms.storage import get_storage
+    org = await _org()
+    r = await ds.execute(org, _int(_inp(ctx).get("aktaId"), "aktaId"), get_storage(), WHO)
+    return {"output": r}
+
+
+async def act_record(ctx):
+    from opendms.archive import destruction as ds
+    from opendms.storage import get_storage
+    org = await _org()
+    return {"output": await ds.record_destruction(org, _int(_inp(ctx).get("aktaId"), "aktaId"), WHO, None, get_storage())}
+
+
+async def act_task(ctx):
+    from opendms.archive import destruction as ds
+    import json
+    org = await _org()
+    aid = _int(_inp(ctx).get("aktaId"), "aktaId")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE destruction_acts SET history = history || $2::jsonb WHERE id = $1", aid,
+                           cs._hist("UzdevumsGaida", WHO, sesija=ctx.get("session_id"), solis=ctx.get("step_id")))
+        await conn.execute("UPDATE uapf_sessions SET waiting_for = $2 WHERE session_id = $1", ctx.get("session_id"), ctx.get("step_id"))
+    await ds.get_act(org["id"], aid)
+    return {"output": {"status": "pending", "reviewTaskId": f"{ctx.get('session_id')}:{ctx.get('step_id')}"}}
+
+
 def _ref(ns, op, summary):
     return {"namespace": ns, "operation": op, "version": 1, "summary": summary}
 
@@ -182,5 +246,10 @@ HANDLERS = {
     "case/check-completeness": (case_check_completeness, _ref("case", "check-completeness", "Count unfinished documents in a case.")),
     "files/normalize": (files_normalize, _ref("files", "normalize", "List files that need PDF/A conversion before transfer (conversion not yet implemented).")),
     "case/close": (case_close, _ref("case", "close", "Close a case: date range, volume, retention end, document register with SHA-256.")),
+    "appraisal/mark": (appraisal_mark, _ref("appraisal", "mark", "Set a closed case's appraisal state (kept, selected for destruction, to describe).")),
+    "act/draft": (act_draft, _ref("act", "draft", "Draft (or redraft) the destruction act from cases selected for destruction.")),
+    "lna/submit": (lna_submit, _ref("lna", "submit", "Submit the act to LNA (manual until the LNA connection, step 7).")),
+    "destruction/execute": (destruction_execute, _ref("destruction", "execute", "Destroy the files of an approved act in every store; keep the register entry.")),
+    "act/record-destruction": (act_record, _ref("act", "record-destruction", "Record the destruction mark in the act and store the act XML.")),
     "case/carry-over": (case_carry_over, _ref("case", "carry-over", "Mark a long-running case and open it in the next period's scheme.")),
 }

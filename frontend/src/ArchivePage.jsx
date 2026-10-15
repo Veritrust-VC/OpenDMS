@@ -310,7 +310,7 @@ function Schemes({ api, notify }) {
 }
 
 // ───────────────────────── lietas ─────────────────────────
-const CASE_STYLE = { Atverta: "bg-sky-100 text-sky-700", Slegta: "bg-gray-200 text-gray-700" };
+const CASE_STYLE = { Atverta: "bg-sky-100 text-sky-700", Slegta: "bg-gray-200 text-gray-700", Iznicinata: "bg-red-100 text-red-700", GlabaIestade: "bg-teal-100 text-teal-700" };
 const download = async (api, notify, path, name) => {
   try { const r = await api(path); const b = await r.blob(); const a = document.createElement("a");
         a.href = URL.createObjectURL(b); a.download = name; a.click(); } catch (e) { notify(e.message, "error"); } };
@@ -324,7 +324,11 @@ function CaseDetail({ api, notify, id, onChanged }) {
           const o = r.rezultats || {};
           notify(r.stavoklis === "suspended" ? "Process gaida: nepabeigtie dokumenti jāpabeidz" : `${o.darbiba || r.stavoklis}: ${o.iemesls || ""}`, r.stavoklis === "failed" ? "error" : undefined);
           load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
-  const resume = async (sid) => { try { const r = await api(`/archive/sessions/${sid}/resume`, { method: "POST" }); notify(`Process: ${r.stavoklis}`); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  const resume = async (sid, output = {}) => { try { const r = await api(`/archive/sessions/${sid}/resume`, { method: "POST", body: JSON.stringify({ output }) }); notify(`Process: ${r.stavoklis}${r.rezultats?.iemesls ? " — " + r.rezultats.iemesls : ""}`); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  const appraise = async () => {
+    try { const r = await api(`/archive/cases/${id}/process/appraise`, { method: "POST" }); const o = r.rezultats || {};
+          notify(r.stavoklis === "suspended" ? "Vajadzīgs ekspertu komisijas lēmums" : `${o.rezultats || r.stavoklis}: ${o.iemesls || ""}`); load(); onChanged(); }
+    catch (e) { notify(e.message, "error"); } };
   useEffect(() => { load(); }, [id]);
   if (!c) return null;
   const act = async (path, body, msg) => {
@@ -348,6 +352,9 @@ function CaseDetail({ api, notify, id, onChanged }) {
       <div><div className="text-xs text-gray-400">Shēmas ieraksts</div>{c.shemas_ieraksts ? `${c.shemas_ieraksts.idx} (${c.shemas_ieraksts.period_from.slice(0, 4)})` : <span className="text-amber-700">nav sasaistīts</span>}</div>
       <div><div className="text-xs text-gray-400">Reģistra SHA-256</div><span className="font-mono text-xs break-all">{c.register_sha256 ? c.register_sha256.slice(0, 16) + "…" : "—"}</span></div>
     </div>
+    {["Slegta", "Izverteta", "GlabaIestade"].includes(c.status) && <div className="flex gap-2 items-center">
+      <button onClick={appraise} className="text-sm px-3 py-1.5 bg-sky-700 text-white rounded" title="Process p4a-lietas-izvertesana (lēmums ekspertizes-lemums)">Izvērtēt (process)</button>
+      <span className="text-xs text-gray-500">glabā līdz {c.retention_end || "pastāvīgi"}</span></div>}
     {open && <div className="flex flex-wrap gap-2">
       <button onClick={runClose} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded"
         title="Process p3-lietas-slegsana: nepabeigtie dokumenti, perioda beigas, ilgstoša lieta">Slēgt lietu (process)</button>
@@ -388,7 +395,10 @@ function CaseDetail({ api, notify, id, onChanged }) {
         <span className={x.state === "completed" ? "text-emerald-700" : x.state === "suspended" ? "text-amber-700" : "text-red-700"}>{x.state}</span>
         {x.rezultats?.darbiba && <span>· {x.rezultats.darbiba}: {x.rezultats.iemesls}</span>}
         {x.error_message && <span className="text-red-700">· {x.error_message.slice(0, 120)}</span>}
-        {x.state === "suspended" && <button onClick={() => resume(x.session_id)} className="px-2 py-0.5 border border-amber-300 rounded">Pārbaudīt vēlreiz</button>}
+        {x.state === "suspended" && x.waiting_for === "ResolveUnfinished" && <button onClick={() => resume(x.session_id)} className="px-2 py-0.5 border border-amber-300 rounded">Pārbaudīt vēlreiz</button>}
+        {x.state === "suspended" && x.waiting_for === "EKDecision" && <span className="flex gap-1">EK lēmums:
+          {[["Iznicinat", "iznīcināt"], ["Pagarinat", "pagarināt termiņu"], ["NodotArhivam", "arhiviska vērtība"]].map(([k, l]) =>
+            <button key={k} onClick={() => resume(x.session_id, { ekLemums: k })} className="px-2 py-0.5 border border-amber-300 rounded">{l}</button>)}</span>}
       </div>)}</div>}
     <details className="text-xs text-gray-500"><summary className="cursor-pointer">Vēsture ({c.history.length})</summary>
       {c.history.map((h, i) => <div key={i}>{h.kad?.slice(0, 16).replace("T", " ")} · {h.darbiba} · {h.kas}</div>)}</details>
@@ -453,6 +463,66 @@ function Cases({ api, notify }) {
   </div>);
 }
 
+// ───────────────────────── iznīcināšana (P4b) ─────────────────────────
+function ActDetail({ api, notify, id, onChanged }) {
+  const [a, setA] = useState(null); const [f, setF] = useState({}); const [confirm, setConfirm] = useState(false);
+  const load = async () => { try { setA(await api(`/archive/acts/${id}`)); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); setF({}); setConfirm(false); }, [id]);
+  if (!a) return null;
+  const s = a.sesija; const waiting = s?.state === "suspended" ? s.waiting_for : null;
+  const resume = async (output) => {
+    try { const r = await api(`/archive/sessions/${s.session_id}/resume`, { method: "POST", body: JSON.stringify({ output }) });
+          notify(`Process: ${r.stavoklis}${r.gaida ? " — gaida " + r.gaida : ""}`); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  return (<div className="bg-white border rounded-lg p-4 space-y-3 text-sm">
+    <div className="flex items-center justify-between"><div className="text-lg font-semibold">Iznīcināšanas akts Nr. {a.number}</div>
+      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{a.status_lv}</span></div>
+    <div className="text-xs text-gray-500">{a.act_date}{a.ek_protocol_no ? ` · EK protokols ${a.ek_protocol_no}` : ""}{a.lna_decision ? ` · LNA: ${a.lna_decision}` : ""}{a.destroyed_at ? ` · iznīcināts ${String(a.destroyed_at).slice(0, 10)}` : ""}</div>
+    <div className="border rounded divide-y">{a.lietas.map((c) => <div key={c.id} className="px-3 py-1.5 flex justify-between">
+      <span>{c.case_index} {c.case_name} ({c.case_year})</span><span className="text-xs text-gray-500">{c.dokumenti} dok. · {c.datnes} datnes · {c.retention_years} g. · līdz {c.retention_end || "—"}</span></div>)}</div>
+    <button onClick={() => download(api, notify, `/archive/acts/${id}/act.xml`, `iznicinasanas-akts-${a.number.replace("/", "-")}.xml`)} className="text-xs px-3 py-1 border rounded">Akts XML (5. pielikums)</button>
+    {waiting === "ReviewEK" && <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+      <div className="font-medium">Ekspertu komisija pārbauda termiņus un apjomu (106. p.)</div>
+      <div className="flex gap-2"><input value={f.ekProtokolaNr || ""} onChange={(e) => setF({ ...f, ekProtokolaNr: e.target.value })} placeholder="EK protokola Nr." className="text-sm border rounded px-2 py-1" />
+        <input type="date" value={f.ekDatums || ""} onChange={(e) => setF({ ...f, ekDatums: e.target.value })} className="text-sm border rounded px-2 py-1" /></div>
+      <div className="flex gap-2"><button onClick={() => resume({ ...f, ekAkcepts: true })} className="px-3 py-1 bg-emerald-600 text-white rounded">EK akceptē</button>
+        <button onClick={() => resume({ ekAkcepts: false })} className="px-3 py-1 border rounded">Atgriezt labošanai</button></div></div>}
+    {waiting === "CorrectAct" && <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+      <div>Akts jālabo: mainiet lietu izvērtējumu (Lietas → Izvērtēt) un pārveidojiet aktu.</div>
+      <button onClick={() => resume({})} className="px-3 py-1 border rounded">Pārveidot aktu</button></div>}
+    {waiting === "AwaitLNA" && <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+      <div className="font-medium">LNA lēmums par aktu</div><div className="text-xs text-gray-500">Līdz LNA savienojumam (7. solis) lēmumu reģistrē šeit.</div>
+      <input value={f.lnaAtsauce || ""} onChange={(e) => setF({ ...f, lnaAtsauce: e.target.value })} placeholder="LNA vēstules / lēmuma atsauce" className="w-full text-sm border rounded px-2 py-1" />
+      <div className="flex gap-2"><button onClick={() => resume({ lnaLemums: "Saskanots", lnaAtsauce: f.lnaAtsauce })} className="px-3 py-1 bg-emerald-600 text-white rounded">LNA saskaņoja</button>
+        <button onClick={() => resume({ lnaLemums: "Noraidits", lnaAtsauce: f.lnaAtsauce })} className="px-3 py-1 border rounded">LNA noraidīja</button></div></div>}
+    {waiting === "ApproveDestruction" && <div className="bg-red-50 border border-red-300 rounded p-3 space-y-2">
+      <div className="font-medium text-red-800">Apstiprināt iznīcināšanu</div>
+      <div className="text-xs text-red-800">Pēc apstiprināšanas šo lietu dokumentu datnes tiks neatgriezeniski dzēstas visās glabātuvēs, arī visas versijas. Reģistra ieraksti un akts paliek.</div>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />Esmu iestādes vadītājs vai pilnvarotā persona un apstiprinu iznīcināšanu</label>
+      <button disabled={!confirm} onClick={() => resume({ apstiprinu: true })} className="px-3 py-1 bg-red-700 text-white rounded disabled:opacity-40">Apstiprināt un iznīcināt</button></div>}
+    <details className="text-xs text-gray-500"><summary className="cursor-pointer">Vēsture ({a.history.length})</summary>
+      {a.history.map((h, i) => <div key={i}>{String(h.kad).slice(0, 16).replace("T", " ")} · {h.darbiba} · {h.kas}</div>)}</details>
+  </div>);
+}
+
+function Acts({ api, notify }) {
+  const [list, setList] = useState([]); const [sel, setSel] = useState(null);
+  const load = async () => { try { setList(await api("/archive/acts")); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); }, []);
+  const start = async () => { try { const r = await api("/archive/acts/process/start", { method: "POST" });
+    notify(r.gaida ? `Akts sagatavots — gaida: ${r.gaida}` : `Process: ${r.stavoklis}`); load(); } catch (e) { notify(e.message, "error"); } };
+  return (<div className="grid grid-cols-12 gap-4">
+    <div className="col-span-4 space-y-3">
+      <button onClick={start} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded" title="Process p4b-iznicinasanas-akts">+ Sagatavot aktu (process)</button>
+      <p className="text-xs text-gray-500">Aktā iekļauj lietas, kuras izvērtēšanā atlasītas iznīcināšanai (MK 282 104.–109. p.).</p>
+      <div className="bg-white border rounded-lg divide-y">{list.map((a) => <button key={a.id} onClick={() => setSel(a.id)} className={`w-full text-left px-3 py-2 ${sel === a.id ? "bg-sky-50" : "hover:bg-gray-50"}`}>
+        <div className="flex justify-between"><span className="text-sm font-medium">Nr. {a.number}</span><span className="text-xs">{a.status_lv}</span></div>
+        <div className="text-xs text-gray-500">{a.act_date} · {a.lietas} lietas</div></button>)}
+        {!list.length && <div className="p-4 text-sm text-gray-400">Aktu vēl nav.</div>}</div>
+    </div>
+    <div className="col-span-8">{sel ? <ActDetail api={api} notify={notify} id={sel} onChanged={load} /> : null}</div>
+  </div>);
+}
+
 // ───────────────────────── vecā eksporta partija ─────────────────────────
 function LegacyBatches({ api, notify }) {
   const [batches, setBatches] = useState([]); const [docIds, setDocIds] = useState(""); const [name, setName] = useState("");
@@ -480,7 +550,7 @@ function LegacyBatches({ api, notify }) {
 
 export default function ArchivePage({ api, notify }) {
   const [tab, setTab] = useState("lietas");
-  const tabs = [["lietas", "Lietas"], ["shema", "Klasifikācijas shēma"], ["iestatijumi", "Iestatījumi"], ["partijas", "Vecā eksporta partija"]];
+  const tabs = [["lietas", "Lietas"], ["iznicinasana", "Iznīcināšana"], ["shema", "Klasifikācijas shēma"], ["iestatijumi", "Iestatījumi"], ["partijas", "Vecā eksporta partija"]];
   return (
     <div>
       <h2 className="text-xl font-bold">Arhīvs</h2>
@@ -488,6 +558,7 @@ export default function ArchivePage({ api, notify }) {
       <div className="flex gap-1 border-b mb-4">{tabs.map(([k, l]) =>
         <button key={k} onClick={() => setTab(k)} className={`text-sm px-4 py-2 -mb-px border-b-2 ${tab === k ? "border-emerald-600 text-emerald-700 font-medium" : "border-transparent text-gray-500"}`}>{l}</button>)}</div>
       {tab === "lietas" && <Cases api={api} notify={notify} />}
+      {tab === "iznicinasana" && <Acts api={api} notify={notify} />}
       {tab === "shema" && <Schemes api={api} notify={notify} />}
       {tab === "iestatijumi" && <Settings api={api} notify={notify} />}
       {tab === "partijas" && <LegacyBatches api={api} notify={notify} />}

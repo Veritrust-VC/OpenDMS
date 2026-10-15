@@ -27,7 +27,8 @@ from opendms.storage.export import KNOWLEDGE_TABLES
 PREFIXES = {"ievade/": "intake_items", "zinasanas/precedenti/": "uapf_precedents",
             "lietas/": "standard_cases", "arhivs/partijas/": "archive_batches",
             "vesture/integracijas/": "integration_audit_log",
-            "arhivs/klasifikacijas-shemas/": "classification_schemes", "arhivs/iestatijumi/": "archive_settings"}
+            "arhivs/klasifikacijas-shemas/": "classification_schemes", "arhivs/iestatijumi/": "archive_settings",
+            "arhivs/iznicinasanas-akti/": "destruction_acts"}
 
 
 def read_container(client, bucket: str) -> dict:

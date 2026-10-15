@@ -972,6 +972,9 @@ async def handle_task_request(ctx: dict) -> dict:
     session_id = ctx.get("session_id")
     step_id = ctx.get("step_id")
     document_id = inp.get("documentId")
+    if not document_id and inp.get("aktaId"):
+        from opendms.archive.host import act_task
+        return await act_task(ctx)
     if not document_id and inp.get("lietasId"):
         # arhivēšanas process (lv.kisc.dokumentu-arhivesana): uzdevums lietai — redzams Arhīvs → Lietas
         from opendms.archive.host import case_task
