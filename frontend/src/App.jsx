@@ -9,6 +9,7 @@ import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
 import ForwardingCard from "./ForwardingCard.jsx";
 import ArchiveCard, { CasePicker } from "./ArchiveCard.jsx";
+import { CasesPage } from "./ArchivePage.jsx";
 import MarksCard from "./MarksCard.jsx";
 import ActiveClassifiers from "./ClassifiersPage.jsx";
 import ArchivePage from "./ArchivePage.jsx";
@@ -173,6 +174,7 @@ export default function App() {
       { id:"agent",         label:"Aģents",           icon:"agent", roles:["superadmin","admin"] },
       { id:"dashboard",     label:"Pārskats",         icon:"dashboard" },
       { id:"documents",     label:"Dokumenti",        icon:"document" },
+      { id:"cases",         label:"Lietas",           icon:"folder" },
       { id:"storage",       label:"Glabātuve",        icon:"folder" },
       { id:"intelligence",  label:"Analīze",          icon:"insight" },
     ]},
@@ -272,6 +274,7 @@ export default function App() {
         {page==="classifications" && <><ActiveClassifiers notify={notify} />
           <StructurePage type="classifications" notify={notify} /></>}
         {page==="archive" && <ArchivePage api={api} notify={notify} />}
+        {page==="cases" && <CasesPage api={api} notify={notify} onOpenDoc={(d)=>navigate("/documents/"+encodeURIComponent(d.registration_number||d.id))} />}
         {page==="storage" && <StoragePage notify={notify} route={route} navigate={navigate} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
@@ -439,6 +442,7 @@ function DocumentTable({ docs, sel, onOpen }) {
       sem: sem.lokals ? (sem.kludas?.length ? "kļūdas" : "ir") : (sem.kludas?.length ? "nav" : ""),
       reg: reg.nodots ? (reg.semantika ? "ar aprakstu" : "metadati") : "", events: Number(d.event_count || 0),
       status: d.status || "",
+      lieta: d.case_index ? `${d.case_index}/${d.case_year}` : "",
       busy: docBusy(d),
     };
   };
@@ -467,7 +471,7 @@ function DocumentTable({ docs, sel, onOpen }) {
       <div className="rounded-lg border border-gray-200 bg-white overflow-auto max-h-[46vh]">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 sticky top-0 z-10 text-xs"><tr>
-            <Th k="title">Dokuments</Th><Th k="number">Nr.</Th><Th k="created_at">Saņemts</Th><Th k="sender">Iesniedzējs / avots</Th>
+            <Th k="title">Dokuments</Th><Th k="number">Nr.</Th><Th k="lieta">Lieta</Th><Th k="created_at">Saņemts</Th><Th k="sender">Iesniedzējs / avots</Th>
             <Th k="topic">Tēma</Th><Th k="unit">Struktūrvienība</Th><Th k="review">Lēmums</Th>
             <Th k="sem">Apraksts</Th><Th k="reg">Reģistrs</Th><Th k="files" className="text-right">Datnes</Th>
           </tr></thead>
@@ -480,6 +484,7 @@ function DocumentTable({ docs, sel, onOpen }) {
                   <div className="text-[11px] text-gray-400 truncate" title={x.uid}>{x.uid || (x.busy ? <BusyNote /> : "identifikators vēl nav piešķirts")}</div>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">{x.number || "—"}<div className="mt-0.5"><Badge s={x.status} /></div></td>
+                <td className="px-3 py-2 whitespace-nowrap text-xs" title={x.d.case_name || ""}>{x.lieta ? <span className="font-mono text-gray-700">{x.lieta}</span> : <span className="text-amber-700">bez lietas</span>}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-600">{fmtDT(x.created_at)}</td>
                 <td className="px-3 py-2 max-w-[170px]"><div className="truncate" title={x.sender}>{x.sender || "—"}</div>
                   {x.channel && <div className="text-[11px] text-gray-400">{x.channel}</div>}</td>
@@ -493,7 +498,7 @@ function DocumentTable({ docs, sel, onOpen }) {
                 <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{x.files || "—"}{x.mime && <div className="text-[11px] text-gray-400">{MIME_LV[x.mime] || x.mime.split("/").pop()}</div>}</td>
               </tr>
             ))}
-            {!sorted.length && <tr><td colSpan={10} className="px-5 py-8 text-center text-gray-400">Nav dokumentu</td></tr>}
+            {!sorted.length && <tr><td colSpan={11} className="px-5 py-8 text-center text-gray-400">Nav dokumentu</td></tr>}
           </tbody>
         </table>
       </div>

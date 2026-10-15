@@ -232,8 +232,10 @@ async def list_documents(
                        (SELECT COUNT(*) FROM document_files f WHERE f.document_id = d.id) AS file_count,
                        (SELECT f.mime_type FROM document_files f WHERE f.document_id = d.id
                          ORDER BY f.is_primary DESC, f.id LIMIT 1) AS primary_mime,
-                       (SELECT COUNT(*) FROM document_events e WHERE e.document_id = d.id) AS event_count
+                       (SELECT COUNT(*) FROM document_events e WHERE e.document_id = d.id) AS event_count,
+                       sc.case_index AS case_index, sc.case_year AS case_year, sc.case_name AS case_name
                 FROM documents d
+                LEFT JOIN standard_cases sc ON sc.id = d.case_id
                 LEFT JOIN organizations o ON d.org_id = o.id
                 LEFT JOIN registers r ON d.register_id = r.id
                 LEFT JOIN classifications c ON d.classification_id = c.id

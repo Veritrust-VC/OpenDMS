@@ -335,7 +335,7 @@ const download = async (api, notify, path, name) => {
   try { const r = await api(path); const b = await r.blob(); const a = document.createElement("a");
         a.href = URL.createObjectURL(b); a.download = name; a.click(); } catch (e) { notify(e.message, "error"); } };
 
-function CaseDetail({ api, notify, id, onChanged }) {
+function CaseDetail({ api, notify, id, onChanged, onOpenDoc }) {
   const [c, setC] = useState(null); const [docId, setDocId] = useState(""); const [vol, setVol] = useState(null);
   const [sessions, setSessions] = useState([]); const [ended, setEnded] = useState(false);
   const load = async () => { try { setC(await api(`/archive/cases/${id}`)); setSessions(await api(`/archive/cases/${id}/sessions`)); } catch (e) { notify(e.message, "error"); } };
@@ -395,7 +395,7 @@ function CaseDetail({ api, notify, id, onChanged }) {
     <div><div className="text-sm font-medium mb-1">Dokumenti ({c.dokumenti.length})</div>
       <div className="border rounded divide-y max-h-80 overflow-auto">
         {c.dokumenti.map((d) => <div key={d.id} className="px-3 py-1.5 flex items-center justify-between text-sm">
-          <div className="min-w-0"><span className="font-mono text-xs text-gray-500 mr-2">{d.registration_number || `#${d.id}`}</span>{d.title}</div>
+          <div className={`min-w-0 ${onOpenDoc ? "cursor-pointer hover:text-emerald-700" : ""}`} onClick={() => onOpenDoc && onOpenDoc(d)}><span className="font-mono text-xs text-gray-500 mr-2">{d.registration_number || `#${d.id}`}</span>{d.title}</div>
           <div className="flex items-center gap-2 shrink-0"><span className="text-xs text-gray-400">{d.status} · {d.datnes} datnes</span>
             {d.nepabeigts && open && <button onClick={() => finish(d.id)} className="text-xs px-2 py-0.5 border border-amber-300 text-amber-800 rounded">Pabeigts</button>}</div>
         </div>)}
@@ -456,11 +456,11 @@ function Unfiled({ api, notify, year }) {
   </details>);
 }
 
-function Cases({ api, notify }) {
+function Cases({ api, notify, onOpenDoc, reloadKey }) {
   const [year, setYear] = useState(new Date().getFullYear()); const [list, setList] = useState([]);
   const [sel, setSel] = useState(null); const [showOpen, setShowOpen] = useState(false);
   const load = async () => { try { setList(await api(`/archive/cases?gads=${year}`)); } catch (e) { notify(e.message, "error"); } };
-  useEffect(() => { load(); }, [year]);
+  useEffect(() => { load(); }, [year, reloadKey]);
   return (<div className="grid grid-cols-12 gap-4">
     <div className="col-span-4 space-y-3">
       <div className="flex gap-2 items-center">
@@ -479,7 +479,7 @@ function Cases({ api, notify }) {
         {!list.length && <div className="p-4 text-sm text-gray-400">{year}. gadā lietu nav.</div>}
       </div>
     </div>
-    <div className="col-span-8">{sel ? <CaseDetail api={api} notify={notify} id={sel} onChanged={load} /> : null}</div>
+    <div className="col-span-8">{sel ? <CaseDetail api={api} notify={notify} id={sel} onChanged={load} onOpenDoc={onOpenDoc} /> : null}</div>
   </div>);
 }
 
@@ -697,4 +697,53 @@ export default function ArchivePage({ api, notify }) {
       {tab === "iestatijumi" && <Settings api={api} notify={notify} />}
       {tab === "partijas" && <LegacyBatches api={api} notify={notify} />}
     </div>);
+}
+
+
+// ───────────────────────── Lietas (galvenā izvēlne) ─────────────────────────
+// Katrs dokuments pieder lietai (MK 282 20.–23. p.) — arī tad, ja lietā ir viens dokuments.
+function NotFiled({ api, notify, onOpenDoc, onChanged }) {
+  const [rows, setRows] = useState(null); const [cases, setCases] = useState({}); const [pick, setPick] = useState({});
+  const load = async () => {
+    try {
+      const r = (await api("/archive/unfiled")).filter((d) => !d.case_index);
+      setRows(r);
+      const years = [...new Set(r.map((d) => new Date(d.created_at).getFullYear()))];
+      const out = {};
+      for (const y of years) out[y] = await api(`/archive/cases?gads=${y}&statuss=Atverta`);
+      setCases(out);
+    } catch (e) { notify(e.message, "error"); }
+  };
+  useEffect(() => { load(); }, []);
+  if (!rows || !rows.length) return null;
+  const attach = async (d) => {
+    try { await api(`/archive/cases/${pick[d.id]}/documents`, { method: "POST", body: JSON.stringify({ document_id: d.id }) });
+          notify("Dokuments ievietots lietā"); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  return (<div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+    <div className="text-sm font-medium text-amber-900">{rows.length} dokumenti nav nevienā lietā</div>
+    <div className="text-xs text-amber-800">Katram dokumentam jābūt lietā, arī ja lietā ir tikai viens dokuments.</div>
+    <div className="bg-white border rounded divide-y max-h-80 overflow-auto">{rows.map((d) => {
+      const y = new Date(d.created_at).getFullYear(); const opts = cases[y] || [];
+      return (<div key={d.id} className="px-3 py-1.5 flex items-center justify-between gap-2 text-sm">
+        <div className="min-w-0 cursor-pointer hover:text-emerald-700" onClick={() => onOpenDoc(d)}>
+          <span className="font-mono text-xs text-gray-500 mr-2">{d.registration_number || `#${d.id}`}</span><span className="truncate">{d.title}</span></div>
+        <div className="flex items-center gap-1 shrink-0">
+          {opts.length ? <>
+            <select value={pick[d.id] || ""} onChange={(e) => setPick({ ...pick, [d.id]: e.target.value })} className="text-xs border rounded px-1 py-0.5">
+              <option value="">— lieta {y} —</option>{opts.map((c) => <option key={c.id} value={c.id}>{c.case_index} {c.case_name}</option>)}</select>
+            <button disabled={!pick[d.id]} onClick={() => attach(d)} className="text-xs px-2 py-0.5 border rounded disabled:opacity-40">Ievietot</button></>
+            : <span className="text-xs text-gray-400">{y}. gadā nav atvērtu lietu</span>}
+        </div></div>);
+    })}</div>
+  </div>);
+}
+
+export function CasesPage({ api, notify, onOpenDoc }) {
+  const [k, setK] = useState(0);
+  return (<div className="space-y-4">
+    <div><h2 className="text-xl font-bold">Lietas</h2>
+      <p className="text-sm text-gray-500">Lieta apvieno dokumentus par vienu jautājumu pēc iestādes klasifikācijas shēmas. Katrs dokuments pieder lietai.</p></div>
+    <NotFiled api={api} notify={notify} onOpenDoc={onOpenDoc} onChanged={() => setK(k + 1)} />
+    <Cases api={api} notify={notify} onOpenDoc={onOpenDoc} reloadKey={k} />
+  </div>);
 }
