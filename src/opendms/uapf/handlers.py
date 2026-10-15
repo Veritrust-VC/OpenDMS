@@ -558,6 +558,8 @@ PROCESS_RESULT_KEYS = (
     "plusma", "termins", "glabasanasTermins",
     # P2 response draft
     "templateId", "templateVersion", "missingElements",
+    # outgoing documents (RS UC-007): approval route and status
+    "saskanotajs", "parakstitajs", "statuss", "dokumentaVeids",
     # human step
     "decision", "comment",
 )
@@ -925,9 +927,11 @@ async def handle_ai_draft(ctx: dict) -> dict:
     )
     # Any other process variable (scalar) may be named in a template, e.g.
     # {adresats} or {temats}; the fixed names above win when both exist.
-    for k, v in inp.items():
-        if k not in values and isinstance(v, (str, int, float)) and not isinstance(v, bool):
-            values[k] = v
+    meta = inp.get("metadata") if isinstance(inp.get("metadata"), dict) else {}
+    for src in (inp, meta):
+        for k, v in src.items():
+            if k not in values and isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                values[k] = v
     draft = body.format_map(values)
 
     substance, source = "", "veidne"

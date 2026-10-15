@@ -36,3 +36,15 @@ def test_draft_takes_process_variables():
     t = out["output"]["draftText"]
     assert "Adresāts: SIA Piemērs" in t and "Temats: Pieslēguma tehniskie noteikumi" in t
     assert "Nr. RS-1/2" in t and "Cits: […]" in t
+
+
+def test_draft_takes_document_metadata():
+    out = run(handlers.handle_ai_draft({"input": {
+        "templateBody": "Adresāts: {adresats}; temats: {temats}",
+        "metadata": {"adresats": "Rīgas valstspilsētas pašvaldība", "temats": "Ielu remonts", "x": {"nested": 1}}}}))
+    assert out["output"]["draftText"] == "Adresāts: Rīgas valstspilsētas pašvaldība; temats: Ielu remonts"
+
+
+def test_outgoing_route_fields_are_recorded():
+    for k in ("saskanotajs", "parakstitajs", "statuss"):
+        assert k in handlers.PROCESS_RESULT_KEYS
