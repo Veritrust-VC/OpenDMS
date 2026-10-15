@@ -23,6 +23,7 @@ dependencies = [
     "lxml>=5.0",
     "PyYAML>=6.0",
     "jsonschema>=4.20",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -35,3 +36,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "opendms.standard" = ["schemas/*.xsd"]
+"opendms.archive" = ["schemas/*.xsd"]

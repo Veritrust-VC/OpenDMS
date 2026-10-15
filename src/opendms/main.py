@@ -15,6 +15,7 @@ from opendms.routers.intake import router as intake_router
 from opendms.routers.forwarding import router as forwarding_router
 from opendms.routers.structures import org_router, reg_router, cls_router
 from opendms.routers.system import archive_router, settings_router, health_router
+from opendms.routers.archive_scheme import router as archive_scheme_router
 from opendms.routers.ai import router as ai_router
 from opendms.routers.audit import router as audit_router
 from opendms.routers.intelligence import router as intelligence_router
@@ -39,6 +40,8 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await init_db()
+        from opendms.archive.schema import ensure_schema as _archive_schema
+        await _archive_schema()
         import asyncio as _asyncio
         from opendms.intake.email_channel import run_forever as _intake_loop
         intake_task = _asyncio.create_task(_intake_loop())
@@ -57,7 +60,7 @@ def create_app() -> FastAPI:
                        allow_methods=["*"], allow_headers=["*"])
 
     for r in [auth_router, oidc_router, users_router, documents_router, org_router, reg_router,
-              cls_router, archive_router, settings_router, health_router, ai_router, audit_router, intelligence_router,
+              cls_router, archive_router, archive_scheme_router, settings_router, health_router, ai_router, audit_router, intelligence_router,
               ai_instructions_router, org_tools_router, connections_router, agent_router,
               uapf_host_router, uapf_admin_router, storage_router, mcp_router, intake_router, forwarding_router]:
         app.include_router(r)

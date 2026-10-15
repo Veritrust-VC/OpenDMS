@@ -9,6 +9,7 @@ import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
 import ForwardingCard from "./ForwardingCard.jsx";
 import ActiveClassifiers from "./ClassifiersPage.jsx";
+import ArchivePage from "./ArchivePage.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -268,7 +269,7 @@ export default function App() {
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
         {page==="classifications" && <><ActiveClassifiers notify={notify} />
           <StructurePage type="classifications" notify={notify} /></>}
-        {page==="archive" && <ArchivePage notify={notify} />}
+        {page==="archive" && <ArchivePage api={api} notify={notify} />}
         {page==="storage" && <StoragePage notify={notify} route={route} navigate={navigate} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
@@ -2396,31 +2397,6 @@ function StructurePage({ type, notify }) {
     </div>
   </div>);
 }
-
-function ArchivePage({ notify }) {
-  const [batches, setBatches] = useState([]); const [docIds, setDocIds] = useState(""); const [name, setName] = useState("");
-  const load = async () => { try { setBatches(await api("/archive/batches")); } catch(e){notify(e.message,"error");} };
-  useEffect(()=>{load();},[]);
-  const create = async () => { try { const ids = docIds.split(",").map(s=>parseInt(s.trim())).filter(n=>!isNaN(n)); await api("/archive/batches",{method:"POST",body:JSON.stringify({name,document_ids:ids})}); notify("Batch created"); load(); } catch(e){notify(e.message,"error");} };
-  const exp = async (id) => { try { const r = await api(`/archive/batches/${id}/export`,{method:"POST"}); const blob = await r.blob(); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`archive-${id}.zip`; a.click(); notify("Export complete"); } catch(e){notify(e.message,"error");} };
-
-  return (<div>
-    <h2 className="text-xl font-bold mb-4">Archive</h2>
-    <div className="bg-white border rounded-lg p-4 mb-4 space-y-2">
-      <input value={name} onChange={e=>setName(e.target.value)} placeholder="Batch name" className="w-full text-sm px-3 py-2 border rounded" />
-      <input value={docIds} onChange={e=>setDocIds(e.target.value)} placeholder="Document IDs (comma-separated)" className="w-full text-sm px-3 py-2 border rounded" />
-      <button onClick={create} className="text-sm px-4 py-2 bg-emerald-600 text-white rounded">Create Batch</button>
-    </div>
-    <div className="bg-white rounded-lg border divide-y">
-      {batches.map(b=>(<div key={b.id} className="px-4 py-3 flex items-center justify-between">
-        <div><div className="text-sm font-medium">{b.name}</div><div className="text-xs text-gray-400">{b.document_count} docs \u00b7 {b.status}</div></div>
-        <button onClick={()=>exp(b.id)} className="text-xs px-3 py-1 bg-blue-600 text-white rounded">Export ZIP</button>
-      </div>))}
-      {!batches.length && <div className="p-6 text-center text-gray-400 text-sm">No archive batches</div>}
-    </div>
-  </div>);
-}
-
 
 function AIInstructionsPage({ notify }) {
   const [instructions, setInstructions] = useState([]);
