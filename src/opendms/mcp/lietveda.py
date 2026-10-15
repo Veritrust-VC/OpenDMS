@@ -1,6 +1,7 @@
 """Lietvedība tools — what a records-management agent needs to work a DVS.
 
-READ   worklist, document_history, people_and_categories, mans_darbs, uzdevums, dokumenta_priekslikums
+READ   worklist, document_history, people_and_categories, mans_darbs, uzdevums, dokumenta_priekslikums,
+       meklet_dokumentus
 WRITE  assign_document, apply_classification, add_note, pabeigt_uzdevumu, iesniegt_dokumentu
 
 Every write runs as the authenticated DVS user (for the Lietvedības aģents:
@@ -125,6 +126,20 @@ TOOLS: list[dict[str, Any]] = [
         "description": "The process step waiting on one document: step, role, AI proposal, decisions "
                        "allowed, deadline. Read before pabeigt_uzdevumu.",
         "inputSchema": _schema({"document_id": {"type": "integer"}}, ["document_id"]),
+    },
+    {
+        "name": "meklet_dokumentus",
+        "class": "read",
+        "description": "Dokumenti: find documents by number, subject, sender or meaning. mode 'teksts' = the words as "
+                       "typed (all must match); mode 'nozime' = the question is expanded into related terms (synonyms, "
+                       "legal terms, topics) and results are ranked by how many match. Returns number, title, status, "
+                       "direction, sender, topic, department and the open process step, if any.",
+        "inputSchema": _schema({
+            "query": {"type": "string"},
+            "mode": {"type": "string", "enum": ["teksts", "nozime"], "default": "teksts"},
+            "status": {"type": "string", "description": "Optional: draft, registered, assigned, decided, sent, archived."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 30},
+        }, ["query"]),
     },
     {
         "name": "dokumenta_priekslikums",
@@ -413,6 +428,12 @@ async def _pabeigt_uzdevumu(args: dict, ctx: dict) -> dict:
             "next_step": ({"stepName": nxt["stepName"], "role": nxt["role"]} if nxt else None)}
 
 
+async def _meklet_dokumentus(args: dict, ctx: dict) -> dict:
+    from opendms import search
+    return await search.search(str(args.get("query") or ""), mode=args.get("mode") or "teksts",
+                               limit=int(args.get("limit") or 30), status=args.get("status"))
+
+
 async def _dokumenta_priekslikums(args: dict, ctx: dict) -> dict:
     from opendms.intake import agent_channel
     try:
@@ -450,5 +471,6 @@ HANDLERS = {
     "uzdevums": _uzdevums,
     "pabeigt_uzdevumu": _pabeigt_uzdevumu,
     "dokumenta_priekslikums": _dokumenta_priekslikums,
+    "meklet_dokumentus": _meklet_dokumentus,
     "iesniegt_dokumentu": _iesniegt_dokumentu,
 }
