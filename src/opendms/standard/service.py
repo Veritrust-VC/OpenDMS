@@ -263,12 +263,16 @@ async def build_package(doc_id: int, rules: dict, semantika_xml: bytes | None = 
                 e["std_id"] = make_id(PREFIX_EVENT, org["std_code"], e["created_at"])
                 await conn.execute("UPDATE document_events SET std_id = $1 WHERE id = $2", e["std_id"], e["id"])
 
+        from opendms.archive.docmeta import package_extras
+        extras = await package_extras(conn, doc, files, events)
         user_ids = {i for i in [doc.get("created_by")] + [e.get("actor_id") for e in std_events] if i}
         users = {r["id"]: dict(r) for r in await conn.fetch(
             "SELECT id, email, full_name, department FROM users WHERE id = ANY($1::bigint[])", list(user_ids))}
 
     folder = pkg.folder_name(doc["doc_uid"])
     prefix = f"{PACKAGE_ROOT}/{folder}"
+    if semantika_xml is None:      # pārbūvējot (piem., arhivēšanas dati) sadaļa 13 saglabājas
+        semantika_xml, semantika_versija = await _existing_section13(storage, prefix)
     contents: dict[str, bytes] = {}
     for f in files:
         data = await storage.get(f"{prefix}/datnes/{f['file_name']}") or await storage.get(f["storage_key"])
@@ -289,10 +293,10 @@ async def build_package(doc_id: int, rules: dict, semantika_xml: bytes | None = 
     meta_xml = pkg.build_metadata_xml(org=org, document=document, files=files, rules=rules,
                                       creator=users.get(doc.get("created_by")), system=system,
                                       generated_at=now, semantic_xml=semantika_xml,
-                                      semantic_version=semantika_versija)
+                                      semantic_version=semantika_versija, extras=extras)
     track_xml = pkg.build_tracking_xml(org=org, document=doc, events=std_events, users=users,
                                        generated_at=now)
-    package = pkg.assemble(meta_xml, track_xml, contents)
+    package = pkg.assemble(meta_xml, track_xml, contents, extras.get("technical"))
     problems = pkg.validate(package)
 
     for path, data in package.items():
@@ -316,6 +320,31 @@ async def build_package(doc_id: int, rules: dict, semantika_xml: bytes | None = 
     if problems:
         raise StandardError("Package does not conform to the standard: " + "; ".join(problems[:5]))
     return result
+
+
+async def _existing_section13(storage, prefix: str) -> tuple[bytes | None, str | None]:
+    try:
+        data = await storage.get(f"{prefix}/metadati.xml")
+        if not data:
+            return None, None
+        from lxml import etree
+        sk = etree.fromstring(data).find(f".//{{{pkg.NS_META}}}SemantiskaisKopsavilkums")
+        if sk is None or not len(sk):
+            return None, None
+        return etree.tostring(sk[0]), sk.get("shemasVersija")
+    except Exception:
+        return None, None
+
+
+async def refresh_package(doc_id: int) -> bool:
+    """Pārbūvēt pakotni, ja tā jau ir (arhivēšanas dati, vīzas, paraksti). Nekad nemet kļūdu."""
+    try:
+        await rebuild_package(doc_id)
+        return True
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).info("pakotne netika pārbūvēta %s: %s", doc_id, e)
+        return False
 
 
 async def rebuild_package(doc_id: int, semantika_xml: bytes | None = None,

@@ -820,6 +820,9 @@ async def handle_package_build(ctx: dict) -> dict:
         from opendms.org_context import get_default_org_required
         r = await prepare(dict(await get_default_org_required()), doc_id, "uapf:package.build")
         out = {**out, "arhivesanai": {"gatavs": r["gatavs"], "trukumi": r["trukumi"], "arhivaId": r["arhivaId"]}}
+        if r["gatavs"]:   # arhīva ID ir — pakotnē ieliek ark:DokumentaArhivaMetadati
+            from opendms.standard.service import refresh_package
+            await refresh_package(doc_id)
     except Exception as e:
         out = {**out, "arhivesanai": {"kluda": str(e)[:200]}}
     return {"output": out}

@@ -439,6 +439,9 @@ async def prepare(doc_id: int, body: PrepareIn, user=Depends(LIETVEDIS)):
         _err(e)
     await _case_audit(user, org, "opendms.archive.document.prepare", str(doc_id),
                       {"gatavs": r["gatavs"], "trukumi": r["trukumi"], "arhivaId": r["arhivaId"]})
+    if r["gatavs"]:
+        from opendms.standard.service import refresh_package
+        r["pakotneAtjaunota"] = await refresh_package(doc_id)
     return r
 
 
@@ -493,12 +496,21 @@ async def _mark(user, doc_id, action, coro):
     except ValueError as e:
         raise HTTPException(400, f"Nederīga vērtība: {e}")
     await _case_audit(user, org, f"opendms.archive.document.{action}", str(doc_id), {"ieraksts": r["id"]})
+    from opendms.standard.service import refresh_package
+    r["pakotneAtjaunota"] = await refresh_package(doc_id)
     return r
 
 
 @router.get("/documents/{doc_id}/marks")
 async def marks(doc_id: int, user=Depends(get_current_user)):
-    return await mk.list_marks(doc_id)
+    from opendms.database import get_pool
+    out = await mk.list_marks(doc_id)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT id, details, created_at FROM document_events WHERE document_id = $1 AND event_type = 'ParakstitsDVS' ORDER BY id", doc_id)
+    out["paraksti"] = [{"id": r["id"], "datums": r["created_at"],
+                        **(json.loads(r["details"]) if isinstance(r["details"], str) else r["details"])} for r in rows]
+    return out
 
 
 @router.post("/documents/{doc_id}/visa")
@@ -525,3 +537,44 @@ async def people(user=Depends(get_current_user)):
         rows = await conn.fetch("""SELECT id, full_name, department, position FROM users
                                     WHERE is_active AND role <> 'viewer' ORDER BY full_name""")
     return [dict(r) for r in rows]
+
+
+# ───────────────────────── Parakstīšana DVS (MK 282 30. p.) ─────────────────────────
+#   POST /api/archive/documents/{id}/sign     {amats?, piezimes?} — parakstītājs, laiks, datņu SHA-256
+#   GET  /api/archive/documents/{id}/signing.xml
+
+from opendms.archive import docmeta as dm  # noqa: E402
+
+
+class SignIn(BaseModel):
+    amats: Optional[str] = None
+    piezimes: Optional[str] = None
+
+
+@router.post("/documents/{doc_id}/sign")
+async def sign(doc_id: int, body: SignIn, user=Depends(DARBINIEKS)):
+    org = await _org()
+    try:
+        r = await dm.sign(doc_id, user["id"], get_storage(), body.amats, body.piezimes)
+    except dm.SignError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.document.sign", str(doc_id), {"ieraksts": r["id"], "datnes": r["datnes"]})
+    from opendms.standard.service import refresh_package
+    r["pakotneAtjaunota"] = await refresh_package(doc_id)
+    return r
+
+
+@router.get("/documents/{doc_id}/signing.xml")
+async def signing(doc_id: int, user=Depends(get_current_user)):
+    from opendms.database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        uid = await conn.fetchval("SELECT doc_uid FROM documents WHERE id = $1", doc_id)
+        evs = [dict(r) for r in await conn.fetch(
+            "SELECT * FROM document_events WHERE document_id = $1 AND event_type = $2 ORDER BY id", doc_id, dm.EV_SIGN)]
+    if not evs:
+        raise HTTPException(404, "Dokuments DVS nav parakstīts")
+    if not uid:
+        raise HTTPException(409, "Dokumentam vēl nav LV-DOK identifikatora")
+    return Response(dm.signing_xml(uid, evs), media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="parakstisana-{doc_id}.xml"'})

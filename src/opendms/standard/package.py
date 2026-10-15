@@ -41,6 +41,8 @@ EVENT_MAP = {
     "DocumentAssigned": ("DokumentsPieskirtsIzpildei", "Izpilde"),
     "DocumentDecided":  ("DokumentsLemums", None),
     "DocumentArchived": ("DokumentsNodotsArhivam", "NodotsArhivam"),
+    "Vizets":           ("DokumentsVizets", None),          # arhivēšana 08: vīza
+    "ParakstitsDVS":    ("DokumentsParakstits", None),      # MK 282 30. p.
 }
 STANDARD_EVENTS = {
     "DokumentsIzveidots": "Projekts", "DokumentsRegistrets": "Registrets",
@@ -123,6 +125,7 @@ def build_metadata_xml(
     generated_at: Optional[datetime] = None,
     semantic_xml: Optional[bytes] = None,
     semantic_version: Optional[str] = None,
+    extras: Optional[dict] = None,
 ) -> bytes:
     """
     org       {std_code, name, org_did?, reg_number?, e_address?}
@@ -134,7 +137,10 @@ def build_metadata_xml(
               schemeId, schemeVersion?, retention{years|permanent, trigger,
               disposition}, infoStatus, personalData, legalBasis?, archiveLevel?
     creator   {id, full_name, department?, email?}
+    extras    arhivēšana (archive/docmeta.package_extras): fonds, addressees, signatures,
+              extension (ark:DokumentaArhivaMetadati elements)
     """
+    extras = extras or {}
     M = NS_META
     root = etree.Element(f"{{{M}}}DokumentaPakotne", nsmap={"dm": M})
     root.set("shemasVersija", "2.0")
@@ -207,6 +213,7 @@ def build_metadata_xml(
     _opt(g, M, "NomenklaturasKods", case.get("index"))
 
     a = _el(d, M, "Arhivs")
+    _opt(a, M, "FondaNumurs", extras.get("fonds"))
     _el(a, M, "AprakstaLimenis", "dokuments")
 
     s = _el(d, M, "Drosiba")
@@ -217,6 +224,18 @@ def build_metadata_xml(
         p = _el(s, M, "PiekluvesIerobezojums")
         _el(p, M, "TiesiskaisPamatojums", rules.get("legalBasis")
             or "Informācijas atklātības likuma 5. panta otrā daļa")
+
+    if extras.get("addressees"):
+        ad = _el(d, M, "Adresati")
+        for x in extras["addressees"]:
+            pa = _el(ad, M, "Adresats")
+            _el(pa, M, "PusesTips", _pick(x.get("tips"), PARTY_TYPES, "Cits"))
+            _el(pa, M, "Nosaukums", x["nosaukums"])
+            if x.get("did") and ORG_DID_RE.match(x["did"]):
+                _el(pa, M, "OrgDID", x["did"])
+            if x.get("eAdrese"):
+                kk = _el(pa, M, "Kontakti")
+                _el(kk, M, "EAdrese", x["eAdrese"])
 
     dn = _el(d, M, "Datnes")
     for n, f in enumerate(files, start=1):
@@ -251,12 +270,34 @@ def build_metadata_xml(
     if meta.get("channel"):
         _el(i, M, "SanemsanasKanals", _pick(meta["channel"], CHANNELS, "DVSLietotajs"))
 
+    # 12. Paraksti — DVS apstiprinājums bez droša e-paraksta (MK 282 30. p.; pierādījumi parakstisana.xml)
+    if extras.get("signatures"):
+        pr = _el(d, M, "Paraksti")
+        for sg in extras["signatures"]:
+            for fid in (sg.get("datnes") or [None]):
+                x = _el(pr, M, "Paraksts")
+                pp = _el(x, M, "Parakstitajs")
+                per = sg["persona"]
+                _opt(pp, M, "LietotajaID", per.get("lietotajaId"))
+                _el(pp, M, "VardsUzvards", per.get("vardsUzvards") or "—")
+                _opt(pp, M, "Amats", per.get("amats"))
+                _opt(pp, M, "Strukturvieniba", per.get("strukturvieniba"))
+                _el(x, M, "ParakstitsUz", _riga(sg["laiks"]))
+                _el(x, M, "ParakstaVeids", "Vizesana")
+                if fid and str(fid).startswith("LV-DATNE:"):
+                    _el(x, M, "ParakstitaDatnesID", fid)
+
     # 13. Semantiskais kopsavilkums — vdvc/dokumentu-semantikas-formats (lokālais slānis)
     if semantic_xml:
         sk = _el(d, M, "SemantiskaisKopsavilkums")
         if semantic_version:
             sk.set("shemasVersija", semantic_version)
         sk.append(etree.fromstring(semantic_xml))
+
+    # 14. Paplašinājumi — ark:DokumentaArhivaMetadati (kisc/dokumentu-arhivesanas-standarts 08)
+    if extras.get("extension") is not None:
+        pl = _el(d, M, "Paplasinajumi")
+        pl.append(extras["extension"])
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
@@ -338,9 +379,11 @@ def build_tracking_xml(
 
 # ── assembling and checking ────────────────────────────────────────────────
 
-def assemble(metadata_xml: bytes, tracking_xml: bytes, files: dict[str, bytes]) -> dict[str, bytes]:
-    """Return {relative path: bytes} for the whole package, SHA256SUMS included."""
-    out: dict[str, bytes] = {"metadati.xml": metadata_xml, "izsekosana.xml": tracking_xml}
+def assemble(metadata_xml: bytes, tracking_xml: bytes, files: dict[str, bytes],
+             technical: Optional[dict[str, bytes]] = None) -> dict[str, bytes]:
+    """Return {relative path: bytes} for the whole package, SHA256SUMS included.
+    technical: extra top-level files (e.g. parakstisana.xml, MK 282 30. p.)."""
+    out: dict[str, bytes] = {"metadati.xml": metadata_xml, "izsekosana.xml": tracking_xml, **(technical or {})}
     for name, data in files.items():
         out[f"datnes/{name}"] = data
     lines = [f"{sha256_hex(data)}  {path}" for path, data in out.items()]

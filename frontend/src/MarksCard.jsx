@@ -23,17 +23,19 @@ export default function MarksCard({ doc, notify }) {
   const set = (k, v) => setForm({ ...f, [k]: v });
   const task = f.uzdevumi?.[0] || { atbildigie: [], apraksts: "", termins: "" };
   const setTask = (k, v) => set("uzdevumi", [{ ...task, [k]: v }]);
-  const total = m.vizas.length + m.iepazisanas.length + m.rezolucijas.length;
+  const total = m.vizas.length + m.iepazisanas.length + m.rezolucijas.length + (m.paraksti || []).length;
   return (<div className="border rounded p-3 text-sm bg-white space-y-2">
     <div className="flex items-center justify-between">
-      <span className="font-medium">Vīzas, atzīmes, rezolūcijas{total ? ` (${total})` : ""}</span>
+      <span className="font-medium">Vīzas, atzīmes, rezolūcijas, paraksti{total ? ` (${total})` : ""}</span>
       <div className="flex gap-1">
         <button onClick={() => setForm({ k: "visa", rezultats: "Saskanots" })} className="text-xs px-2 py-1 border rounded">Vizēt</button>
         <button onClick={() => setForm({ k: "ack" })} className="text-xs px-2 py-1 border rounded">Atzīmēt iepazīšanos</button>
         <button onClick={() => setForm({ k: "res" })} className="text-xs px-2 py-1 border rounded">Dot rezolūciju</button>
+        <button onClick={() => setForm({ k: "sign" })} className="text-xs px-2 py-1 border rounded" title="Bez droša e-paraksta; pierādījumi pēc MK 282 30. p.">Parakstīt DVS</button>
       </div>
     </div>
     {form && <div className="bg-gray-50 rounded p-2 space-y-2">
+      {f.k === "sign" && <div className="text-xs text-gray-600">Paraksts DVS bez droša elektroniskā paraksta. Saglabā parakstītāju, laiku un katras datnes SHA-256 (MK 282 30. p.). Drošam e-parakstam izmantojiet eParakstu un pievienojiet .edoc.</div>}
       {f.k === "visa" && <select value={f.rezultats} onChange={(e) => set("rezultats", e.target.value)} className="text-sm border rounded px-2 py-1">
         {Object.entries(VIZA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}
       {f.k === "res" && <div className="space-y-2">
@@ -50,6 +52,7 @@ export default function MarksCard({ doc, notify }) {
           const base = { piezimes: f.piezimes || null, amats: f.amats || null };
           if (f.k === "visa") send("visa", { ...base, rezultats: f.rezultats, aizstaj: f.aizstaj || null }, "Vīza pievienota");
           if (f.k === "ack") send("acknowledge", base, "Iepazīšanās atzīmēta");
+          if (f.k === "sign") send("sign", base, "Parakstīts DVS — pierādījumi saglabāti");
           if (f.k === "res") send("resolution", { ...base, aizstaj: f.aizstaj || null, uzdevumi: [{ ...task, termins: task.termins || null }] }, "Rezolūcija pievienota");
         }} className="text-sm px-3 py-1 bg-emerald-600 text-white rounded">Saglabāt</button>
         <button onClick={() => setForm(null)} className="text-sm px-3 py-1 border rounded">Atcelt</button>
@@ -58,6 +61,7 @@ export default function MarksCard({ doc, notify }) {
     </div>}
     {m.vizas.map((v) => <Row key={v.id} m={v}>· <b>{VIZA[v.rezultats]}</b>{v.piezimes ? ` — ${v.piezimes}` : ""}
       {!v.aizstats && <button onClick={() => setForm({ k: "visa", rezultats: v.rezultats, aizstaj: v.id })} className="ml-2 text-sky-700">labot</button>}</Row>)}
+    {(m.paraksti || []).map((v) => <Row key={v.id} m={v}>· <b>parakstīja DVS</b> ({v.datnes.length} datnes, SHA-256 fiksēts)</Row>)}
     {m.iepazisanas.map((v) => <Row key={v.id} m={v}>· iepazinās{v.piezimes ? ` — ${v.piezimes}` : ""}</Row>)}
     {m.rezolucijas.map((v) => <Row key={v.id} m={v}>· rezolūcija{v.piezimes ? ` (${v.piezimes})` : ""}:
       {v.uzdevumi.map((t, i) => <div key={i} className="ml-4">{t.apraksts} → {t.atbildigie.map((p) => p.vardsUzvards).join(", ")}{t.termins ? `, līdz ${t.termins}` : ""}</div>)}
