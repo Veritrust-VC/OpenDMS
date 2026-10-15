@@ -177,3 +177,30 @@ def test_mcp_tools_listed_and_completion_needs_confirmation():
     res = asyncio.run(call({"document_id": 1, "decision": "apstiprinats", "person": "a@x.lv", "confirmed": True},
                            scope="read"))
     assert res["result"]["isError"] is True
+
+
+def test_decisions_named_by_the_process_with_labels():
+    r = {"decisions": ["nodot-izpildei=Nodot izpildei", "nodot-iepazities=Nodot iepazīties", "apstiprinats"]}
+    assert tasks.decisions_of(r) == [("nodot-izpildei", "Nodot izpildei"), ("nodot-iepazities", "Nodot iepazīties"),
+                                     ("apstiprinats", "Apstiprināt")]
+    assert tasks.decisions_of({})[0] == ("apstiprinats", "Apstiprināt")
+
+
+def test_process_names_next_event_and_source_package(db):
+    import opendms.uapf.client as uc
+
+    class Client:
+        def __init__(self, *a):
+            pass
+
+        async def resume_session(self, sid, output):
+            return {"state": "completed", "output": {"nakamaisNotikums": "document.decided"}}
+    uc.UapfClient = Client
+    calls = []
+    import opendms.uapf.bridge as br
+
+    async def ev(*a, **k):
+        calls.append((a, k))
+    br.on_document_event = ev
+    asyncio.run(tasks.complete(2, "registrets", user={"id": 1, "email": "a@x.lv"}))
+    assert calls == [(("document.decided", 2), {"exclude_package": "lv.x.pkg", "source_package": "lv.x.pkg"})]

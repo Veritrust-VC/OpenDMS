@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 async def on_document_event(event_type: str, doc_id: int,
-                            exclude_package: Optional[str] = None) -> None:
+                            exclude_package: Optional[str] = None,
+                            source_package: Optional[str] = None) -> None:
     """
     Hook called after a document lifecycle transition succeeds.
 
@@ -53,6 +54,9 @@ async def on_document_event(event_type: str, doc_id: int,
         except Exception:
             document["metadata"] = {}
 
+    # The process that just finished, so a trigger can say "after package X"
+    # (match_condition {"source_package": "..."}).
+    document["source_package"] = source_package
     triggers = await find_matching_triggers(event_type, document)
     # A process finishing must not re-start itself (e.g. approval → decided).
     if exclude_package:

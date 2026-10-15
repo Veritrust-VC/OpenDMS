@@ -56,6 +56,18 @@ def _parse_ts(v) -> Optional[datetime]:
         return None
 
 
+def decisions_of(review: dict) -> list[tuple[str, str]]:
+    """The step's choices as (id, label). A process names them as "id=Label"
+    (lemumi: "nodot-izpildei=Nodot izpildei,nodot-iepazities=Nodot iepazīties")."""
+    out = []
+    for raw in review.get("decisions") or DEFAULT_DECISIONS:
+        did, _, label = str(raw).partition("=")
+        did = did.strip()
+        if did:
+            out.append((did, label.strip() or DECISION_LABELS.get(did, did)))
+    return out
+
+
 def deadline_of(review: dict, classification_due: Optional[datetime] = None) -> Optional[datetime]:
     """When the step is due.
 
@@ -128,7 +140,7 @@ def _shape(r, now: datetime) -> dict:
     review = meta.get("uapf_review") or {}
     names = step_names(r["package_id"])
     due = deadline_of(review, r["classification_due"])
-    decisions = list(review.get("decisions") or DEFAULT_DECISIONS)
+    decisions = decisions_of(review)
     sender = (meta.get("sender") or meta.get("sutitajs") or meta.get("from")
               or (meta.get("incoming") or {}).get("sender"))
     if isinstance(sender, dict):
@@ -148,7 +160,7 @@ def _shape(r, now: datetime) -> dict:
         "role": review.get("role"),
         "department": review.get("department"),
         "proposal": review.get("proposal") or {},
-        "decisions": [{"id": d, "label": DECISION_LABELS.get(d, d)} for d in decisions],
+        "decisions": [{"id": d, "label": label} for d, label in decisions],
         "requestedAt": review.get("requestedAt"),
         "deadline": due.isoformat() if due else None,
         "overdue": bool(due and due < now),
@@ -207,7 +219,7 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
     review = _j(meta).get("uapf_review") or {}
     if review.get("status") != "gaida" or not review.get("sessionId"):
         raise TaskError(409, "No process step is waiting for a decision on this document")
-    allowed = tuple(review.get("decisions") or DEFAULT_DECISIONS)
+    allowed = tuple(d for d, _ in decisions_of(review))
     if decision not in allowed:
         raise TaskError(400, f"decision must be one of {', '.join(allowed)}")
 
@@ -250,20 +262,29 @@ async def complete(doc_id: int, decision: str, *, user: dict, comment: Optional[
             review["sessionId"], state,
             json.dumps(result.get("output")) if result.get("output") is not None else None)
 
-    if decision in ("apstiprinats", "labots") and state == "completed":
+    if state == "completed":
         out = result.get("output") or {}
-        dept = out.get("department") or out.get("strukturvieniba")
-        if dept:
-            try:
-                from opendms.uapf.handlers import _register_assignment
-                await _register_assignment(int(doc_id), {"department": dept, "vieniba": out.get("vieniba")},
-                                           review["sessionId"])
-            except Exception as exc:  # the register must not block the decision
-                logger.warning("register assignment for doc %s failed: %s", doc_id, exc)
         async with pool.acquire() as conn:
             finished_pkg = await conn.fetchval(
                 "SELECT package_id FROM uapf_sessions WHERE session_id = $1", review["sessionId"])
-        await on_document_event("document.decided", int(doc_id), exclude_package=finished_pkg)
+        # What starts next: the event the process names (nakamaisNotikums), or —
+        # for steps with the default choices — an approved proposal is a decision
+        # on the document. Triggers can require the package that just finished
+        # (match_condition source_package).
+        event = out.get("nakamaisNotikums")
+        if not event and decision in ("apstiprinats", "labots"):
+            event = "document.decided"
+            dept = out.get("department") or out.get("strukturvieniba")
+            if dept:
+                try:
+                    from opendms.uapf.handlers import _register_assignment
+                    await _register_assignment(int(doc_id), {"department": dept, "vieniba": out.get("vieniba")},
+                                               review["sessionId"])
+                except Exception as exc:  # the register must not block the decision
+                    logger.warning("register assignment for doc %s failed: %s", doc_id, exc)
+        if event:
+            await on_document_event(str(event), int(doc_id), exclude_package=finished_pkg,
+                                    source_package=finished_pkg)
 
     nxt = await get_task(int(doc_id))   # the process may already wait for the next person
     return {"sessionId": review["sessionId"], "state": state, "review": review, "nextTask": nxt}
