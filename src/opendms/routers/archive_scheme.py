@@ -406,3 +406,42 @@ class FinishIn(BaseModel):
 @router.post("/documents/{doc_id}/finish")
 async def finish(doc_id: int, body: FinishIn, user=Depends(LIETVEDIS)):
     return await cs.finish_document(doc_id, user.get("email"), user.get("id"), body.piezime)
+
+
+# ───────────────────────── P2: sagatavošana arhivēšanai reģistrācijā ─────────────────────────
+#   GET  /api/archive/documents/{id}/readiness   minimums, datņu formāti, lietas ieteikums
+#   POST /api/archive/documents/{id}/prepare     {case_id?, info_status?, access_basis?} → arhīva ID
+#   GET  /api/archive/unfiled?gads=              dokumenti bez lietas vai arhīva ID
+
+from opendms.archive import registration as rg  # noqa: E402
+
+
+@router.get("/documents/{doc_id}/readiness")
+async def readiness(doc_id: int, user=Depends(get_current_user)):
+    try:
+        return await rg.readiness((await _org())["id"], doc_id)
+    except cs.CaseError as e:
+        raise HTTPException(404, str(e))
+
+
+class PrepareIn(BaseModel):
+    case_id: Optional[int] = None
+    info_status: Optional[str] = None
+    access_basis: Optional[str] = None
+
+
+@router.post("/documents/{doc_id}/prepare")
+async def prepare(doc_id: int, body: PrepareIn, user=Depends(LIETVEDIS)):
+    org = await _org()
+    try:
+        r = await rg.prepare(org, doc_id, user.get("email"), user.get("id"), body.case_id, body.info_status, body.access_basis)
+    except cs.CaseError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.document.prepare", str(doc_id),
+                      {"gatavs": r["gatavs"], "trukumi": r["trukumi"], "arhivaId": r["arhivaId"]})
+    return r
+
+
+@router.get("/unfiled")
+async def unfiled(gads: Optional[int] = None, user=Depends(get_current_user)):
+    return await rg.unfiled((await _org())["id"], gads)

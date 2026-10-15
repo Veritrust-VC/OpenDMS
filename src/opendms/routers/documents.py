@@ -28,6 +28,8 @@ class DocumentCreate(BaseModel):
     # An existing register document (a document received from another institution
     # keeps its register identity; this DVS becomes its holder instead of creating a new one).
     register_did: Optional[str] = None
+    # Arhivēšana P2: lieta no spēkā esošās klasifikācijas shēmas (obligāta, ja P2 ieslēgts)
+    case_id: Optional[int] = None
 
 
 class DocumentSend(BaseModel):
@@ -260,6 +262,11 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
     async with pool.acquire() as conn:
         default_org = await get_default_org_required()
         org_id = default_org["id"]
+        from opendms.archive import cases as _cases, registration as _reg
+        try:
+            await _reg.require_case_for_new(conn, org_id, req.case_id)
+        except _cases.CaseError as e:
+            raise HTTPException(400, str(e))
         count = await conn.fetchval("SELECT COUNT(*) FROM documents WHERE org_id = $1", org_id)
         reg_num = f"{org_id}-{count + 1:05d}"
 
@@ -357,6 +364,13 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         error_message=None if sdk_result else "SDK document creation unavailable",
     )
 
+
+    if req.case_id:
+        try:
+            await _reg.prepare(dict(default_org), row["id"], user.get("email"), user.get("id"), case_pk=req.case_id)
+        except Exception as _arh_err:
+            import logging
+            logging.getLogger(__name__).warning("Arhivēšana P2 pēc izveides: %s", _arh_err)
 
     # UAPF Integration Protocol hook: fire any process_triggers that match
     # DocumentCreated. Non-blocking; failure must not break create.

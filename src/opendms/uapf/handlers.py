@@ -813,7 +813,16 @@ async def handle_package_build(ctx: dict) -> dict:
     """
     from opendms.standard.service import build_package, rules_from_variables
     inp = ctx.get("input") or {}
-    return {"output": await build_package(_document_id(ctx), rules_from_variables(inp))}
+    doc_id = _document_id(ctx)
+    out = await build_package(doc_id, rules_from_variables(inp))
+    try:   # arhivēšana P2: ieteiktā lieta, minimums, arhīva ID — nekad nebloķē procesu
+        from opendms.archive.registration import prepare
+        from opendms.org_context import get_default_org_required
+        r = await prepare(dict(await get_default_org_required()), doc_id, "uapf:package.build")
+        out = {**out, "arhivesanai": {"gatavs": r["gatavs"], "trukumi": r["trukumi"], "arhivaId": r["arhivaId"]}}
+    except Exception as e:
+        out = {**out, "arhivesanai": {"kluda": str(e)[:200]}}
+    return {"output": out}
 
 
 async def handle_document_list(ctx: dict) -> dict:

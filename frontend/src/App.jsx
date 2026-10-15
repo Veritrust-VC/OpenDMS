@@ -8,6 +8,7 @@ import StoragePage from "./StoragePage.jsx";
 import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
 import ForwardingCard from "./ForwardingCard.jsx";
+import ArchiveCard, { CasePicker } from "./ArchiveCard.jsx";
 import ActiveClassifiers from "./ClassifiersPage.jsx";
 import ArchivePage from "./ArchivePage.jsx";
 
@@ -515,6 +516,7 @@ function CreateDocForm({ onDone, notify }) {
   };
 
   const [vizCid, setVizCid] = useState(null);
+  const [caseId, setCaseId] = useState(null);
   const generateMetadata = async () => {
     if (!file) return notify("Please select a file first", "error");
     const cid = (window.crypto?.randomUUID?.() || `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -547,7 +549,7 @@ function CreateDocForm({ onDone, notify }) {
       const semanticSummary = aiData.semanticSummary;
       const hasAi = semanticSummary || aiData.sensitivityControl;
       const aiStatus = hasAi ? (["HUMAN", "HYBRID"].includes(semanticSummary?.summarySource) ? "VALIDATED" : "GENERATED") : "SKIPPED";
-      const doc = await api("/documents", { method: "POST", body: JSON.stringify({ title, content_summary: summary, metadata: {}, semantic_summary: semanticSummary, sensitivity_control: aiData.sensitivityControl, ai_summary_status: aiStatus }) });
+      const doc = await api("/documents", { method: "POST", body: JSON.stringify({ title, content_summary: summary, metadata: {}, semantic_summary: semanticSummary, sensitivity_control: aiData.sensitivityControl, ai_summary_status: aiStatus, case_id: caseId }) });
       if (file && doc?.id) {
         try {
           const fd = new FormData();
@@ -611,6 +613,7 @@ function CreateDocForm({ onDone, notify }) {
   return (
     <div className="bg-white border rounded-lg p-4 mb-4 space-y-3">
       <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" />
+      <CasePicker value={caseId} onChange={setCaseId} />
       <input type="file" onChange={handleFileChange} className="text-xs" />
       <div className="flex items-center gap-2">
         <button onClick={generateMetadata} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">
@@ -1303,6 +1306,7 @@ function DocumentDetail({ doc, onAction, notify }) {
           : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
         {doc?.metadata?.semantika && <SemanticDescriptionCard sem={doc.metadata.semantika} docId={doc.id} notify={notify} />}
         <ForwardingCard doc={doc} files={files} notify={notify} onAction={onAction} />
+        <ArchiveCard doc={doc} notify={notify} />
 
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">{doc.title}</h3>

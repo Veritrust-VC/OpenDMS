@@ -381,6 +381,18 @@ function OpenCase({ api, notify, year, onDone }) {
   </div>);
 }
 
+function Unfiled({ api, notify, year }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => { (async () => { try { setRows(await api(`/archive/unfiled?gads=${year}`)); } catch (e) { notify(e.message, "error"); } })(); }, [year]);
+  if (!rows || !rows.length) return null;
+  return (<details className="bg-white border border-amber-200 rounded-lg">
+    <summary className="px-3 py-2 text-sm cursor-pointer text-amber-900">{rows.length} dokumenti nav sagatavoti arhivēšanai</summary>
+    <div className="divide-y max-h-72 overflow-auto">{rows.map((d) => <div key={d.id} className="px-3 py-1.5 text-xs">
+      <span className="font-mono text-gray-500 mr-1">{d.registration_number || `#${d.id}`}</span>{d.title}
+      <span className="text-gray-400"> · {d.case_index ? `lieta ${d.case_index}, nav arhīva ID` : "bez lietas"}</span></div>)}</div>
+  </details>);
+}
+
 function Cases({ api, notify }) {
   const [year, setYear] = useState(new Date().getFullYear()); const [list, setList] = useState([]);
   const [sel, setSel] = useState(null); const [showOpen, setShowOpen] = useState(false);
@@ -394,6 +406,7 @@ function Cases({ api, notify }) {
         <button onClick={() => setShowOpen(!showOpen)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">+ Atvērt lietu</button>
       </div>
       {showOpen && <OpenCase api={api} notify={notify} year={year} onDone={() => { setShowOpen(false); load(); }} />}
+      <Unfiled api={api} notify={notify} year={year} />
       <div className="bg-white border rounded-lg divide-y">
         {list.map((c) => <button key={c.id} onClick={() => setSel(c.id)} className={`w-full text-left px-3 py-2 ${sel === c.id ? "bg-sky-50" : "hover:bg-gray-50"}`}>
           <div className="flex items-center justify-between"><span className="text-sm font-medium">{c.case_index} {c.case_name}</span>
