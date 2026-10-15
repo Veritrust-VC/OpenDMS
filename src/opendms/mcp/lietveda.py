@@ -1,7 +1,7 @@
 """Lietvedība tools — what a records-management agent needs to work a DVS.
 
-READ   worklist, document_history, people_and_categories, mans_darbs, uzdevums
-WRITE  assign_document, apply_classification, add_note, pabeigt_uzdevumu
+READ   worklist, document_history, people_and_categories, mans_darbs, uzdevums, dokumenta_priekslikums
+WRITE  assign_document, apply_classification, add_note, pabeigt_uzdevumu, iesniegt_dokumentu
 
 Every write runs as the authenticated DVS user (for the Lietvedības aģents:
 its own named user, see config.mcp_agent_*), lands in document_events with a
@@ -125,6 +125,33 @@ TOOLS: list[dict[str, Any]] = [
         "description": "The process step waiting on one document: step, role, AI proposal, decisions "
                        "allowed, deadline. Read before pabeigt_uzdevumu.",
         "inputSchema": _schema({"document_id": {"type": "integer"}}, ["document_id"]),
+    },
+    {
+        "name": "dokumenta_priekslikums",
+        "class": "read",
+        "description": "Jauns dokuments, 1. solis: from a file (base64) or pasted text, propose the registration "
+                       "metadata (temats, sūtītāja organizācija, dokumenta datums, veids, kopsavilkums). Stores nothing. "
+                       "Personal data is redacted before the model, so the sender's name comes from the person.",
+        "inputSchema": _schema({
+            "file_name": {"type": "string"}, "mime_type": {"type": "string"},
+            "file_b64": {"type": "string", "description": "File content, base64 (max 15 MB)."},
+            "text": {"type": "string", "maxLength": 50000},
+        }),
+    },
+    {
+        "name": "iesniegt_dokumentu",
+        "class": "write",
+        "description": "Jauns dokuments, 2. solis: register the document with the values the person confirmed; the "
+                       "organisation's processes start (registration, classification, routing). Only after the person "
+                       "has seen and confirmed the values.",
+        "inputSchema": _schema({
+            "fields": {"type": "object", "description": "temats (required), sutitajs, sutitajaOrganizacija, "
+                       "sutitajaEpasts, dokumentaDatums, dokumentaVeids, kopsavilkums"},
+            "file_name": {"type": "string"}, "mime_type": {"type": "string"},
+            "file_b64": {"type": "string"}, "text": {"type": "string", "maxLength": 50000},
+            "person": {"type": "string", "description": "E-mail of the person who entered the document."},
+            "confirmed": {"type": "boolean"},
+        }, ["fields", "person", "confirmed"]),
     },
     {
         "name": "pabeigt_uzdevumu",
@@ -386,6 +413,32 @@ async def _pabeigt_uzdevumu(args: dict, ctx: dict) -> dict:
             "next_step": ({"stepName": nxt["stepName"], "role": nxt["role"]} if nxt else None)}
 
 
+async def _dokumenta_priekslikums(args: dict, ctx: dict) -> dict:
+    from opendms.intake import agent_channel
+    try:
+        return await agent_channel.propose(file_name=args.get("file_name"), mime_type=args.get("mime_type"),
+                                           file_b64=args.get("file_b64"), text=args.get("text"))
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+async def _iesniegt_dokumentu(args: dict, ctx: dict) -> dict:
+    from opendms.intake import agent_channel
+    _actor(ctx)
+    if args.get("confirmed") is not True:
+        return {"error": "the person has not confirmed the values — show them and ask first"}
+    person = (args.get("person") or "").strip().lower()
+    if "@" not in person:
+        return {"error": "person must be the e-mail of the person entering the document"}
+    try:
+        r = await agent_channel.submit(fields=args.get("fields") or {}, person=person,
+                                       file_name=args.get("file_name"), mime_type=args.get("mime_type"),
+                                       file_b64=args.get("file_b64"), text=args.get("text"))
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"done": True, **r}
+
+
 HANDLERS = {
     "worklist": _worklist,
     "document_history": _document_history,
@@ -396,4 +449,6 @@ HANDLERS = {
     "mans_darbs": _mans_darbs,
     "uzdevums": _uzdevums,
     "pabeigt_uzdevumu": _pabeigt_uzdevumu,
+    "dokumenta_priekslikums": _dokumenta_priekslikums,
+    "iesniegt_dokumentu": _iesniegt_dokumentu,
 }
