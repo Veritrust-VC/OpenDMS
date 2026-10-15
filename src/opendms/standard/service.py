@@ -242,6 +242,11 @@ async def build_package(doc_id: int, rules: dict, semantika_xml: bytes | None = 
         name = rules.get("caseName") or "Nenoteikta lieta"
         rules = {**rules, "case": {"id": await _case_id(conn, org, index, name, year),
                                    "index": index, "name": name, "year": year}}
+        # dokuments → lieta (arhivēšana 03): tikai ja vēl nav piesaistīts un lieta ir atvērta
+        await conn.execute(
+            """UPDATE documents d SET case_id = c.id FROM standard_cases c
+                WHERE d.id = $1 AND d.case_id IS NULL AND c.org_id = $2 AND c.case_index = $3
+                  AND c.case_year = $4 AND c.status = 'Atverta'""", doc["id"], org["id"], index, year)
 
         files = [dict(r) for r in await conn.fetch(
             "SELECT * FROM document_files WHERE document_id = $1 ORDER BY is_primary DESC, id", doc["id"])]

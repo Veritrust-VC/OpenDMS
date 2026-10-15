@@ -1,5 +1,5 @@
 // Arhīvs — dokumentu arhivēšana pēc MK 282 un kisc/dokumentu-arhivesanas-standarts.
-// Sadaļas: klasifikācijas shēma (periodi, statusi, imports, eksports), arhīva iestatījumi, vecā eksporta partija.
+// Sadaļas: lietas (atvēršana, slēgšana, sējumi), klasifikācijas shēma (periodi, statusi, imports, eksports), arhīva iestatījumi, vecā eksporta partija.
 import { useState, useEffect } from "react";
 
 const STATUS_STYLE = {
@@ -293,6 +293,120 @@ function Schemes({ api, notify }) {
     </div>);
 }
 
+// ───────────────────────── lietas ─────────────────────────
+const CASE_STYLE = { Atverta: "bg-sky-100 text-sky-700", Slegta: "bg-gray-200 text-gray-700" };
+const download = async (api, notify, path, name) => {
+  try { const r = await api(path); const b = await r.blob(); const a = document.createElement("a");
+        a.href = URL.createObjectURL(b); a.download = name; a.click(); } catch (e) { notify(e.message, "error"); } };
+
+function CaseDetail({ api, notify, id, onChanged }) {
+  const [c, setC] = useState(null); const [docId, setDocId] = useState(""); const [vol, setVol] = useState(null);
+  const load = async () => { try { setC(await api(`/archive/cases/${id}`)); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); }, [id]);
+  if (!c) return null;
+  const act = async (path, body, msg) => {
+    try { await api(`/archive/cases/${id}/${path}`, { method: "POST", body: JSON.stringify(body || {}) }); notify(msg); load(); onChanged(); }
+    catch (e) { notify(e.message, "error"); } };
+  const finish = async (d) => {
+    try { await api(`/archive/documents/${d}/finish`, { method: "POST", body: "{}" }); notify("Dokuments atzīmēts kā pabeigts"); load(); onChanged(); }
+    catch (e) { notify(e.message, "error"); } };
+  const open = c.status === "Atverta";
+  return (<div className="bg-white border rounded-lg p-4 space-y-4">
+    <div className="flex items-start justify-between gap-3">
+      <div><div className="text-lg font-semibold">{c.case_index} {c.case_name}</div>
+        <div className="text-xs text-gray-500 font-mono">{c.case_id}</div></div>
+      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CASE_STYLE[c.status] || "bg-amber-100 text-amber-800"}`}>{c.status_lv}</span>
+    </div>
+    <div className="grid grid-cols-3 gap-3 text-sm">
+      <div><div className="text-xs text-gray-400">Gads</div>{c.case_year}{c.long_running ? " · turpinās" : ""}</div>
+      <div><div className="text-xs text-gray-400">Glabāšanas termiņš</div>{termins(c)}{c.disposition ? ` · ${RICIBA[c.disposition]}` : ""}</div>
+      <div><div className="text-xs text-gray-400">Glabā līdz</div>{c.retention_kind === "Pastavigi" ? "pastāvīgi" : (c.retention_end || "pēc slēgšanas")}</div>
+      <div><div className="text-xs text-gray-400">Datumu robežas</div>{c.date_from ? `${c.date_from} – ${c.date_to}` : "—"}</div>
+      <div><div className="text-xs text-gray-400">Shēmas ieraksts</div>{c.shemas_ieraksts ? `${c.shemas_ieraksts.idx} (${c.shemas_ieraksts.period_from.slice(0, 4)})` : <span className="text-amber-700">nav sasaistīts</span>}</div>
+      <div><div className="text-xs text-gray-400">Reģistra SHA-256</div><span className="font-mono text-xs break-all">{c.register_sha256 ? c.register_sha256.slice(0, 16) + "…" : "—"}</span></div>
+    </div>
+    {open && <div className="flex flex-wrap gap-2">
+      <button disabled={c.nepabeigti > 0} onClick={() => act("close", {}, "Lieta slēgta")} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded disabled:opacity-40"
+        title={c.nepabeigti ? "Lietā ir nepabeigti dokumenti" : ""}>Slēgt lietu</button>
+      {!c.long_running && <button onClick={() => act("carry-over", {}, "Lieta turpināsies nākamajā periodā")} className="text-sm px-3 py-1.5 border rounded">Ilgstoša — turpināt nākamgad</button>}
+      <button onClick={() => setVol(vol ? null : { medium: "P", content_type: "Teksts", page_count: "" })} className="text-sm px-3 py-1.5 border rounded">+ Papīra sējums</button>
+      <input value={docId} onChange={(e) => setDocId(e.target.value)} placeholder="Dokumenta DVS ID" className="text-sm px-2 py-1 border rounded w-36" />
+      <button onClick={() => { act("documents", { document_id: parseInt(docId) }, "Dokuments pievienots lietai"); setDocId(""); }} className="text-sm px-3 py-1.5 border rounded">Pievienot</button>
+    </div>}
+    {vol && <div className="flex gap-2 items-center bg-gray-50 p-2 rounded">
+      <select value={vol.medium} onChange={(e) => setVol({ ...vol, medium: e.target.value })} className="text-sm border rounded px-2 py-1">
+        {Object.entries(NESEJS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+      <input value={vol.page_count} onChange={(e) => setVol({ ...vol, page_count: e.target.value })} placeholder="lapas" className="text-sm border rounded px-2 py-1 w-24" />
+      <button onClick={() => { act("volumes", { ...vol, page_count: vol.page_count ? parseInt(vol.page_count) : null }, "Sējums pievienots"); setVol(null); }} className="text-sm px-3 py-1 bg-gray-700 text-white rounded">Saglabāt</button>
+    </div>}
+    {c.nepabeigti > 0 && <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+      {c.nepabeigti} dokumenti nav pabeigti — lietu var slēgt, kad visi ir izlemti, nosūtīti vai atzīmēti kā pabeigti (MK 282 47. p.).</div>}
+    <div><div className="text-sm font-medium mb-1">Dokumenti ({c.dokumenti.length})</div>
+      <div className="border rounded divide-y max-h-80 overflow-auto">
+        {c.dokumenti.map((d) => <div key={d.id} className="px-3 py-1.5 flex items-center justify-between text-sm">
+          <div className="min-w-0"><span className="font-mono text-xs text-gray-500 mr-2">{d.registration_number || `#${d.id}`}</span>{d.title}</div>
+          <div className="flex items-center gap-2 shrink-0"><span className="text-xs text-gray-400">{d.status} · {d.datnes} datnes</span>
+            {d.nepabeigts && open && <button onClick={() => finish(d.id)} className="text-xs px-2 py-0.5 border border-amber-300 text-amber-800 rounded">Pabeigts</button>}</div>
+        </div>)}
+        {!c.dokumenti.length && <div className="p-3 text-sm text-gray-400">Lietā vēl nav dokumentu</div>}
+      </div></div>
+    {c.sejumi.length > 0 && <div className="text-sm"><div className="font-medium mb-1">Sējumi</div>
+      {c.sejumi.map((v) => <div key={v.id} className="text-xs text-gray-600">{v.number}. {NESEJS[v.medium]} · {v.content_type}
+        {v.document_count != null ? ` · ${v.document_count} dok.` : ""}{v.file_count != null ? ` · ${v.file_count} datnes` : ""}{v.page_count ? ` · ${v.page_count} lp.` : ""}</div>)}</div>}
+    <div className="flex gap-2">
+      {c.shemas_ieraksts && <button onClick={() => download(api, notify, `/archive/cases/${id}/lieta.xml`, `lieta-${c.case_index}-${c.case_year}.xml`)} className="text-xs px-3 py-1 border rounded">ark:Lieta XML</button>}
+      {c.register_key && <button onClick={() => download(api, notify, `/archive/cases/${id}/register.xml`, `lietas-registrs-${c.case_index}-${c.case_year}.xml`)} className="text-xs px-3 py-1 border rounded">Dokumentu reģistrs XML</button>}
+    </div>
+    <details className="text-xs text-gray-500"><summary className="cursor-pointer">Vēsture ({c.history.length})</summary>
+      {c.history.map((h, i) => <div key={i}>{h.kad?.slice(0, 16).replace("T", " ")} · {h.darbiba} · {h.kas}</div>)}</details>
+  </div>);
+}
+
+function OpenCase({ api, notify, year, onDone }) {
+  const [entries, setEntries] = useState(null); const [pick, setPick] = useState("");
+  useEffect(() => { (async () => {
+    try { const s = await api(`/archive/schemes/active?on=${year}-06-30`); const full = await api(`/archive/schemes/${s.id}`);
+          setEntries(full.entries.filter((e) => e.kind === "lieta")); }
+    catch (e) { setEntries([]); notify(e.message, "error"); } })(); }, [year]);
+  const one = async () => { try { await api("/archive/cases", { method: "POST", body: JSON.stringify({ entry_id: parseInt(pick), gads: year }) }); notify("Lieta atvērta"); onDone(); } catch (e) { notify(e.message, "error"); } };
+  const all = async () => { try { const r = await api("/archive/cases/open-period", { method: "POST", body: JSON.stringify({ gads: year }) });
+    notify(`Atvērtas ${r.atvertas} no ${r.lietas} lietām`); onDone(); } catch (e) { notify(e.message, "error"); } };
+  if (entries === null) return null;
+  if (!entries.length) return <div className="text-xs text-gray-500 bg-white border rounded p-3">{year}. gadam nav apstiprinātas klasifikācijas shēmas.</div>;
+  return (<div className="bg-white border rounded-lg p-3 space-y-2">
+    <select value={pick} onChange={(e) => setPick(e.target.value)} className={field}>
+      <option value="">— shēmas lieta —</option>{entries.map((e) => <option key={e.id} value={e.id}>{e.idx} {e.name}</option>)}</select>
+    <div className="flex gap-2"><button disabled={!pick} onClick={one} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded disabled:opacity-40">Atvērt</button>
+      <button onClick={all} className="text-sm px-3 py-1.5 border rounded">Atvērt visas {year}. gada lietas</button></div>
+  </div>);
+}
+
+function Cases({ api, notify }) {
+  const [year, setYear] = useState(new Date().getFullYear()); const [list, setList] = useState([]);
+  const [sel, setSel] = useState(null); const [showOpen, setShowOpen] = useState(false);
+  const load = async () => { try { setList(await api(`/archive/cases?gads=${year}`)); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); }, [year]);
+  return (<div className="grid grid-cols-12 gap-4">
+    <div className="col-span-4 space-y-3">
+      <div className="flex gap-2 items-center">
+        <select value={year} onChange={(e) => { setYear(parseInt(e.target.value)); setSel(null); }} className="text-sm border rounded px-2 py-1.5">
+          {[0, 1, 2, 3, 4].map((d) => new Date().getFullYear() + 1 - d).map((y) => <option key={y}>{y}</option>)}</select>
+        <button onClick={() => setShowOpen(!showOpen)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded">+ Atvērt lietu</button>
+      </div>
+      {showOpen && <OpenCase api={api} notify={notify} year={year} onDone={() => { setShowOpen(false); load(); }} />}
+      <div className="bg-white border rounded-lg divide-y">
+        {list.map((c) => <button key={c.id} onClick={() => setSel(c.id)} className={`w-full text-left px-3 py-2 ${sel === c.id ? "bg-sky-50" : "hover:bg-gray-50"}`}>
+          <div className="flex items-center justify-between"><span className="text-sm font-medium">{c.case_index} {c.case_name}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${CASE_STYLE[c.status] || "bg-amber-100 text-amber-800"}`}>{c.status_lv}</span></div>
+          <div className="text-xs text-gray-500">{c.dokumenti} dok.{c.nepabeigti ? ` · ${c.nepabeigti} nepabeigti` : ""} · {termins(c)}{c.scheme_entry_id ? "" : " · bez shēmas"}</div>
+        </button>)}
+        {!list.length && <div className="p-4 text-sm text-gray-400">{year}. gadā lietu nav.</div>}
+      </div>
+    </div>
+    <div className="col-span-8">{sel ? <CaseDetail api={api} notify={notify} id={sel} onChanged={load} /> : null}</div>
+  </div>);
+}
+
 // ───────────────────────── vecā eksporta partija ─────────────────────────
 function LegacyBatches({ api, notify }) {
   const [batches, setBatches] = useState([]); const [docIds, setDocIds] = useState(""); const [name, setName] = useState("");
@@ -319,14 +433,15 @@ function LegacyBatches({ api, notify }) {
 }
 
 export default function ArchivePage({ api, notify }) {
-  const [tab, setTab] = useState("shema");
-  const tabs = [["shema", "Klasifikācijas shēma"], ["iestatijumi", "Iestatījumi"], ["partijas", "Vecā eksporta partija"]];
+  const [tab, setTab] = useState("lietas");
+  const tabs = [["lietas", "Lietas"], ["shema", "Klasifikācijas shēma"], ["iestatijumi", "Iestatījumi"], ["partijas", "Vecā eksporta partija"]];
   return (
     <div>
       <h2 className="text-xl font-bold">Arhīvs</h2>
       <p className="text-sm text-gray-500 mb-4">Dokumentu dzīves cikls līdz iznīcināšanai vai nodošanai LNA — MK 07.05.2024. noteikumi Nr. 282.</p>
       <div className="flex gap-1 border-b mb-4">{tabs.map(([k, l]) =>
         <button key={k} onClick={() => setTab(k)} className={`text-sm px-4 py-2 -mb-px border-b-2 ${tab === k ? "border-emerald-600 text-emerald-700 font-medium" : "border-transparent text-gray-500"}`}>{l}</button>)}</div>
+      {tab === "lietas" && <Cases api={api} notify={notify} />}
       {tab === "shema" && <Schemes api={api} notify={notify} />}
       {tab === "iestatijumi" && <Settings api={api} notify={notify} />}
       {tab === "partijas" && <LegacyBatches api={api} notify={notify} />}

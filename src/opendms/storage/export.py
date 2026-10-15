@@ -14,7 +14,10 @@ Layout (one container per system):
     zinasanas/precedenti/<id>.json       ← staff corrections the classifier learns from
     agenti/<id>.json                     ← agent conversations not tied to a document
                                            (run with its steps and messages)
-    lietas/<id>.json                     ← case nomenclature (lietas)
+    lietas/<id>.json                     ← lietas (status, termiņi, sējumi)
+    arhivs/klasifikacijas-shemas/<id>.json ← lietu klasifikācijas shēmas ar ierakstiem
+    arhivs/iestatijumi/<org>.json        ← arhīva kods, fonds, P2 slēdzis
+    arhivs/lietu-registri/<id>.xml       ← slēgtas lietas dokumentu reģistrs (SHA-256 lietā)
     arhivs/partijas/<id>.json            ← archive batches with their documents
     vesture/integracijas/<YYYY-MM>.json  ← integration audit log
     indekss.json                         ← manifest: documents, objects, sha256
@@ -57,11 +60,13 @@ DOC_TABLES = [
 ]
 
 # Tables counted in the manifest besides the per-document ones
-SHARED_COUNTS = ["intake_items", "uapf_precedents", "standard_cases", "archive_batches",
+SHARED_COUNTS = ["intake_items", "uapf_precedents", "standard_cases", "case_volumes", "archive_settings",
+                 "classification_schemes", "scheme_entries", "archive_batches",
                  "archive_batch_documents", "integration_audit_log", "agent_runs", "agent_steps", "agent_messages"]
 
 # Everything rebuild.py restores, in an order that satisfies foreign keys.
-KNOWLEDGE_TABLES = ["standard_cases", "documents", "uapf_sessions", "document_files", "document_events",
+KNOWLEDGE_TABLES = ["archive_settings", "classification_schemes", "scheme_entries", "standard_cases", "case_volumes",
+                    "documents", "uapf_sessions", "document_files", "document_events",
                     "complaint_classifications", "ai_processing_log", "agent_runs", "agent_steps",
                     "agent_messages", "archive_batches", "archive_batch_documents", "intake_items",
                     "uapf_precedents", "integration_audit_log"]
@@ -123,6 +128,7 @@ KINDS = {  # kind → (table, key prefix)
     "precedents": ("uapf_precedents", "zinasanas/precedenti"),
     "lieta": ("standard_cases", "lietas"),
     "arhivs": ("archive_batches", "arhivs/partijas"),
+    "shema": ("classification_schemes", "arhivs/klasifikacijas-shemas"),
 }
 
 
@@ -159,6 +165,10 @@ async def shared_object(conn, jc: dict, kind: str, ref: int) -> tuple[str, Optio
         steps = _rows(await conn.fetch("SELECT * FROM agent_steps WHERE run_id = $1 ORDER BY id", ref), jc.get("agent_steps", set()))
         msgs = _rows(await conn.fetch("SELECT * FROM agent_messages WHERE run_id = $1 ORDER BY id", ref), jc.get("agent_messages", set()))
         return key, _json({"formats": FORMAT, "tabulas": {"agent_runs": r, "agent_steps": steps, "agent_messages": msgs}})
+    if kind == "iestatijumi":                         # ref = org_id
+        key = f"arhivs/iestatijumi/{ref:06d}.json"
+        r = _rows(await conn.fetch("SELECT * FROM archive_settings WHERE org_id = $1", ref), jc.get("archive_settings", set()))
+        return key, (_json(r[0]) if r else None)
     table, prefix = KINDS[kind]
     key = f"{prefix}/{ref:06d}.json"
     r = _rows(await conn.fetch(f"SELECT * FROM {table} WHERE id = $1", ref), jc.get(table, set()))
@@ -167,6 +177,12 @@ async def shared_object(conn, jc: dict, kind: str, ref: int) -> tuple[str, Optio
     if kind == "arhivs":
         r[0]["dokumenti"] = [x["document_id"] for x in await conn.fetch(
             "SELECT document_id FROM archive_batch_documents WHERE batch_id = $1 ORDER BY document_id", ref)]
+    if kind == "lieta":
+        r[0]["sejumi"] = _rows(await conn.fetch("SELECT * FROM case_volumes WHERE case_id = $1 ORDER BY number", ref),
+                               jc.get("case_volumes", set()))
+    if kind == "shema":
+        r[0]["ieraksti"] = _rows(await conn.fetch("SELECT * FROM scheme_entries WHERE scheme_id = $1 ORDER BY id", ref),
+                                 jc.get("scheme_entries", set()))
     return key, _json(r[0])
 
 
@@ -178,6 +194,7 @@ async def shared_refs(conn) -> list[tuple[str, int]]:
     refs += [("integracijas", int(r["m"])) for r in await conn.fetch(
         "SELECT DISTINCT to_char(created_at AT TIME ZONE 'UTC', 'YYYYMM') m FROM integration_audit_log ORDER BY 1")]
     refs += [("agents", r["id"]) for r in await conn.fetch("SELECT id FROM agent_runs WHERE document_id IS NULL ORDER BY id")]
+    refs += [("iestatijumi", r["org_id"]) for r in await conn.fetch("SELECT org_id FROM archive_settings ORDER BY org_id")]
     return refs
 
 

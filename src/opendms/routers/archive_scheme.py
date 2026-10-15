@@ -237,3 +237,172 @@ async def patch_entry(scheme_id: int, entry_id: int, body: EntryIn, user=Depends
         raise HTTPException(404, "Ieraksts nav atrasts")
     await _audit(user, org, "opendms.archive.scheme.entry.update", str(entry_id), {k: str(v) for k, v in vals.items()})
     return dict(row)
+
+
+# ───────────────────────── Lietas (standarts 03; UAPF P3) ─────────────────────────
+#   GET  /api/archive/cases?gads=&statuss=        lietas ar dokumentu skaitu un nepabeigtajiem
+#   POST /api/archive/cases                       {entry_id, gads} — atvērt no apstiprinātas shēmas
+#   POST /api/archive/cases/open-period           {gads} — atvērt visas shēmas lietas gadam
+#   GET  /api/archive/cases/{id}                  lieta ar dokumentiem, sējumiem, vēsturi
+#   POST /api/archive/cases/{id}/documents        {document_id} — piesaistīt dokumentu atvērtai lietai
+#   POST /api/archive/cases/{id}/close            case.close@1
+#   POST /api/archive/cases/{id}/carry-over       case.carry-over@1 (ilgstoša lieta)
+#   POST /api/archive/cases/{id}/volumes          papīra / hibrīda sējums
+#   GET  /api/archive/cases/{id}/lieta.xml        ark:Lieta
+#   GET  /api/archive/cases/{id}/register.xml     slēgtas lietas dokumentu reģistrs
+#   POST /api/archive/documents/{id}/finish       atzīmēt dokumentu kā pabeigtu
+
+from opendms.archive import cases as cs  # noqa: E402
+from opendms.storage import get_storage  # noqa: E402
+
+LIETVEDIS = require_role("superadmin", "admin", "operator")
+
+
+async def _case_audit(user, org, action, entity_id, summary):
+    try:
+        await log_integration_event(actor_user_id=user.get("id"), actor_email=user.get("email"), actor_role=user.get("role"),
+                                    organization_id=org["id"], entity_type="case", entity_id=entity_id,
+                                    action=action, target_system="opendms", success=True,
+                                    response_summary=json.dumps(summary, ensure_ascii=False, default=str)[:2000])
+    except Exception:
+        pass
+
+
+@router.get("/cases")
+async def list_cases(gads: Optional[int] = None, statuss: Optional[str] = None, user=Depends(get_current_user)):
+    return await cs.list_cases((await _org())["id"], gads, statuss)
+
+
+class CaseOpenIn(BaseModel):
+    entry_id: int
+    gads: int
+
+
+@router.post("/cases", status_code=201)
+async def open_case(body: CaseOpenIn, user=Depends(LIETVEDIS)):
+    org = await _org()
+    try:
+        c = await cs.open_case(org, body.entry_id, body.gads, user.get("email"))
+    except cs.CaseError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.case.open", c["case_id"], body.model_dump())
+    return c
+
+
+class PeriodIn(BaseModel):
+    gads: int
+
+
+@router.post("/cases/open-period")
+async def open_period(body: PeriodIn, user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        r = await cs.open_period(org, body.gads, user.get("email"))
+    except cs.CaseError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.case.open-period", str(body.gads), r)
+    return r
+
+
+@router.get("/cases/{case_pk}")
+async def get_case(case_pk: int, user=Depends(get_current_user)):
+    try:
+        return await cs.get_case((await _org())["id"], case_pk)
+    except cs.CaseError as e:
+        raise HTTPException(404, str(e))
+
+
+class AttachIn(BaseModel):
+    document_id: int
+
+
+@router.post("/cases/{case_pk}/documents")
+async def attach(case_pk: int, body: AttachIn, user=Depends(LIETVEDIS)):
+    org = await _org()
+    try:
+        r = await cs.attach_document(org, case_pk, body.document_id, user.get("email"), user.get("id"))
+    except cs.CaseError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.case.attach", str(case_pk), body.model_dump())
+    return r
+
+
+@router.post("/cases/{case_pk}/close")
+async def close_case(case_pk: int, user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        c = await cs.close_case(org, await sch.get_settings(org), case_pk, user.get("email"), get_storage())
+    except cs.CaseError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.case.close", c["case_id"],
+                      {"dokumenti": c["document_count"], "registraSha256": c["register_sha256"]})
+    return c
+
+
+@router.post("/cases/{case_pk}/carry-over")
+async def carry_over(case_pk: int, user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        c = await cs.mark_long_running(org, case_pk, user.get("email"))
+    except cs.CaseError as e:
+        _err(e)
+    await _case_audit(user, org, "opendms.archive.case.carry-over", c["case_id"], {})
+    return c
+
+
+class VolumeIn(BaseModel):
+    medium: str = "P"
+    content_type: str = "Teksts"
+    document_count: Optional[int] = None
+    page_count: Optional[int] = None
+    notes: Optional[str] = None
+
+
+@router.post("/cases/{case_pk}/volumes")
+async def add_volume(case_pk: int, body: VolumeIn, user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        c = await cs.add_volume(org, case_pk, body.medium, body.content_type, body.document_count,
+                                body.page_count, body.notes, user.get("email"))
+    except cs.CaseError as e:
+        _err(e)
+    except Exception as e:
+        raise HTTPException(400, f"Nederīga vērtība: {e}")
+    await _case_audit(user, org, "opendms.archive.case.volume", c["case_id"], body.model_dump())
+    return c
+
+
+@router.get("/cases/{case_pk}/lieta.xml")
+async def case_xml(case_pk: int, user=Depends(get_current_user)):
+    org = await _org()
+    try:
+        data = cs.case_xml(org, await cs.get_case(org["id"], case_pk))
+    except cs.CaseError as e:
+        _err(e)
+    return Response(data, media_type="application/xml", headers={"Content-Disposition": f'attachment; filename="lieta-{case_pk}.xml"'})
+
+
+@router.get("/cases/{case_pk}/register.xml")
+async def register_xml(case_pk: int, user=Depends(get_current_user)):
+    org = await _org()
+    try:
+        c = await cs.get_case(org["id"], case_pk)
+    except cs.CaseError as e:
+        raise HTTPException(404, str(e))
+    if not c.get("register_key"):
+        raise HTTPException(404, "Reģistrs tiek izveidots, slēdzot lietu")
+    data = await get_storage().get(c["register_key"])
+    if data is None:
+        raise HTTPException(404, "Reģistrs nav atrodams konteinerā")
+    return Response(data, media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="lietas-registrs-{case_pk}.xml"',
+                             "X-Sha256-Atbilst": str(__import__("hashlib").sha256(data).hexdigest() == c["register_sha256"]).lower()})
+
+
+class FinishIn(BaseModel):
+    piezime: Optional[str] = None
+
+
+@router.post("/documents/{doc_id}/finish")
+async def finish(doc_id: int, body: FinishIn, user=Depends(LIETVEDIS)):
+    return await cs.finish_document(doc_id, user.get("email"), user.get("id"), body.piezime)

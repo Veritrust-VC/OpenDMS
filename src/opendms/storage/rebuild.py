@@ -26,7 +26,8 @@ from opendms.storage.export import KNOWLEDGE_TABLES
 
 PREFIXES = {"ievade/": "intake_items", "zinasanas/precedenti/": "uapf_precedents",
             "lietas/": "standard_cases", "arhivs/partijas/": "archive_batches",
-            "vesture/integracijas/": "integration_audit_log"}
+            "vesture/integracijas/": "integration_audit_log",
+            "arhivs/klasifikacijas-shemas/": "classification_schemes", "arhivs/iestatijumi/": "archive_settings"}
 
 
 def read_container(client, bucket: str) -> dict:
@@ -66,6 +67,12 @@ def read_container(client, bucket: str) -> dict:
                 elif t == "archive_batches":
                     for d in obj.pop("dokumenti", []):
                         tables["archive_batch_documents"].append({"batch_id": obj["id"], "document_id": d})
+                    tables[t].append(obj)
+                elif t == "standard_cases":
+                    tables["case_volumes"] += obj.pop("sejumi", [])
+                    tables[t].append(obj)
+                elif t == "classification_schemes":
+                    tables["scheme_entries"] += obj.pop("ieraksti", [])
                     tables[t].append(obj)
                 else:
                     tables[t].append(obj)

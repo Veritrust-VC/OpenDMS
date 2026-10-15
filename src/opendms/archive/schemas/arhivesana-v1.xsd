@@ -56,9 +56,9 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- Klasifikācijas shēmas indekss: 1, 1.6, A.2.6 -->
+  <!-- Klasifikācijas shēmas indekss: 1, 1.6, A.2.6, 1-12 (iestādēs lietotais domuzīmes pieraksts) -->
   <xs:simpleType name="IndekssType">
-    <xs:restriction base="xs:string"><xs:pattern value="[0-9A-Z]{1,4}(\.[0-9A-Z]{1,4}){0,4}"/></xs:restriction>
+    <xs:restriction base="xs:string"><xs:pattern value="[0-9A-Z]{1,4}([.\-/][0-9A-Z]{1,4}){0,4}"/></xs:restriction>
   </xs:simpleType>
 
   <xs:simpleType name="Sha256Type">

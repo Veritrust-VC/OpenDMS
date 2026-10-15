@@ -37,7 +37,8 @@ _state = {"last_run": None, "last_error": None, "written": 0, "deleted": 0}
 DOC_CHILDREN = ("document_files", "document_events", "uapf_sessions", "complaint_classifications", "ai_processing_log")
 TRIGGERED = ("documents",) + DOC_CHILDREN + ("agent_runs", "agent_steps", "agent_messages", "intake_items",
                                              "uapf_precedents", "standard_cases", "archive_batches",
-                                             "archive_batch_documents", "integration_audit_log")
+                                             "archive_batch_documents", "integration_audit_log",
+                                             "case_volumes", "classification_schemes", "scheme_entries", "archive_settings")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS storage_dirty (
@@ -74,6 +75,14 @@ BEGIN
         INSERT INTO storage_dirty (kind, ref) VALUES ('precedents', (j->>'id')::bigint);
     ELSIF t = 'standard_cases' THEN
         INSERT INTO storage_dirty (kind, ref) VALUES ('lieta', (j->>'id')::bigint);
+    ELSIF t = 'case_volumes' THEN
+        INSERT INTO storage_dirty (kind, ref) VALUES ('lieta', (j->>'case_id')::bigint);
+    ELSIF t = 'classification_schemes' THEN
+        INSERT INTO storage_dirty (kind, ref) VALUES ('shema', (j->>'id')::bigint);
+    ELSIF t = 'scheme_entries' THEN
+        INSERT INTO storage_dirty (kind, ref) VALUES ('shema', (j->>'scheme_id')::bigint);
+    ELSIF t = 'archive_settings' THEN
+        INSERT INTO storage_dirty (kind, ref) VALUES ('iestatijumi', (j->>'org_id')::bigint);
     ELSIF t = 'archive_batches' THEN
         INSERT INTO storage_dirty (kind, ref) VALUES ('arhivs', (j->>'id')::bigint);
     ELSIF t = 'archive_batch_documents' THEN
