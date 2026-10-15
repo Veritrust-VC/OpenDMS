@@ -538,6 +538,15 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE INDEX IF NOT EXISTS idx_connections_enabled
             ON connections(kind, is_enabled);
 
+        -- Namejs (RIX Flow) is the classic DVS the pilot institutions work in today,
+        -- so every DVS ships with its connection row; the admin only enters the
+        -- address and credentials in Savienojumi and tests it.
+        INSERT INTO connections (kind, name, description, config)
+        VALUES ('namejs', 'Namejs',
+                'Namejs DVS (RIX Flow) REST API — ievadiet adresi un pieejas datus, saglabājiet un pārbaudiet',
+                '{"api_path": "/API", "grant_type": "client_credentials", "verify_tls": true}')
+        ON CONFLICT (kind, name) DO NOTHING;
+
         -- Encrypted credential bundles. Deliberately a separate table so that
         -- no SELECT * on connections can leak a token, and so that access to
         -- it can be audited and restricted independently.
