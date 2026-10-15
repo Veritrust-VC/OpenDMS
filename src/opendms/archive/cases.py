@@ -37,14 +37,14 @@ def _hist(action: str, who: str, **extra) -> str:
 
 
 def retention_end(kind: Optional[str], years: Optional[int], trigger: Optional[str],
-                  closed: date, date_to: Optional[date]) -> Optional[date]:
+                  closed: date, date_to: Optional[date], case_year: Optional[int] = None) -> Optional[date]:
     """Glabāšanas termiņa beigas (standarts 06, 6.1.). Pastāvīgi → None."""
     if kind == "Pastavigi" or not years:
         return None
     if trigger == "NoDokumentaDatuma" and date_to:
         start = date_to
     else:   # NoLietasSlegsanas; NoIzpildes/NoNotikuma — konservatīvi no slēgšanas
-        start = date(closed.year + 1, 1, 1)
+        start = date(max(closed.year, case_year or 0) + 1, 1, 1)   # lieta slēgta pirms sava gada beigām → no nākamā gada
     try:
         return start.replace(year=start.year + years)
     except ValueError:      # 29. februāris
@@ -279,7 +279,7 @@ async def close_case(org: dict, settings: dict, case_pk: int, who: str, storage)
     today = datetime.now(timezone.utc)
     dates = [doc_date(d) for d in docs]
     dfrom, dto = (min(dates), max(dates)) if dates else (None, None)
-    end = retention_end(c["retention_kind"], c["retention_years"], c["retention_trigger"], today.date(), dto)
+    end = retention_end(c["retention_kind"], c["retention_years"], c["retention_trigger"], today.date(), dto, c["case_year"])
     n_files = sum(len(v) for v in files.values())
     async with pool.acquire() as conn:
         async with conn.transaction():
