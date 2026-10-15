@@ -58,3 +58,24 @@ def test_inputs_no_case():
     doc = {"id": 1, "created_at": datetime(2026, 3, 1, tzinfo=timezone.utc), "classification_id": 3, "metadata": "{}"}
     v, _ = rg.inputs(doc, None, None, [])
     assert rg.check_minimum(v) == ["Nav lietas no spēkā esošās klasifikācijas shēmas", "Nav informācijas statusa"]
+
+
+def test_evaluate_uses_package_decision(monkeypatch):
+    import asyncio
+    from opendms.archive import engine
+
+    async def down(*a, **k):
+        return None
+    monkeypatch.setattr(engine, "decide", down)
+    ok, gaps, lem = asyncio.run(rg.evaluate({**OK, "irLieta": False}, []))
+    assert not ok and "lokāli" in lem["avots"] and "Nav lietas" in gaps[0]
+
+    async def dmn(decision_id, inputs):
+        if decision_id == "registracijas-minimums":
+            return {"outputs": {"registretDrikst": False, "trukums": "Ierobežotai informācijai nav tiesiskā pamatojuma"},
+                    "noteikumi": ["R5_pamatojums"], "avots": "lv.kisc.dokumentu-arhivesana/registracijas-minimums"}
+        return {"outputs": {"derigsGlabasanai": True, "darbiba": "Saglabat", "piezime": "PDF"}, "noteikumi": [], "avots": "x"}
+    monkeypatch.setattr(engine, "decide", dmn)
+    checked = [{"datne": "a.zip", "mime": "application/zip", "derigs": False}]
+    ok, gaps, lem = asyncio.run(rg.evaluate({**OK, "statuss": "DienestaVajadzibam"}, checked))
+    assert not ok and gaps[0].startswith("Ierobežotai") and lem["noteikumi"] == ["R5_pamatojums"] and checked[0]["derigs"]

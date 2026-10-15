@@ -54,6 +54,7 @@ export default function ArchiveCard({ doc, notify }) {
       {r.datnes.length > 0 && <div className="text-xs text-gray-600">{r.datnes.map((f) =>
         <div key={f.datne}>{f.derigs ? "✓" : "✗"} {f.datne} — {RICIBA[f.riciba]}</div>)}</div>}
       {r.arhivaId && <div className="text-xs font-mono break-all text-gray-600">Arhīva ID: {r.arhivaId}</div>}
+      {r.lemums && <div className="text-[11px] text-gray-500">Lēmums: {r.lemums.avots}{r.lemums.noteikumi?.length ? ` (${r.lemums.noteikumi.join(", ")})` : ""}</div>}
       {!r.gatavs && <div className="space-y-2">
         {needCase && <select value={caseId} onChange={(e) => setCaseId(e.target.value)} className="w-full text-sm px-2 py-1.5 border rounded bg-white">
           <option value="">— lieta {r.lietuIeteikums?.gads} —</option>

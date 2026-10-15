@@ -144,11 +144,32 @@ async def suggest_cases(conn, org_id: int, doc: dict) -> dict:
             "iespejas": [dict(r) for r in rows if r["scheme_entry_id"]]}
 
 
-def _view(doc, case, v, trukumi, checked, sugg=None) -> dict:
+async def evaluate(v: dict, checked: list[dict]) -> tuple[bool, list[str], dict]:
+    """Lēmumi no publicētās pakotnes (registracijas-minimums, datnu-formati); lokāli — tikai rezerve."""
+    from opendms.archive.engine import as_bool, decide
+    local = check_minimum(v)
+    for c in checked:
+        d = await decide("datnu-formati", {"mimeVeids": c.get("mime") or "", "irParakstits": c["datne"].lower().endswith((".edoc", ".asice", ".asics"))})
+        if d:
+            o = d["outputs"]
+            c.update(derigs=as_bool(o.get("derigsGlabasanai")), riciba=o.get("darbiba"), piezime=o.get("piezime"), avots="uapf")
+    v = {**v, "datnuFormatiDerigi": all(c["derigs"] for c in checked)}
+    local = check_minimum(v)
+    d = await decide("registracijas-minimums", v)
+    if not d:
+        return not local, local, {"avots": "lokāli (UAPF dzinējs nav pieejams)"}
+    ok = as_bool(d["outputs"].get("registretDrikst"))
+    gaps = [] if ok else (local or [d["outputs"].get("trukums") or "Reģistrācijas minimums nav izpildīts"])
+    if not ok and d["outputs"].get("trukums") and d["outputs"]["trukums"] not in gaps:
+        gaps.insert(0, d["outputs"]["trukums"])
+    return ok, gaps, {"avots": d["avots"], "noteikumi": d["noteikumi"], "registretDrikst": ok}
+
+
+def _view(doc, case, v, trukumi, checked, sugg=None, lemums=None) -> dict:
     return {"dokuments": doc["id"], "registracijasNr": doc.get("registration_number"),
             "lieta": {"id": case["id"], "indekss": case["case_index"], "nosaukums": case.get("case_name"),
                       "gads": case["case_year"], "statuss": case["status"]} if case else None,
-            "parbaude": v, "trukumi": trukumi, "datnes": checked, "gatavs": not trukumi,
+            "parbaude": v, "trukumi": trukumi, "datnes": checked, "gatavs": not trukumi, "lemums": lemums,
             "arhivaId": doc.get("archive_id"), "sagatavotsUz": doc.get("archive_ready_at"),
             **({"lietuIeteikums": sugg} if sugg is not None else {})}
 
@@ -159,7 +180,8 @@ async def readiness(org_id: int, doc_id: int) -> dict:
         doc, case, entry, files = await _load(conn, doc_id)
         v, checked = inputs(doc, case, entry, files)
         sugg = await suggest_cases(conn, org_id, doc) if not case or case["status"] != "Atverta" else None
-    return _view(doc, case, v, check_minimum(v), checked, sugg)
+    ok, gaps, lem = await evaluate(v, checked)
+    return _view(doc, case, v, [] if ok else gaps, checked, sugg, lem)
 
 
 async def prepare(org: dict, doc_id: int, who: str, actor_id: Optional[int] = None,
@@ -189,17 +211,18 @@ async def prepare(org: dict, doc_id: int, who: str, actor_id: Optional[int] = No
                                    doc_id, json.dumps(ark, ensure_ascii=False))
                 doc["metadata"] = {**meta, "arhivs": ark}
             v, checked = inputs(doc, case, entry, files)
-            trukumi = check_minimum(v)
+            ok, gaps, lem = await evaluate(v, checked)
+            trukumi = [] if ok else gaps
             if not trukumi and not doc.get("archive_id"):
                 aid = secrets.token_hex(20)                       # LNA "Identifikācijas Nr." — 40 hex
                 await conn.execute("UPDATE documents SET archive_id = $2, archive_ready_at = NOW() WHERE id = $1", doc_id, aid)
                 await conn.execute(
                     "INSERT INTO document_events (document_id, event_type, actor_id, details) VALUES ($1, 'SagatavotsArhivesanai', $2, $3)",
                     doc_id, actor_id, json.dumps({"arhivaId": aid, "lieta": case["case_id"], "statuss": v["statuss"],
-                                                  "datnes": checked, "kas": who}, ensure_ascii=False))
+                                                  "datnes": checked, "lemums": lem, "kas": who}, ensure_ascii=False))
                 doc["archive_id"], doc["archive_ready_at"] = aid, datetime.now(RIGA)
             sugg = await suggest_cases(conn, org["id"], doc) if not case else None
-    return _view(doc, case, v, trukumi, checked, sugg)
+    return _view(doc, case, v, trukumi, checked, sugg, lem)
 
 
 async def unfiled(org_id: int, year: Optional[int] = None, limit: int = 200) -> list[dict]:

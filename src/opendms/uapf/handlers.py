@@ -1228,4 +1228,8 @@ def _register_connector_capabilities() -> None:
 
 _register_connector_capabilities()
 
+# Arhivēšana (kisc/dokumentu-arhivesana): case.*, files.*, archive.assign-id
+from opendms.archive.host import HANDLERS as _ARCHIVE_HANDLERS  # noqa: E402
+HANDLERS.update(_ARCHIVE_HANDLERS)
+
 ADVERTISED_CAPABILITIES = [ref for _, ref in HANDLERS.values()]

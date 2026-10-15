@@ -69,7 +69,23 @@ function Settings({ api, notify }) {
           {s.enforce_registration_minimum ? "Ieslēgts" : "Izslēgts"}
         </label>
       </div>
+      <EnginePanel api={api} notify={notify} />
     </div>);
+}
+
+function EnginePanel({ api, notify }) {
+  const [e, setE] = useState(null); const [busy, setBusy] = useState(false);
+  const load = async () => { try { setE(await api("/archive/engine")); } catch { setE(null); } };
+  useEffect(() => { load(); }, []);
+  const install = async () => { setBusy(true);
+    try { const r = await api("/archive/engine/install", { method: "POST" }); notify(`Pakotne ${r.packageId} ${r.version} uzstādīta`); load(); }
+    catch (x) { notify(x.message, "error"); } finally { setBusy(false); } };
+  return (<div className="bg-white border rounded-lg p-4 space-y-2 text-sm">
+    <div className="font-medium">Arhivēšanas procesi (UAPF)</div>
+    <div className="text-xs text-gray-500">Noteikumi un procesi izpildās no ProcessGit pakotnes <span className="font-mono">kisc/dokumentu-arhivesana</span>. Ja dzinējs nav pieejams, lēmumus rēķina lokālā kopija, un tas tiek norādīts.</div>
+    {e && <div>{e.uzstadita ? <span className="text-emerald-700">Uzstādīta: {e.pakotne} {e.versija}</span> : <span className="text-amber-700">Nav uzstādīta</span>}</div>}
+    <button disabled={busy} onClick={install} className="text-sm px-3 py-1.5 border rounded disabled:opacity-40">{e?.uzstadita ? "Atjaunināt no ProcessGit" : "Uzstādīt no ProcessGit"}</button>
+  </div>);
 }
 
 // ───────────────────────── shēma ─────────────────────────
@@ -301,7 +317,14 @@ const download = async (api, notify, path, name) => {
 
 function CaseDetail({ api, notify, id, onChanged }) {
   const [c, setC] = useState(null); const [docId, setDocId] = useState(""); const [vol, setVol] = useState(null);
-  const load = async () => { try { setC(await api(`/archive/cases/${id}`)); } catch (e) { notify(e.message, "error"); } };
+  const [sessions, setSessions] = useState([]); const [ended, setEnded] = useState(false);
+  const load = async () => { try { setC(await api(`/archive/cases/${id}`)); setSessions(await api(`/archive/cases/${id}/sessions`)); } catch (e) { notify(e.message, "error"); } };
+  const runClose = async () => {
+    try { const r = await api(`/archive/cases/${id}/process/close`, { method: "POST", body: JSON.stringify({ jautajumsIzbeigts: ended }) });
+          const o = r.rezultats || {};
+          notify(r.stavoklis === "suspended" ? "Process gaida: nepabeigtie dokumenti jāpabeidz" : `${o.darbiba || r.stavoklis}: ${o.iemesls || ""}`, r.stavoklis === "failed" ? "error" : undefined);
+          load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  const resume = async (sid) => { try { const r = await api(`/archive/sessions/${sid}/resume`, { method: "POST" }); notify(`Process: ${r.stavoklis}`); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
   useEffect(() => { load(); }, [id]);
   if (!c) return null;
   const act = async (path, body, msg) => {
@@ -326,8 +349,9 @@ function CaseDetail({ api, notify, id, onChanged }) {
       <div><div className="text-xs text-gray-400">Reģistra SHA-256</div><span className="font-mono text-xs break-all">{c.register_sha256 ? c.register_sha256.slice(0, 16) + "…" : "—"}</span></div>
     </div>
     {open && <div className="flex flex-wrap gap-2">
-      <button disabled={c.nepabeigti > 0} onClick={() => act("close", {}, "Lieta slēgta")} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded disabled:opacity-40"
-        title={c.nepabeigti ? "Lietā ir nepabeigti dokumenti" : ""}>Slēgt lietu</button>
+      <button onClick={runClose} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded"
+        title="Process p3-lietas-slegsana: nepabeigtie dokumenti, perioda beigas, ilgstoša lieta">Slēgt lietu (process)</button>
+      {c.long_running && <label className="text-xs flex items-center gap-1"><input type="checkbox" checked={ended} onChange={(e) => setEnded(e.target.checked)} />jautājums izbeigts</label>}
       {!c.long_running && <button onClick={() => act("carry-over", {}, "Lieta turpināsies nākamajā periodā")} className="text-sm px-3 py-1.5 border rounded">Ilgstoša — turpināt nākamgad</button>}
       <button onClick={() => setVol(vol ? null : { medium: "P", content_type: "Teksts", page_count: "" })} className="text-sm px-3 py-1.5 border rounded">+ Papīra sējums</button>
       <input value={docId} onChange={(e) => setDocId(e.target.value)} placeholder="Dokumenta DVS ID" className="text-sm px-2 py-1 border rounded w-36" />
@@ -357,6 +381,15 @@ function CaseDetail({ api, notify, id, onChanged }) {
       {c.shemas_ieraksts && <button onClick={() => download(api, notify, `/archive/cases/${id}/lieta.xml`, `lieta-${c.case_index}-${c.case_year}.xml`)} className="text-xs px-3 py-1 border rounded">ark:Lieta XML</button>}
       {c.register_key && <button onClick={() => download(api, notify, `/archive/cases/${id}/register.xml`, `lietas-registrs-${c.case_index}-${c.case_year}.xml`)} className="text-xs px-3 py-1 border rounded">Dokumentu reģistrs XML</button>}
     </div>
+    {sessions.length > 0 && <div className="text-xs"><div className="font-medium text-sm mb-1">Procesi</div>
+      {sessions.map((x) => <div key={x.session_id} className="flex items-center gap-2 py-0.5">
+        <span className="text-gray-500">{String(x.started_at).slice(0, 16).replace("T", " ")}</span>
+        <span>{x.process_id}</span>
+        <span className={x.state === "completed" ? "text-emerald-700" : x.state === "suspended" ? "text-amber-700" : "text-red-700"}>{x.state}</span>
+        {x.rezultats?.darbiba && <span>· {x.rezultats.darbiba}: {x.rezultats.iemesls}</span>}
+        {x.error_message && <span className="text-red-700">· {x.error_message.slice(0, 120)}</span>}
+        {x.state === "suspended" && <button onClick={() => resume(x.session_id)} className="px-2 py-0.5 border border-amber-300 rounded">Pārbaudīt vēlreiz</button>}
+      </div>)}</div>}
     <details className="text-xs text-gray-500"><summary className="cursor-pointer">Vēsture ({c.history.length})</summary>
       {c.history.map((h, i) => <div key={i}>{h.kad?.slice(0, 16).replace("T", " ")} · {h.darbiba} · {h.kas}</div>)}</details>
   </div>);

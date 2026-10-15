@@ -578,3 +578,64 @@ async def signing(doc_id: int, user=Depends(get_current_user)):
         raise HTTPException(409, "Dokumentam vēl nav LV-DOK identifikatora")
     return Response(dm.signing_xml(uid, evs), media_type="application/xml",
                     headers={"Content-Disposition": f'attachment; filename="parakstisana-{doc_id}.xml"'})
+
+
+# ───────────────────────── 5. solis: procesi no UAPF pakotnes lv.kisc.dokumentu-arhivesana ─────────────────────────
+#   GET  /api/archive/engine                       pakotnes stāvoklis dzinējā
+#   POST /api/archive/engine/install               uzstādīt / atjaunināt no ProcessGit (admin)
+#   POST /api/archive/cases/{id}/process/close     P3 p3-lietas-slegsana  {jautajumsIzbeigts?}
+#   GET  /api/archive/cases/{id}/sessions
+#   POST /api/archive/sessions/{sid}/resume        turpināt pēc lietotāja uzdevuma
+
+from opendms.archive import engine as eng  # noqa: E402
+
+
+@router.get("/engine")
+async def engine_info(user=Depends(get_current_user)):
+    p = await eng.package_info()
+    return {"pakotne": eng.PKG, "uzstadita": bool(p), "versija": (p or {}).get("version"),
+            "procesi": (p or {}).get("processes") or (p or {}).get("entrypoints")}
+
+
+@router.post("/engine/install")
+async def engine_install(user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        r = await eng.install()
+    except Exception as e:
+        raise HTTPException(502, str(e))
+    await _case_audit(user, org, "opendms.archive.engine.install", eng.PKG, r)
+    return r
+
+
+class P3In(BaseModel):
+    jautajumsIzbeigts: bool = False
+
+
+@router.post("/cases/{case_pk}/process/close")
+async def process_close(case_pk: int, body: P3In, user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        c = await cs.get_case(org["id"], case_pk)
+    except cs.CaseError as e:
+        raise HTTPException(404, str(e))
+    try:
+        r = await eng.start("p3-lietas-slegsana", {"lietasId": case_pk, "jautajumsIzbeigts": body.jautajumsIzbeigts}, case_id=case_pk)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    await _case_audit(user, org, "opendms.archive.case.process.close", c["case_id"],
+                      {"sesija": r["sesija"], "stavoklis": r["stavoklis"], "darbiba": (r["rezultats"] or {}).get("darbiba")})
+    return r
+
+
+@router.get("/cases/{case_pk}/sessions")
+async def case_sessions(case_pk: int, user=Depends(get_current_user)):
+    return await eng.case_sessions(case_pk)
+
+
+@router.post("/sessions/{sid}/resume")
+async def resume_session(sid: str, user=Depends(ADMIN)):
+    try:
+        return await eng.resume(sid, {"turpinaja": user.get("email")})
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
