@@ -156,6 +156,19 @@ async def case_carry_over(ctx):
     return {"output": {"jaunaLietasId": nxt}}
 
 
+async def case_task(ctx):
+    """Lietotāja uzdevums lietai (piem., P3 ResolveUnfinished): ieraksts lietas vēsturē un sesijā."""
+    import json
+    org, c = await _case(ctx)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE standard_cases SET history = history || $2::jsonb WHERE id = $1", c["id"],
+                           cs._hist("UzdevumsGaida", WHO, sesija=ctx.get("session_id"), solis=ctx.get("step_id"),
+                                    nepabeigti=c["nepabeigti"]))
+        await conn.execute("UPDATE uapf_sessions SET waiting_for = $2 WHERE session_id = $1", ctx.get("session_id"), ctx.get("step_id"))
+    return {"output": {"status": "pending", "reviewTaskId": f"{ctx.get('session_id')}:{ctx.get('step_id')}"}}
+
+
 def _ref(ns, op, summary):
     return {"namespace": ns, "operation": op, "version": 1, "summary": summary}
 
