@@ -9,6 +9,7 @@ import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
 import ForwardingCard from "./ForwardingCard.jsx";
 import ArchiveCard, { CasePicker } from "./ArchiveCard.jsx";
+import MarksCard from "./MarksCard.jsx";
 import ActiveClassifiers from "./ClassifiersPage.jsx";
 import ArchivePage from "./ArchivePage.jsx";
 
@@ -1306,6 +1307,7 @@ function DocumentDetail({ doc, onAction, notify }) {
           : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
         {doc?.metadata?.semantika && <SemanticDescriptionCard sem={doc.metadata.semantika} docId={doc.id} notify={notify} />}
         <ForwardingCard doc={doc} files={files} notify={notify} onAction={onAction} />
+        <MarksCard doc={doc} notify={notify} />
         <ArchiveCard doc={doc} notify={notify} />
 
       <div className="flex items-center justify-between">

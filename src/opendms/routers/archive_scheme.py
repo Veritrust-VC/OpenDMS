@@ -445,3 +445,83 @@ async def prepare(doc_id: int, body: PrepareIn, user=Depends(LIETVEDIS)):
 @router.get("/unfiled")
 async def unfiled(gads: Optional[int] = None, user=Depends(get_current_user)):
     return await rg.unfiled((await _org())["id"], gads)
+
+
+# ───────────────────────── Vīzas, iepazīšanās atzīmes, rezolūcijas (standarts 08, 8.2.) ─────────────────────────
+#   GET  /api/archive/documents/{id}/marks
+#   POST /api/archive/documents/{id}/visa            {rezultats, piezimes?, amats?, aizstaj?}
+#   POST /api/archive/documents/{id}/acknowledge     {piezimes?, amats?}
+#   POST /api/archive/documents/{id}/resolution      {uzdevumi:[{atbildigie:[user_id], apraksts, termins?}], piezimes?, amats?, aizstaj?}
+#   GET  /api/archive/people                         aktīvie lietotāji atbildīgā izvēlei
+
+from opendms.archive import marks as mk  # noqa: E402
+
+DARBINIEKS = require_role("superadmin", "admin", "operator")
+
+
+class VisaIn(BaseModel):
+    rezultats: str = "Saskanots"
+    piezimes: Optional[str] = None
+    amats: Optional[str] = None
+    aizstaj: Optional[int] = None
+
+
+class AckIn(BaseModel):
+    piezimes: Optional[str] = None
+    amats: Optional[str] = None
+
+
+class TaskIn(BaseModel):
+    atbildigie: list[int]
+    apraksts: str
+    termins: Optional[date] = None
+
+
+class ResolutionIn(BaseModel):
+    uzdevumi: list[TaskIn]
+    piezimes: Optional[str] = None
+    amats: Optional[str] = None
+    aizstaj: Optional[int] = None
+
+
+async def _mark(user, doc_id, action, coro):
+    org = await _org()
+    try:
+        r = await coro
+    except mk.MarkError as e:
+        _err(e)
+    except ValueError as e:
+        raise HTTPException(400, f"Nederīga vērtība: {e}")
+    await _case_audit(user, org, f"opendms.archive.document.{action}", str(doc_id), {"ieraksts": r["id"]})
+    return r
+
+
+@router.get("/documents/{doc_id}/marks")
+async def marks(doc_id: int, user=Depends(get_current_user)):
+    return await mk.list_marks(doc_id)
+
+
+@router.post("/documents/{doc_id}/visa")
+async def visa(doc_id: int, body: VisaIn, user=Depends(DARBINIEKS)):
+    return await _mark(user, doc_id, "visa", mk.add_visa(doc_id, user["id"], body.rezultats, body.piezimes, body.amats, body.aizstaj))
+
+
+@router.post("/documents/{doc_id}/acknowledge")
+async def acknowledge(doc_id: int, body: AckIn, user=Depends(DARBINIEKS)):
+    return await _mark(user, doc_id, "acknowledge", mk.add_acknowledgement(doc_id, user["id"], body.piezimes, body.amats))
+
+
+@router.post("/documents/{doc_id}/resolution")
+async def resolution(doc_id: int, body: ResolutionIn, user=Depends(DARBINIEKS)):
+    tasks = [{**t.model_dump(), "termins": t.termins.isoformat() if t.termins else None} for t in body.uzdevumi]
+    return await _mark(user, doc_id, "resolution", mk.add_resolution(doc_id, user["id"], tasks, body.piezimes, body.amats, body.aizstaj))
+
+
+@router.get("/people")
+async def people(user=Depends(get_current_user)):
+    from opendms.database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""SELECT id, full_name, department, position FROM users
+                                    WHERE is_active AND role <> 'viewer' ORDER BY full_name""")
+    return [dict(r) for r in rows]

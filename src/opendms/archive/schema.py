@@ -112,6 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_case ON documents(case_id);
 -- P2: arhīva ID (LNA "Identifikācijas Nr.", 40 hex) piešķir, kad reģistrācijas minimums izpildīts
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS archive_id TEXT;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS archive_ready_at TIMESTAMPTZ;
+-- Vīzām, atzīmēm, rezolūcijām (standarts 08): amats
+ALTER TABLE users ADD COLUMN IF NOT EXISTS position TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_archive_id ON documents(archive_id) WHERE archive_id IS NOT NULL;
 
 -- Esošās saites: dokuments → lieta pēc pakotnes noteikumiem (indekss + reģistrācijas gads)
