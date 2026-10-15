@@ -80,6 +80,8 @@ services:
       OPENDMS_LNA_S3_ACCESS_KEY: ${LNA_S3_ACCESS_KEY:-}
       OPENDMS_LNA_S3_SECRET_KEY: ${LNA_S3_SECRET_KEY:-}
       OPENDMS_MCP_AGENT_USER: ${MCP_AGENT_USER:-}
+      # Lietvedības vārdnīcas (status names, registration number format): processgit:<org>/<repo>
+      OPENDMS_LIETVEDIBA_VARDNICAS: ${LIETVEDIBA_VARDNICAS:-}
       OPENDMS_SUPERADMIN_EMAIL: ${SUPERADMIN_EMAIL:-admin@opendms.local}
       OPENDMS_SUPERADMIN_PASSWORD: ${SUPERADMIN_PASSWORD:-admin}
       OPENDMS_DEBUG: 'true'
