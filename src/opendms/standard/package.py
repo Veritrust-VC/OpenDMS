@@ -215,6 +215,10 @@ def build_metadata_xml(
     a = _el(d, M, "Arhivs")
     _opt(a, M, "FondaNumurs", extras.get("fonds"))
     _el(a, M, "AprakstaLimenis", "dokuments")
+    nodots = extras.get("nodots") or {}
+    _opt(a, M, "NodosanasPlanaID", nodots.get("plans") and f"plans-{nodots['plans']}")
+    _opt(a, M, "NodosanasPakotnesID", nodots.get("pakotne"))
+    _opt(a, M, "NodotsArhivamUz", nodots.get("datums"))
 
     s = _el(d, M, "Drosiba")
     status = _pick(rules.get("infoStatus"), INFO_STATUS, "IerobezotasPieejamibas")

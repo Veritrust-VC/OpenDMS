@@ -28,7 +28,8 @@ PREFIXES = {"ievade/": "intake_items", "zinasanas/precedenti/": "uapf_precedents
             "lietas/": "standard_cases", "arhivs/partijas/": "archive_batches",
             "vesture/integracijas/": "integration_audit_log",
             "arhivs/klasifikacijas-shemas/": "classification_schemes", "arhivs/iestatijumi/": "archive_settings",
-            "arhivs/iznicinasanas-akti/": "destruction_acts"}
+            "arhivs/iznicinasanas-akti/": "destruction_acts", "arhivs/uzskaites-saraksti/": "inventory_lists",
+            "arhivs/nodosana/ieraksti/": "transfer_packages", "arhivs/nodosanas-plani/": "transfer_plans"}
 
 
 def read_container(client, bucket: str) -> dict:

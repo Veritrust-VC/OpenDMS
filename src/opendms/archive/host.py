@@ -191,17 +191,95 @@ async def act_draft(ctx):
 
 
 async def lna_submit(ctx):
-    """LNA saskaņošana: savienojums ar LNA (simulatoru) ir 7. solis. Līdz tam akts tiek atzīmēts kā iesniegts,
-    un LNA lēmumu reģistrē lietotājs (uzdevums AwaitLNA)."""
+    """LNA iesniegšana (akts P4b vai uzskaites saraksts P5). Savienojums ar LNA (simulatoru) ir 7. solis; līdz tam
+    objekts tiek atzīmēts kā iesniegts, un LNA lēmumu reģistrē lietotājs (uzdevums AwaitLNA)."""
     from opendms.archive import destruction as ds
+    from opendms.archive import finding_aid as fa
     from opendms.storage import get_storage
     i = _inp(ctx)
     org = await _org()
+    if i.get("sarakstaId"):
+        lid = _int(i["sarakstaId"], "sarakstaId")
+        x = await fa.store_xml(org, lid, get_storage())
+        await fa.set_list(org["id"], lid, WHO, status="IesniegtsLNA")
+        return {"output": {"iesniegumaId": f"DVS-SARAKSTS-{lid}", "iesniegts": True, "kanals": "manuāli (LNA savienojums — 7. solis)",
+                           "xml": x["key"]}}
     aid = _int(i.get("aktaId") or i.get("objektaId"), "aktaId")
     x = await ds.store_act_xml(org, aid, get_storage())
     await ds.set_act(org["id"], aid, WHO, status="IesniegtsLNA")
     return {"output": {"iesniegumaId": f"DVS-AKTS-{aid}", "iesniegts": True, "kanals": "manuāli (LNA savienojums — 7. solis)",
                        "aktaXml": x["key"]}}
+
+
+# ── P5 ──
+
+async def finding_aid_draft(ctx):
+    from opendms.archive import finding_aid as fa
+    i = _inp(ctx)
+    l = await fa.draft(await _org(), WHO, i.get("sakaLietotajs"), i.get("sarakstaId"), ctx.get("session_id"))
+    return {"output": {"sarakstaId": l["id"], "sarakstaNumurs": l["number"], "vienibuSkaits": len(l["lietas"])}}
+
+
+async def finding_aid_validate(ctx):
+    from opendms.archive import finding_aid as fa
+    return {"output": await fa.validate(await _org(), _int(_inp(ctx).get("sarakstaId"), "sarakstaId"))}
+
+
+async def finding_aid_approve(ctx):
+    from opendms.archive import finding_aid as fa
+    from opendms.storage import get_storage
+    return {"output": await fa.approve(await _org(), _int(_inp(ctx).get("sarakstaId"), "sarakstaId"), WHO, get_storage())}
+
+
+# ── P6 ──
+
+async def transfer_plan_check(ctx):
+    from opendms.archive import transfer as tr
+    i = _inp(ctx)
+    return {"output": await tr.plan_check(await _org(), _int(i.get("gads") or date.today().year, "gads"))}
+
+
+async def transfer_build(ctx):
+    from opendms.archive import transfer as tr
+    from opendms.storage import get_storage
+    i = _inp(ctx)
+    r = await tr.build(await _org(), i.get("planaId"), get_storage(), WHO, i.get("pakotnesId"), ctx.get("session_id"))
+    return {"output": {"pakotnesId": r["pakotnesId"], "pakotne": r["pakotne"], "sha256": r["sha256"]}}
+
+
+async def transfer_validate(ctx):
+    from opendms.archive import transfer as tr
+    from opendms.storage import get_storage
+    return {"output": await tr.validate(await _org(), _int(_inp(ctx).get("pakotnesId"), "pakotnesId"), get_storage())}
+
+
+async def lna_deliver(ctx):
+    """Nodošana LNA: LNA pieņemšanas simulators ir 7. solis. Līdz tam pakotne ir lejupielādējama, un
+    LNA rezultātu reģistrē lietotājs (uzdevums AwaitLNA)."""
+    from datetime import datetime, timezone
+    from opendms.archive import transfer as tr
+    org = await _org()
+    pid = _int(_inp(ctx).get("pakotnesId"), "pakotnesId")
+    p = await tr.get_package(org["id"], pid)
+    if p["status"] != "Apstiprinata":
+        raise ValueError("Nodot var tikai apstiprinātu pakotni")
+    await tr.set_package(org["id"], pid, WHO, status="Nodota", delivered_at=datetime.now(timezone.utc),
+                         delivery_ref=f"manuāli:{p['zip_key']}")
+    return {"output": {"nodosanasId": f"DVS-NODOSANA-{pid}", "kanals": "manuāli (LNA savienojums — 7. solis)"}}
+
+
+async def transfer_record(ctx):
+    from opendms.archive import transfer as tr
+    from opendms.storage import get_storage
+    return {"output": await tr.record(await _org(), _int(_inp(ctx).get("pakotnesId"), "pakotnesId"), get_storage(), WHO)}
+
+
+async def object_task(ctx):
+    """Lietotāja uzdevums sarakstam vai pakotnei (P5/P6): sesijā pieraksta, ko gaida."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE uapf_sessions SET waiting_for = $2 WHERE session_id = $1", ctx.get("session_id"), ctx.get("step_id"))
+    return {"output": {"status": "pending", "reviewTaskId": f"{ctx.get('session_id')}:{ctx.get('step_id')}"}}
 
 
 async def destruction_execute(ctx):
@@ -251,5 +329,13 @@ HANDLERS = {
     "lna/submit": (lna_submit, _ref("lna", "submit", "Submit the act to LNA (manual until the LNA connection, step 7).")),
     "destruction/execute": (destruction_execute, _ref("destruction", "execute", "Destroy the files of an approved act in every store; keep the register entry.")),
     "act/record-destruction": (act_record, _ref("act", "record-destruction", "Record the destruction mark in the act and store the act XML.")),
+    "finding-aid/draft": (finding_aid_draft, _ref("finding-aid", "draft", "Draft an inventory list (uzskaites saraksts) of appraised cases grouped by retention and medium.")),
+    "finding-aid/validate": (finding_aid_validate, _ref("finding-aid", "validate", "Validate the inventory list against the standard (XSD, MK 282 86.–88.).")),
+    "finding-aid/approve": (finding_aid_approve, _ref("finding-aid", "approve", "Assign reference codes (uzskaites kodi) after LNA approval; cases become Aprakstita.")),
+    "transfer/plan-check": (transfer_plan_check, _ref("transfer", "plan-check", "Check the yearly transfer agreement with LNA and count cases ready to transfer.")),
+    "transfer/build": (transfer_build, _ref("transfer", "build", "Build the LNA OPEX/EAD3 package with the standard's builder; PDF/A renditions for office files.")),
+    "transfer/validate": (transfer_validate, _ref("transfer", "validate", "Validate the package with the standard's validator (riki/validet_pakotni.py).")),
+    "lna/deliver": (lna_deliver, _ref("lna", "deliver", "Deliver the package to LNA (manual until the LNA connection, step 7).")),
+    "transfer/record": (transfer_record, _ref("transfer", "record", "Register the transfer act; cases NodotaLNA; documents DokumentsNodotsArhivam.")),
     "case/carry-over": (case_carry_over, _ref("case", "carry-over", "Mark a long-running case and open it in the next period's scheme.")),
 }

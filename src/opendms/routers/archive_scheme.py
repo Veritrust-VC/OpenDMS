@@ -637,9 +637,11 @@ class ResumeIn(BaseModel):
     output: dict = {}
 
 
-RESUME_RULES = {   # lietotāja uzdevums → atļautās vērtības
-    "EKDecision": {"ekLemums": {"Iznicinat", "Pagarinat", "NodotArhivam"}},
-    "AwaitLNA": {"lnaLemums": {"Saskanots", "Noraidits"}},
+RESUME_RULES = {   # (process, lietotāja uzdevums) → atļautās vērtības
+    ("p4a-lietas-izvertesana", "EKDecision"): {"ekLemums": {"Iznicinat", "Pagarinat", "NodotArhivam"}},
+    ("p4b-iznicinasanas-akts", "AwaitLNA"): {"lnaLemums": {"Saskanots", "Noraidits"}},
+    ("p5-aprakstisana", "AwaitLNA"): {"lnaLemums": {"Apstiprinats", "Noraidits"}},
+    ("p6-nodosana-lna", "AwaitLNA"): {"lnaLemums": {"Pienemts", "Noraidits"}},
 }
 
 
@@ -655,12 +657,16 @@ async def resume_session(sid: str, body: ResumeIn = ResumeIn(), user=Depends(ADM
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM uapf_sessions WHERE session_id = $1", sid)
         act_id = await conn.fetchval("SELECT id FROM destruction_acts WHERE session_id = $1 AND org_id = $2", sid, org["id"])
+        list_id = await conn.fetchval("SELECT id FROM inventory_lists WHERE session_id = $1 AND org_id = $2", sid, org["id"])
+        pkg_id = await conn.fetchval("SELECT id FROM transfer_packages WHERE session_id = $1 AND org_id = $2", sid, org["id"])
     if not row:
         raise HTTPException(404, "Sesija nav atrasta")
     step = row["waiting_for"]
     out = {k: v for k, v in (body.output or {}).items() if k in
-           ("ekLemums", "ekAkcepts", "ekProtokolaNr", "ekDatums", "lnaLemums", "lnaAtsauce", "apstiprinu", "piezimes")}
-    for k, allowed in (RESUME_RULES.get(step) or {}).items():
+           ("ekLemums", "ekAkcepts", "ekProtokolaNr", "ekDatums", "lnaLemums", "lnaAtsauce", "apstiprinu", "parakstu",
+            "planaDatums", "planaAtsauce", "piezimes")}
+    proc = row["process_id"]
+    for k, allowed in (RESUME_RULES.get((proc, step)) or {}).items():
         if out.get(k) not in allowed:
             raise HTTPException(400, f"{step}: {k} jābūt vienam no {', '.join(sorted(allowed))}")
     who = user.get("email")
@@ -684,6 +690,38 @@ async def resume_session(sid: str, body: ResumeIn = ResumeIn(), user=Depends(ADM
                 await ds.set_act(org["id"], act_id, who, status="NavJasaskano")
             await ds.set_act(org["id"], act_id, who, status="Apstiprinats", approved_by=user["id"],
                              approved_at=datetime.now(timezone.utc))
+        elif proc == "p5-aprakstisana" and list_id:
+            from opendms.archive import finding_aid as fa
+            if step == "Fix":
+                await fa.draft(org, who, user["id"], list_id)
+            elif step == "Sign":
+                if out.get("parakstu") is not True:
+                    raise HTTPException(400, "Sarakstu paraksta ar parakstu: true")
+                await fa.sign(org, list_id, user["id"], who)
+            elif step == "AwaitLNA":
+                await fa.set_list(org["id"], list_id, who, status="Apstiprinats" if out["lnaLemums"] == "Apstiprinats" else "NoraiditsLNA",
+                                  lna_ref=out.get("lnaAtsauce"), lna_date=date.today())
+        elif proc == "p6-nodosana-lna":
+            from opendms.archive import transfer as tr
+            if step == "AgreePlan":
+                if not out.get("planaDatums"):
+                    raise HTTPException(400, "Norādiet vienošanās ar LNA datumu (planaDatums)")
+                inp = row["input_payload"]
+                inp = json.loads(inp) if isinstance(inp, str) else (inp or {})
+                await tr.add_plan(org, int(inp.get("gads") or date.today().year), date.fromisoformat(out["planaDatums"]),
+                                  out.get("planaAtsauce"), out.get("piezimes"), user["id"])
+            elif step == "Approve" and pkg_id:
+                if out.get("apstiprinu") is not True:
+                    raise HTTPException(400, "Nodošanu apstiprina ar apstiprinu: true")
+                p = await tr.get_package(org["id"], pkg_id)
+                if p["status"] != "Deriga":
+                    raise HTTPException(409, "Apstiprināt var tikai derīgu (pārbaudītu) pakotni")
+                await tr.set_package(org["id"], pkg_id, who, status="Apstiprinata", approved_by=user["id"],
+                                     approved_at=datetime.now(timezone.utc))
+            elif step == "AwaitLNA" and pkg_id:
+                await tr.set_package(org["id"], pkg_id, who, status="Pienemta" if out["lnaLemums"] == "Pienemts" else "Noraidita",
+                                     lna_decision=out["lnaLemums"], lna_ref=out.get("lnaAtsauce"), lna_date=date.today(),
+                                     lna_notes=out.get("piezimes"))
         r = await eng.resume(sid, {**out, "turpinaja": who})
     except RuntimeError as e:
         raise HTTPException(409, str(e))
@@ -751,4 +789,109 @@ async def act_start(user=Depends(ADMIN)):
     except RuntimeError as e:
         raise HTTPException(502, str(e))
     await _case_audit(user, org, "opendms.archive.act.process.start", r["sesija"] or "", {"stavoklis": r["stavoklis"], "gaida": r["gaida"]})
+    return r
+
+
+# ── P5 aprakstīšana, P6 nodošana LNA ──
+
+@router.get("/lists")
+async def lists(user=Depends(get_current_user)):
+    from opendms.archive import finding_aid as fa
+    return await fa.list_lists((await _org())["id"])
+
+
+async def _session_of(sid):
+    if not sid:
+        return None
+    from opendms.database import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        r = await conn.fetchrow("SELECT session_id, process_id, state, waiting_for, error_message FROM uapf_sessions WHERE session_id = $1", sid)
+    return dict(r) if r else None
+
+
+@router.get("/lists/{list_id}")
+async def list_detail(list_id: int, user=Depends(get_current_user)):
+    from opendms.archive import finding_aid as fa
+    try:
+        l = await fa.get_list((await _org())["id"], list_id)
+    except fa.ListError as e:
+        raise HTTPException(404, str(e))
+    l["sesija"] = await _session_of(l.get("session_id"))
+    return l
+
+
+@router.get("/lists/{list_id}/list.xml")
+async def list_xml(list_id: int, user=Depends(get_current_user)):
+    from opendms.archive import finding_aid as fa
+    org = await _org()
+    try:
+        x = await fa.store_xml(org, list_id, get_storage())
+    except fa.ListError as e:
+        _err(e)
+    return Response(await get_storage().get(x["key"]), media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="uzskaites-saraksts-{list_id}.xml"'})
+
+
+@router.post("/lists/process/start")
+async def list_start(user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        r = await eng.start("p5-aprakstisana", {"sakaLietotajs": user["id"]})
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    await _case_audit(user, org, "opendms.archive.list.process.start", r["sesija"] or "", {"stavoklis": r["stavoklis"], "gaida": r["gaida"]})
+    return r
+
+
+@router.get("/transfers")
+async def transfers(user=Depends(get_current_user)):
+    from opendms.archive import transfer as tr
+    return await tr.list_packages((await _org())["id"])
+
+
+@router.get("/transfers/{pkg_id}")
+async def transfer_detail(pkg_id: int, user=Depends(get_current_user)):
+    from opendms.archive import transfer as tr
+    try:
+        p = await tr.get_package((await _org())["id"], pkg_id)
+    except tr.TransferError as e:
+        raise HTTPException(404, str(e))
+    p["sesija"] = await _session_of(p.get("session_id"))
+    return p
+
+
+@router.get("/transfers/{pkg_id}/package.zip")
+async def transfer_zip(pkg_id: int, user=Depends(ADMIN)):
+    from opendms.archive import transfer as tr
+    p = await tr.get_package((await _org())["id"], pkg_id)
+    data = await get_storage().get(p["zip_key"])
+    if data is None:
+        raise HTTPException(404, "Pakotne nav atrodama glabātuvē")
+    return Response(data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{p["package_name"]}.zip"', "X-Sha256": p["sha256"]})
+
+
+@router.get("/transfers/{pkg_id}/act.xml")
+async def transfer_act(pkg_id: int, user=Depends(get_current_user)):
+    from opendms.archive import transfer as tr
+    p = await tr.get_package((await _org())["id"], pkg_id)
+    if not p.get("act_key"):
+        raise HTTPException(404, "Nodošanas akts tiek izveidots pēc LNA pieņemšanas")
+    return Response(await get_storage().get(p["act_key"]), media_type="application/xml",
+                    headers={"Content-Disposition": f'attachment; filename="nodosanas-akts-{pkg_id}.xml"'})
+
+
+class TransferStartIn(BaseModel):
+    gads: Optional[int] = None
+
+
+@router.post("/transfers/process/start")
+async def transfer_start(body: TransferStartIn = TransferStartIn(), user=Depends(ADMIN)):
+    org = await _org()
+    try:
+        r = await eng.start("p6-nodosana-lna", {"gads": body.gads or date.today().year, "sakaLietotajs": user["id"]})
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    await _case_audit(user, org, "opendms.archive.transfer.process.start", r["sesija"] or "", {"stavoklis": r["stavoklis"], "gaida": r["gaida"]})
     return r

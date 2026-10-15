@@ -192,7 +192,7 @@ async def package_extras(conn, doc: dict, files: list[dict], events: list[dict])
     extras = {"addressees": addressees(meta, events), "fonds": settings["fonds_number"] if settings else None,
               "signatures": [{"persona": _j(ev["details"])["persona"], "laiks": ev["created_at"],
                               "datnes": [f["datnesId"] for f in _j(ev["details"])["datnes"]]} for ev in signs],
-              "extension": None, "technical": {}}
+              "extension": None, "technical": {}, "nodots": (meta.get("arhivs") or {}).get("nodots")}
     if doc.get("archive_id"):
         marks = await mk.list_marks(doc["id"])
         extras["extension"] = archive_metadata(doc, events, marks, files)

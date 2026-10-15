@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LNA OPEX profils — OPEX 1.1 elementi, ko izmanto LNA pakotnēs.
+  Avoti: OPEX specifikācija (Preservica); LNA OPEX pakotnes paraugs un "OPEX/EAD elementu apraksts".
+  Visas sadaļas pēc OPEX ir neobligātas; LNA prasa Properties/Title un SecurityDescriptor (pārbauda validators).
+  DescriptiveMetadata saturs (EAD3) tiek pārbaudīts atsevišķi pret lna-ead3-profils.xsd.
+  Versija 0.1.0 · KISC dokumentu arhivēšanas standarts
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:opex="http://www.openpreservationexchange.org/opex/v1.1"
+           targetNamespace="http://www.openpreservationexchange.org/opex/v1.1"
+           elementFormDefault="qualified" version="0.1.0">
+
+  <xs:element name="OPEXMetadata">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Transfer" type="opex:TransferType" minOccurs="0"/>
+        <xs:element name="Properties" type="opex:PropertiesType" minOccurs="0"/>
+        <xs:element name="DescriptiveMetadata" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:any namespace="##other" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <!-- History, Relationships: Preservica eksportē, bet neielādē -->
+        <xs:element name="History" type="xs:anyType" minOccurs="0"/>
+        <xs:element name="Relationships" type="xs:anyType" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="TransferType">
+    <xs:sequence>
+      <xs:element name="SourceID" type="xs:string" minOccurs="0"/>
+      <xs:element name="Manifest" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Folders" minOccurs="0">
+              <xs:complexType>
+                <xs:sequence>
+                  <xs:element name="Folder" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+                </xs:sequence>
+              </xs:complexType>
+            </xs:element>
+            <xs:element name="Files" minOccurs="0">
+              <xs:complexType>
+                <xs:sequence>
+                  <xs:element name="File" minOccurs="0" maxOccurs="unbounded">
+                    <xs:complexType>
+                      <xs:simpleContent>
+                        <xs:extension base="xs:string">
+                          <xs:attribute name="type" use="optional">
+                            <xs:simpleType>
+                              <xs:restriction base="xs:string">
+                                <xs:enumeration value="content"/>
+                                <xs:enumeration value="metadata"/>
+                              </xs:restriction>
+                            </xs:simpleType>
+                          </xs:attribute>
+                          <xs:attribute name="size" type="xs:nonNegativeInteger" use="optional"/>
+                        </xs:extension>
+                      </xs:simpleContent>
+                    </xs:complexType>
+                  </xs:element>
+                </xs:sequence>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="Fixities" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Fixity" maxOccurs="unbounded">
+              <xs:complexType>
+                <xs:attribute name="type" use="required">
+                  <xs:simpleType>
+                    <xs:restriction base="xs:string">
+                      <xs:enumeration value="MD5"/>
+                      <xs:enumeration value="SHA-1"/>
+                      <xs:enumeration value="SHA-256"/>
+                      <xs:enumeration value="SHA-512"/>
+                    </xs:restriction>
+                  </xs:simpleType>
+                </xs:attribute>
+                <xs:attribute name="value" type="xs:string" use="required"/>
+                <xs:attribute name="path" type="xs:string" use="optional"/>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="OriginalFilename" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PropertiesType">
+    <xs:sequence>
+      <xs:element name="Title" type="xs:string" minOccurs="0"/>
+      <xs:element name="Description" type="xs:string" minOccurs="0"/>
+      <xs:element name="SecurityDescriptor" type="xs:string" minOccurs="0"/>
+      <xs:element name="Identifiers" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Identifier" maxOccurs="unbounded">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="type" type="xs:string" use="required"/>
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

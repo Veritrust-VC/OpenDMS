@@ -36,4 +36,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "opendms.standard" = ["schemas/*.xsd"]
-"opendms.archive" = ["schemas/*.xsd"]
+"opendms.archive" = ["schemas/*.xsd", "lna/shemas/*.xsd", "lna/profili/*.yaml"]

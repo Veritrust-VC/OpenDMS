@@ -523,6 +523,118 @@ function Acts({ api, notify }) {
   </div>);
 }
 
+// ───────────────────────── aprakstīšana (P5) un nodošana LNA (P6) ─────────────────────────
+function TaskBox({ title, children }) {
+  return <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2"><div className="font-medium">{title}</div>{children}</div>;
+}
+
+function ListDetail({ api, notify, id, onChanged }) {
+  const [l, setL] = useState(null); const [f, setF] = useState({});
+  const load = async () => { try { setL(await api(`/archive/lists/${id}`)); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); setF({}); }, [id]);
+  if (!l) return null;
+  const s = l.sesija; const waiting = s?.state === "suspended" ? s.waiting_for : null;
+  const resume = async (output) => { try { const r = await api(`/archive/sessions/${s.session_id}/resume`, { method: "POST", body: JSON.stringify({ output }) });
+    notify(`Process: ${r.stavoklis}${r.gaida ? " — gaida " + r.gaida : ""}`); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  const lastCheck = l.history.slice().reverse().find((h) => h.darbiba === "PārbaudesKļūdas");
+  return (<div className="bg-white border rounded-lg p-4 space-y-3 text-sm">
+    <div className="flex items-center justify-between"><div className="text-lg font-semibold">{l.title}</div><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{l.status_lv}</span></div>
+    <div className="border rounded divide-y">{l.lietas.map((c) => <div key={c.id} className="px-3 py-1.5 flex justify-between">
+      <span><span className="text-gray-500 mr-2">{c.kartas_numurs}.</span>{c.case_index} {c.case_name} ({c.case_year})</span>
+      <span className="text-xs text-gray-500 font-mono">{c.uzskaites_kods || c.status}</span></div>)}</div>
+    <button onClick={() => download(api, notify, `/archive/lists/${id}/list.xml`, `uzskaites-saraksts-${l.number}.xml`)} className="text-xs px-3 py-1 border rounded">Uzskaites saraksts XML</button>
+    {s?.state === "failed" && <div className="text-xs text-red-700">{s.error_message}</div>}
+    {waiting === "Fix" && <TaskBox title="Saraksts jālabo">
+      {lastCheck && <div className="text-xs text-red-800">{(lastCheck.kludas || []).map((k, i) => <div key={i}>{k}</div>)}</div>}
+      <div className="text-xs">Novērsiet kļūdas (piem., Arhīvs → Iestatījumi: arhīva kods, fonds) un pārbaudiet vēlreiz.</div>
+      <button onClick={() => resume({})} className="px-3 py-1 border rounded">Pārveidot un pārbaudīt</button></TaskBox>}
+    {waiting === "Sign" && <TaskBox title="Sastādītājs un atbildīgais paraksta (93. p.)">
+      <div className="text-xs">Paraksts DVS ar jūsu kontu. Ja LNA prasa drošu e-parakstu, lejupielādējiet XML un parakstiet eParakstā.</div>
+      <button onClick={() => resume({ parakstu: true })} className="px-3 py-1 bg-emerald-600 text-white rounded">Parakstīt un iesniegt LNA</button></TaskBox>}
+    {waiting === "AwaitLNA" && <TaskBox title="LNA lēmums par sarakstu (96. p.)">
+      <input value={f.lnaAtsauce || ""} onChange={(e) => setF({ ...f, lnaAtsauce: e.target.value })} placeholder="LNA lēmuma atsauce" className="w-full text-sm border rounded px-2 py-1" />
+      <div className="flex gap-2"><button onClick={() => resume({ lnaLemums: "Apstiprinats", lnaAtsauce: f.lnaAtsauce })} className="px-3 py-1 bg-emerald-600 text-white rounded">LNA apstiprināja</button>
+        <button onClick={() => resume({ lnaLemums: "Noraidits", lnaAtsauce: f.lnaAtsauce })} className="px-3 py-1 border rounded">LNA noraidīja</button></div></TaskBox>}
+    <details className="text-xs text-gray-500"><summary className="cursor-pointer">Vēsture ({l.history.length})</summary>
+      {l.history.map((h, i) => <div key={i}>{String(h.kad).slice(0, 16).replace("T", " ")} · {h.darbiba} · {h.kas}</div>)}</details>
+  </div>);
+}
+
+function Lists({ api, notify }) {
+  const [list, setList] = useState([]); const [sel, setSel] = useState(null);
+  const load = async () => { try { setList(await api("/archive/lists")); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); }, []);
+  const start = async () => { try { const r = await api("/archive/lists/process/start", { method: "POST" });
+    notify(r.gaida ? `Saraksts sagatavots — gaida: ${r.gaida}` : `Process: ${r.stavoklis}`); load(); } catch (e) { notify(e.message, "error"); } };
+  return (<div className="grid grid-cols-12 gap-4">
+    <div className="col-span-4 space-y-3">
+      <button onClick={start} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded" title="Process p5-aprakstisana">+ Sagatavot uzskaites sarakstu (process)</button>
+      <p className="text-xs text-gray-500">Sarakstā iekļauj izvērtētās lietas aprakstīšanai, grupējot pēc termiņa un nesēja (MK 282 84. p.). Uzskaites kodus piešķir pēc LNA apstiprinājuma.</p>
+      <div className="bg-white border rounded-lg divide-y">{list.map((x) => <button key={x.id} onClick={() => setSel(x.id)} className={`w-full text-left px-3 py-2 ${sel === x.id ? "bg-sky-50" : "hover:bg-gray-50"}`}>
+        <div className="flex justify-between"><span className="text-sm font-medium">Nr. {x.number}</span><span className="text-xs">{x.status_lv}</span></div>
+        <div className="text-xs text-gray-500">{x.vienibas} vienības</div></button>)}
+        {!list.length && <div className="p-4 text-sm text-gray-400">Sarakstu vēl nav.</div>}</div>
+    </div>
+    <div className="col-span-8">{sel ? <ListDetail api={api} notify={notify} id={sel} onChanged={load} /> : null}</div>
+  </div>);
+}
+
+function TransferDetail({ api, notify, id, onChanged }) {
+  const [p, setP] = useState(null); const [f, setF] = useState({}); const [confirm, setConfirm] = useState(false);
+  const load = async () => { try { setP(await api(`/archive/transfers/${id}`)); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); setF({}); setConfirm(false); }, [id]);
+  if (!p) return null;
+  const s = p.sesija; const waiting = s?.state === "suspended" ? s.waiting_for : null;
+  const resume = async (output) => { try { const r = await api(`/archive/sessions/${s.session_id}/resume`, { method: "POST", body: JSON.stringify({ output }) });
+    notify(`Process: ${r.stavoklis}${r.gaida ? " — gaida " + r.gaida : ""}`); load(); onChanged(); } catch (e) { notify(e.message, "error"); } };
+  const rep = p.report || {};
+  return (<div className="bg-white border rounded-lg p-4 space-y-3 text-sm">
+    <div className="flex items-center justify-between"><div className="font-semibold font-mono text-sm">{p.package_name}</div><span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">{p.status_lv}</span></div>
+    <div className="text-xs text-gray-500">{p.case_ids.length} lietas · {Math.round((p.size_bytes || 0) / 1024)} KB · SHA-256 <span className="font-mono">{(p.sha256 || "").slice(0, 16)}…</span></div>
+    <div className="flex gap-2"><button onClick={() => download(api, notify, `/archive/transfers/${id}/package.zip`, `${p.package_name}.zip`)} className="text-xs px-3 py-1 border rounded">Pakotne ZIP</button>
+      {p.act_key && <button onClick={() => download(api, notify, `/archive/transfers/${id}/act.xml`, `nodosanas-akts-${id}.xml`)} className="text-xs px-3 py-1 border rounded">Nodošanas akts XML</button>}</div>
+    {(rep.kludas || []).length > 0 && <div className="text-xs text-red-800 bg-red-50 border border-red-200 rounded p-2"><div className="font-medium">Kļūdas ({rep.kludas.length})</div>{rep.kludas.slice(0, 20).map((k, i) => <div key={i}>{k}</div>)}</div>}
+    {(rep.bridinajumi || []).length > 0 && <details className="text-xs text-amber-800"><summary className="cursor-pointer">Brīdinājumi ({rep.bridinajumi.length})</summary>{rep.bridinajumi.map((k, i) => <div key={i}>{k}</div>)}</details>}
+    {waiting === "Fix" && <TaskBox title="Novērst kļūdas"><button onClick={() => resume({})} className="px-3 py-1 border rounded">Veidot pakotni vēlreiz</button></TaskBox>}
+    {waiting === "Approve" && <TaskBox title="Atbildīgā persona apstiprina nodošanu">
+      <label className="flex items-center gap-2"><input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} />Pakotne pārbaudīta, apstiprinu nodošanu LNA</label>
+      <button disabled={!confirm} onClick={() => resume({ apstiprinu: true })} className="px-3 py-1 bg-emerald-600 text-white rounded disabled:opacity-40">Apstiprināt un nodot</button></TaskBox>}
+    {waiting === "AwaitLNA" && <TaskBox title="LNA pieņemšanas rezultāts">
+      <div className="text-xs text-gray-500">Līdz LNA savienojumam (7. solis) pakotni nodod manuāli un rezultātu reģistrē šeit.</div>
+      <input value={f.lnaAtsauce || ""} onChange={(e) => setF({ ...f, lnaAtsauce: e.target.value })} placeholder="LNA pieņemšanas akta atsauce" className="w-full text-sm border rounded px-2 py-1" />
+      <input value={f.piezimes || ""} onChange={(e) => setF({ ...f, piezimes: e.target.value })} placeholder="LNA atbildīgā persona / piezīmes" className="w-full text-sm border rounded px-2 py-1" />
+      <div className="flex gap-2"><button onClick={() => resume({ lnaLemums: "Pienemts", ...f })} className="px-3 py-1 bg-emerald-600 text-white rounded">LNA pieņēma</button>
+        <button onClick={() => resume({ lnaLemums: "Noraidits", ...f })} className="px-3 py-1 border rounded">LNA noraidīja</button></div></TaskBox>}
+    <details className="text-xs text-gray-500"><summary className="cursor-pointer">Vēsture ({p.history.length})</summary>
+      {p.history.map((h, i) => <div key={i}>{String(h.kad).slice(0, 16).replace("T", " ")} · {h.darbiba} · {h.kas}</div>)}</details>
+  </div>);
+}
+
+function Transfers({ api, notify }) {
+  const [list, setList] = useState([]); const [sel, setSel] = useState(null); const [plan, setPlan] = useState(null);
+  const load = async () => { try { setList(await api("/archive/transfers")); } catch (e) { notify(e.message, "error"); } };
+  useEffect(() => { load(); }, []);
+  const start = async () => { try { const r = await api("/archive/transfers/process/start", { method: "POST", body: "{}" });
+    if (r.gaida === "AgreePlan") setPlan({ sid: r.sesija, planaDatums: "", planaAtsauce: "" });
+    notify(r.gaida ? `Process gaida: ${r.gaida}` : `Process: ${r.stavoklis}${r.kluda ? " — " + r.kluda : ""}`); load(); } catch (e) { notify(e.message, "error"); } };
+  const agree = async () => { try { const r = await api(`/archive/sessions/${plan.sid}/resume`, { method: "POST", body: JSON.stringify({ output: plan }) });
+    setPlan(null); notify(r.gaida ? `Pakotne veidota — gaida: ${r.gaida}` : `Process: ${r.stavoklis}`); load(); } catch (e) { notify(e.message, "error"); } };
+  return (<div className="grid grid-cols-12 gap-4">
+    <div className="col-span-4 space-y-3">
+      <button onClick={start} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded" title="Process p6-nodosana-lna">+ Sagatavot nodošanu LNA (process)</button>
+      <p className="text-xs text-gray-500">OPEX/EAD3 pakotne no LNA apstiprināta pastāvīgi glabājamo lietu saraksta; pārbaude ar standarta rīku; biroja datnēm PDF/A atveidojums.</p>
+      {plan && <TaskBox title="Gada vienošanās ar LNA (174. p.)">
+        <input type="date" value={plan.planaDatums} onChange={(e) => setPlan({ ...plan, planaDatums: e.target.value })} className="text-sm border rounded px-2 py-1" />
+        <input value={plan.planaAtsauce} onChange={(e) => setPlan({ ...plan, planaAtsauce: e.target.value })} placeholder="Vienošanās atsauce" className="w-full text-sm border rounded px-2 py-1" />
+        <button onClick={agree} className="px-3 py-1 bg-emerald-600 text-white rounded">Saglabāt un turpināt</button></TaskBox>}
+      <div className="bg-white border rounded-lg divide-y">{list.map((x) => <button key={x.id} onClick={() => setSel(x.id)} className={`w-full text-left px-3 py-2 ${sel === x.id ? "bg-sky-50" : "hover:bg-gray-50"}`}>
+        <div className="text-xs font-mono truncate">{x.package_name}</div><div className="text-xs text-gray-500">{x.status_lv} · {x.lietas} lietas</div></button>)}
+        {!list.length && <div className="p-4 text-sm text-gray-400">Nodošanu vēl nav.</div>}</div>
+    </div>
+    <div className="col-span-8">{sel ? <TransferDetail api={api} notify={notify} id={sel} onChanged={load} /> : null}</div>
+  </div>);
+}
+
 // ───────────────────────── vecā eksporta partija ─────────────────────────
 function LegacyBatches({ api, notify }) {
   const [batches, setBatches] = useState([]); const [docIds, setDocIds] = useState(""); const [name, setName] = useState("");
@@ -550,7 +662,7 @@ function LegacyBatches({ api, notify }) {
 
 export default function ArchivePage({ api, notify }) {
   const [tab, setTab] = useState("lietas");
-  const tabs = [["lietas", "Lietas"], ["iznicinasana", "Iznīcināšana"], ["shema", "Klasifikācijas shēma"], ["iestatijumi", "Iestatījumi"], ["partijas", "Vecā eksporta partija"]];
+  const tabs = [["lietas", "Lietas"], ["iznicinasana", "Iznīcināšana"], ["aprakstisana", "Aprakstīšana"], ["nodosana", "Nodošana LNA"], ["shema", "Klasifikācijas shēma"], ["iestatijumi", "Iestatījumi"], ["partijas", "Vecā eksporta partija"]];
   return (
     <div>
       <h2 className="text-xl font-bold">Arhīvs</h2>
@@ -559,6 +671,8 @@ export default function ArchivePage({ api, notify }) {
         <button key={k} onClick={() => setTab(k)} className={`text-sm px-4 py-2 -mb-px border-b-2 ${tab === k ? "border-emerald-600 text-emerald-700 font-medium" : "border-transparent text-gray-500"}`}>{l}</button>)}</div>
       {tab === "lietas" && <Cases api={api} notify={notify} />}
       {tab === "iznicinasana" && <Acts api={api} notify={notify} />}
+      {tab === "aprakstisana" && <Lists api={api} notify={notify} />}
+      {tab === "nodosana" && <Transfers api={api} notify={notify} />}
       {tab === "shema" && <Schemes api={api} notify={notify} />}
       {tab === "iestatijumi" && <Settings api={api} notify={notify} />}
       {tab === "partijas" && <LegacyBatches api={api} notify={notify} />}

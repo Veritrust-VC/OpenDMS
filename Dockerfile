@@ -2,6 +2,9 @@ FROM python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 RUN apt-get update && apt-get install -y poppler-utils pandoc && rm -rf /var/lib/apt/lists/*
+# Arhivēšana: biroja datņu PDF/A-2b atveidojumi LNA pakotnei (MK 282 69. p.; standarts 05)
+RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-writer-nogui libreoffice-calc-nogui fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 COPY pyproject.toml .
