@@ -1,0 +1,666 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dokumentu metadatu standarts v2.0
+  Dokumenta metadatu shēma
+
+  Vienota dokumentu metadatu shēma valsts pārvaldes dokumentu vadības
+  sistēmām (DVS), dokumentu apmaiņai, centrālajam dokumentu reģistram,
+  arhivēšanai (LNA OPEX/EAD) un datu ezerkrātuvei.
+
+  Pamats:
+  - Valsts pārvaldes dokumentu pārvaldības principi (SSOT)
+  - MK noteikumi Nr. 282 "Dokumentu un arhīvu pārvaldības noteikumi"
+  - ISO 15489, MoReq2010, Dublin Core, EAD, OPEX, E-ARK CSIP
+  - DIV / e-adrese (latvija.gov.lv) savietojamība
+  - W3C DID Core v1.1, W3C VC Data Model v2.0
+
+  Identifikatori: specifikacija/identifikatori.md
+  Dzīves cikla notikumi (statuss, virzība) šajā shēmā netiek glabāti;
+  tie ir izsekošanas shēmā.
+
+  Vārdtelpa: urn:lv:vdvc:dokumentu-metadati:2.0
+  Autors:    PPPA
+  Versija:   2.0.0-uzmetums
+-->
+<xs:schema
+    xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:dm="urn:lv:vdvc:dokumentu-metadati:2.0"
+    targetNamespace="urn:lv:vdvc:dokumentu-metadati:2.0"
+    elementFormDefault="qualified"
+    attributeFormDefault="unqualified"
+    version="2.0.0">
+
+  <!-- =====================================================================
+       SAKNES ELEMENTS
+       ===================================================================== -->
+  <xs:element name="DokumentaPakotne" type="dm:DokumentaPakotneType"/>
+
+  <xs:complexType name="DokumentaPakotneType">
+    <xs:annotation>
+      <xs:documentation>
+        Pakotne ar vienu vai vairākiem saistītiem dokumentiem (piem., iesniegums
+        un pavadvēstule), kurus eksportē viena DVS vienas organizācijas vārdā.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="SistemasKonteksts" type="dm:SistemasKontekstsType"/>
+      <xs:element name="IpasniekaOrganizacija" type="dm:OrganizacijaType"/>
+      <xs:element name="Dokuments" type="dm:DokumentsType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="shemasVersija" type="xs:string" use="required" fixed="2.0"/>
+    <xs:attribute name="izveidotsUz" type="xs:dateTime" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="SistemasKontekstsType">
+    <xs:sequence>
+      <xs:element name="SistemasNosaukums" type="dm:NetuksTeksts">
+        <xs:annotation><xs:documentation>DVS produkts, piem., "OpenDMS", "Namejs", "Lietvaris", "DocLogix".</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="SistemasInstance" type="dm:NetuksTeksts" minOccurs="0">
+        <xs:annotation><xs:documentation>Konkrētās instances nosaukums vai adrese, piem., "vrm.pac.kisc.gov.lv".</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="Vide" type="dm:VideType"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- =====================================================================
+       DOKUMENTS
+       ===================================================================== -->
+  <xs:complexType name="DokumentsType">
+    <xs:annotation>
+      <xs:documentation>
+        Dokumenta metadatu profils (1. slānis — stabilā identitāte un pārvaldības
+        metadati). Obligātie bloki: identifikācija, apraksts, veids, klasifikācija,
+        glabāšana, drošība, datnes, izcelsme.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <!-- 1. Identifikācija -->
+      <xs:element name="DokumentaID" type="dm:DokumentaIDType"/>
+      <xs:element name="DokumentaDID" type="dm:DokumentaDIDType" minOccurs="0"/>
+      <xs:element name="ArejieIdentifikatori" type="dm:ArejieIdentifikatoriType" minOccurs="0"/>
+      <xs:element name="Versija" type="dm:VersijaType" minOccurs="0"/>
+
+      <!-- 2. Apraksts -->
+      <xs:element name="Virsraksts" type="dm:NetuksTeksts"/>
+      <xs:element name="Apraksts" type="xs:string" minOccurs="0"/>
+      <xs:element name="DokumentaDatums" type="xs:date"/>
+      <xs:element name="RegistretsUz" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="Valoda" type="xs:language"/>
+
+      <!-- 3. Dokumenta veids -->
+      <xs:element name="DokumentaVeids" type="dm:DokumentaVeidsType"/>
+
+      <!-- 4. Klasifikācija -->
+      <xs:element name="Klasifikacija" type="dm:KlasifikacijaType"/>
+
+      <!-- 5. Glabāšana -->
+      <xs:element name="Glabasana" type="dm:GlabasanaType"/>
+
+      <!-- 6. Arhivēšana (LNA) -->
+      <xs:element name="Arhivs" type="dm:ArhivsType" minOccurs="0"/>
+
+      <!-- 7. Drošība un piekļuve -->
+      <xs:element name="Drosiba" type="dm:DrosibaType"/>
+
+      <!-- 8. Saistības ar citiem dokumentiem -->
+      <xs:element name="Saistibas" type="dm:SaistibasType" minOccurs="0"/>
+
+      <!-- 9. Adresāti -->
+      <xs:element name="Adresati" type="dm:AdresatiType" minOccurs="0"/>
+
+      <!-- 10. Datnes -->
+      <xs:element name="Datnes" type="dm:DatnesType"/>
+
+      <!-- 11. Izcelsme -->
+      <xs:element name="Izcelsme" type="dm:IzcelsmeType"/>
+
+      <!-- 12. Paraksti (dokumenta, nevis transporta līmenī) -->
+      <xs:element name="Paraksti" type="dm:ParakstiType" minOccurs="0"/>
+
+      <!-- 13. Semantiskais kopsavilkums -->
+      <xs:element name="SemantiskaisKopsavilkums" type="dm:SemantiskaisKopsavilkumsType" minOccurs="0"/>
+
+      <!-- 14. Paplašinājumi -->
+      <xs:element name="Paplasinajumi" type="dm:PaplasinajumiType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 1. Identifikācija ================================================== -->
+
+  <xs:complexType name="ArejieIdentifikatoriType">
+    <xs:sequence>
+      <xs:element name="Identifikators" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:simpleContent>
+            <xs:extension base="dm:NetuksTeksts">
+              <xs:attribute name="tips" type="dm:ArejaIdentifikatoraTipsType" use="required"/>
+              <xs:attribute name="avots" type="xs:string" use="optional">
+                <xs:annotation><xs:documentation>Sistēma vai organizācija, kas piešķīrusi identifikatoru.</xs:documentation></xs:annotation>
+              </xs:attribute>
+            </xs:extension>
+          </xs:simpleContent>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="ArejaIdentifikatoraTipsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RegistracijasNumurs"/>
+      <xs:enumeration value="SanemejaRegistracijasNumurs"/>
+      <xs:enumeration value="DVSIeksejaisID"/>
+      <xs:enumeration value="EAdresesSutijumaID"/>
+      <xs:enumeration value="IepriekshejaisUID"/>
+      <xs:enumeration value="ArhivaPakotnesID"/>
+      <xs:enumeration value="Cits"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="VersijaType">
+    <xs:sequence>
+      <xs:element name="VersijasNumurs" type="dm:NetuksTeksts"/>
+      <xs:element name="IepriekshejasVersijasID" type="dm:DokumentaIDType" minOccurs="0"/>
+      <xs:element name="IrGalaVersija" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 3. Dokumenta veids ================================================= -->
+
+  <xs:complexType name="DokumentaVeidsType">
+    <xs:sequence>
+      <xs:element name="VeidaKods" type="dm:KodsType"/>
+      <xs:element name="VeidaNosaukums" type="dm:NetuksTeksts"/>
+      <xs:element name="KlasifikatoraVersija" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 4. Klasifikācija =================================================== -->
+
+  <xs:complexType name="KlasifikacijaType">
+    <xs:sequence>
+      <xs:element name="ShemasID" type="xs:anyURI">
+        <xs:annotation><xs:documentation>Lietu nomenklatūras (klasifikācijas shēmas) identifikators Git repozitorijā.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="ShemasVersija" type="xs:string" minOccurs="0"/>
+      <xs:element name="KlasifikacijasLieta" type="dm:KlasifikacijasLietaType">
+        <xs:annotation><xs:documentation>Nomenklatūras lieta (MK 282). Obligāta; nosaka glabāšanas termiņu.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="OperativaLieta" type="dm:OperativaLietaType" minOccurs="0">
+        <xs:annotation><xs:documentation>DVS darba lieta vai process. Izvēles; eksistē tikai konkrētajā DVS.</xs:documentation></xs:annotation>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="KlasifikacijasLietaType">
+    <xs:sequence>
+      <xs:element name="LietasID" type="dm:LietasIDType"/>
+      <xs:element name="LietasIndekss" type="dm:NetuksTeksts"/>
+      <xs:element name="LietasNosaukums" type="dm:NetuksTeksts"/>
+      <xs:element name="LietasGads" type="xs:gYear" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="OperativaLietaType">
+    <xs:sequence>
+      <xs:element name="LietasID" type="dm:LietasIDType"/>
+      <xs:element name="LietasNosaukums" type="dm:NetuksTeksts"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 5. Glabāšana ======================================================= -->
+
+  <xs:complexType name="GlabasanaType">
+    <xs:sequence>
+      <xs:element name="GlabasanasTermins" type="dm:GlabasanasTerminsType"/>
+      <xs:element name="GlabasanasTriggeris" type="dm:GlabasanasTriggerisType"/>
+      <xs:element name="IznicinasanasDarbiba" type="dm:IznicinasanasDarbibaType"/>
+      <xs:element name="JuridiskaisAizliegums" type="xs:boolean">
+        <xs:annotation><xs:documentation>Aizliegums iznīcināt neatkarīgi no termiņa (legal hold).</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="NomenklaturasKods" type="dm:KodsType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="GlabasanasTerminsType">
+    <xs:annotation>
+      <xs:documentation>
+        Glabāšanas termiņš. Ja veids = "Gadi", elementa vērtība ir gadu skaits.
+        Ja veids = "Pastavigi", vērtība ir tukša.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:simpleContent>
+      <xs:extension base="dm:GaduSkaitsVaiTukss">
+        <xs:attribute name="veids" type="dm:GlabasanasTerminaVeidsType" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="GaduSkaitsVaiTukss">
+    <xs:union memberTypes="xs:positiveInteger">
+      <xs:simpleType>
+        <xs:restriction base="xs:string"><xs:length value="0"/></xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
+  <xs:simpleType name="GlabasanasTerminaVeidsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Gadi"/>
+      <xs:enumeration value="Pastavigi"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="GlabasanasTriggerisType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NoDokumentaDatuma"/>
+      <xs:enumeration value="NoLietasSlegsanas"/>
+      <xs:enumeration value="NoIzpildes"/>
+      <xs:enumeration value="NoNotikuma"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IznicinasanasDarbibaType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Iznicinat"/>
+      <xs:enumeration value="NodotArhivam"/>
+      <xs:enumeration value="Parskatit"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- 6. Arhivēšana ====================================================== -->
+
+  <xs:complexType name="ArhivsType">
+    <xs:annotation>
+      <xs:documentation>Lauki, kas vajadzīgi automātiskai OPEX/EAD pakotnes izveidei LNA Preservica sistēmai.</xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="FondaNumurs" type="dm:NetuksTeksts" minOccurs="0">
+        <xs:annotation><xs:documentation>LNA fonda numurs, kuram pieder iestādes dokumenti.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="AprakstaLimenis" type="dm:AprakstaLimenisType">
+        <xs:annotation><xs:documentation>EAD apraksta līmenis šim objektam.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="NodosanasPlanaID" type="dm:NetuksTeksts" minOccurs="0"/>
+      <xs:element name="NodosanasPakotnesID" type="dm:NetuksTeksts" minOccurs="0"/>
+      <xs:element name="NodotsArhivamUz" type="xs:date" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="AprakstaLimenisType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="fonds"/>
+      <xs:enumeration value="serija"/>
+      <xs:enumeration value="lieta"/>
+      <xs:enumeration value="dokuments"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- 7. Drošība un piekļuve ============================================= -->
+
+  <xs:complexType name="DrosibaType">
+    <xs:sequence>
+      <xs:element name="InformacijasStatuss" type="dm:InformacijasStatussType"/>
+      <xs:element name="SaturPersonasDatus" type="xs:boolean"/>
+      <xs:element name="PiekluvesIerobezojums" type="dm:PiekluvesIerobezojumsType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="InformacijasStatussType">
+    <xs:annotation><xs:documentation>Pēc Informācijas atklātības likuma.</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Visparpieejama"/>
+      <xs:enumeration value="IerobezotasPieejamibas"/>
+      <xs:enumeration value="DienestaVajadzibam"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="PiekluvesIerobezojumsType">
+    <xs:sequence>
+      <xs:element name="TiesiskaisPamatojums" type="dm:NetuksTeksts"/>
+      <xs:element name="IerobezojumsLidz" type="xs:date" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 8. Saistības ======================================================= -->
+
+  <xs:complexType name="SaistibasType">
+    <xs:sequence>
+      <xs:element name="Saistiba" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="MerkaDokumentaID" type="dm:DokumentaIDType"/>
+            <xs:element name="MerkaDokumentaDID" type="dm:DokumentaDIDType" minOccurs="0"/>
+            <xs:element name="Piezime" type="xs:string" minOccurs="0"/>
+          </xs:sequence>
+          <xs:attribute name="tips" type="dm:SaistibasTipsType" use="required"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="SaistibasTipsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="pavada"/>
+      <xs:enumeration value="atbildeUz"/>
+      <xs:enumeration value="papildina"/>
+      <xs:enumeration value="aizstaj"/>
+      <xs:enumeration value="atsauceUz"/>
+      <xs:enumeration value="irDalaNo"/>
+      <xs:enumeration value="irPielikumsPie"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- 9. Adresāti ======================================================== -->
+
+  <xs:complexType name="AdresatiType">
+    <xs:sequence>
+      <xs:element name="Adresats" type="dm:PuseType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- 10. Datnes ========================================================= -->
+
+  <xs:complexType name="DatnesType">
+    <xs:annotation><xs:documentation>Dokumentam ir viena vai vairākas datnes. Datne nav dokuments.</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="Datne" type="dm:DatneType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DatneType">
+    <xs:sequence>
+      <xs:element name="DatnesID" type="dm:DatnesIDType"/>
+      <xs:element name="DatnesNosaukums" type="dm:NetuksTeksts"/>
+      <xs:element name="MimeVeids" type="dm:MimeVeidsType"/>
+      <xs:element name="FormataID" type="dm:NetuksTeksts" minOccurs="0">
+        <xs:annotation><xs:documentation>PRONOM PUID, piem., "fmt/412" (DOCX), "fmt/95" (PDF/A-1a).</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="IzmersBaitos" type="xs:nonNegativeInteger"/>
+      <xs:element name="Kontrolsumma" type="dm:KontrolsummaType" maxOccurs="unbounded"/>
+      <xs:element name="OriginalaDatnesID" type="dm:DatnesIDType" minOccurs="0">
+        <xs:annotation><xs:documentation>Ja datne ir atvasinājums (piem., PDF/A no DOCX), atsauce uz oriģinālo datni.</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="GlabasanasAtsauce" type="dm:GlabasanasAtsauceType" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="loma" type="dm:DatnesLomaType" use="required"/>
+    <xs:attribute name="kartasNumurs" type="xs:positiveInteger" use="optional"/>
+  </xs:complexType>
+
+  <xs:simpleType name="DatnesLomaType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Pamatdatne"/>
+      <xs:enumeration value="Pielikums"/>
+      <xs:enumeration value="ParakstaKonteiners"/>
+      <xs:enumeration value="Atvasinajums"/>
+      <xs:enumeration value="Cits"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="KontrolsummaType">
+    <xs:simpleContent>
+      <xs:extension base="dm:NetuksTeksts">
+        <xs:attribute name="algoritms" type="dm:HashAlgoritmsType" use="required"/>
+        <xs:attribute name="kodejums" type="dm:KodejumsType" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="HashAlgoritmsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SHA-256"/>
+      <xs:enumeration value="SHA-512"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="KodejumsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="hex"/>
+      <xs:enumeration value="base64"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="GlabasanasAtsauceType">
+    <xs:simpleContent>
+      <xs:extension base="dm:NetuksTeksts">
+        <xs:attribute name="tips" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- 11. Izcelsme ======================================================= -->
+
+  <xs:complexType name="IzcelsmeType">
+    <xs:sequence>
+      <xs:element name="IzveidotsUz" type="xs:dateTime"/>
+      <xs:element name="Izveidotajs" type="dm:PersonaType"/>
+      <xs:element name="PedejoReiziMainitsUz" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="PedejaisRedaktors" type="dm:PersonaType" minOccurs="0"/>
+      <xs:element name="Iesniedzejs" type="dm:PuseType" minOccurs="0">
+        <xs:annotation><xs:documentation>Ārēja persona, kas iesniegusi dokumentu (ienākošajiem dokumentiem).</xs:documentation></xs:annotation>
+      </xs:element>
+      <xs:element name="SanemtsUz" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="SanemsanasKanals" type="dm:KanalsType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="KanalsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="EAdrese"/>
+      <xs:enumeration value="EPasts"/>
+      <xs:enumeration value="DVSIntegracija"/>
+      <xs:enumeration value="API"/>
+      <xs:enumeration value="Portals"/>
+      <xs:enumeration value="Klatiene"/>
+      <xs:enumeration value="Pasts"/>
+      <xs:enumeration value="DVSLietotajs"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- 12. Paraksti ======================================================= -->
+
+  <xs:complexType name="ParakstiType">
+    <xs:sequence>
+      <xs:element name="Paraksts" type="dm:ParakstsType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ParakstsType">
+    <xs:sequence>
+      <xs:element name="Parakstitajs" type="dm:PersonaType"/>
+      <xs:element name="ParakstitsUz" type="xs:dateTime"/>
+      <xs:element name="ParakstaVeids" type="dm:ParakstaVeidsType"/>
+      <xs:element name="SertifikataNospiedums" type="xs:string" minOccurs="0"/>
+      <xs:element name="ParakstitaDatnesID" type="dm:DatnesIDType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="ParakstaVeidsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DrossElektroniskaisParaksts"/>
+      <xs:enumeration value="ElektroniskaisZimogs"/>
+      <xs:enumeration value="Vizesana"/>
+      <xs:enumeration value="Pasrocigs"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- 13. Semantiskais kopsavilkums ====================================== -->
+
+  <xs:complexType name="SemantiskaisKopsavilkumsType">
+    <xs:annotation>
+      <xs:documentation>
+        Vieta MI ģenerētam semantiskajam kopsavilkumam. Saturs tiks definēts
+        atsevišķā shēmā savā vārdtelpā (atsevišķs uzdevums). Līdz tam šeit
+        pieņem jebkuru elementu no citas vārdtelpas.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:any namespace="##other" processContents="lax" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="shemasVersija" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- 14. Paplašinājumi ================================================== -->
+
+  <xs:complexType name="PaplasinajumiType">
+    <xs:annotation>
+      <xs:documentation>
+        Iestādes vai resora papildu metadati savā vārdtelpā (SSOT 5. princips).
+        Paplašinājuma shēmas reģistrē standarta repozitorijā.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:any namespace="##other" processContents="lax" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- =====================================================================
+       KOPĪGIE TIPI
+       ===================================================================== -->
+
+  <xs:complexType name="OrganizacijaType">
+    <xs:sequence>
+      <xs:element name="OrgKods" type="dm:OrgKodsType"/>
+      <xs:element name="OrgNosaukums" type="dm:NetuksTeksts"/>
+      <xs:element name="OrgDID" type="dm:OrgDIDType" minOccurs="0"/>
+      <xs:element name="RegistracijasNumurs" type="dm:RegistracijasNumursType" minOccurs="0"/>
+      <xs:element name="Kontakti" type="dm:KontaktiType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PuseType">
+    <xs:annotation><xs:documentation>Iestāde, juridiska vai fiziska persona — sūtītājs, iesniedzējs vai adresāts.</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="PusesTips" type="dm:PusesTipsType"/>
+      <xs:element name="Nosaukums" type="dm:NetuksTeksts"/>
+      <xs:element name="OrgKods" type="dm:OrgKodsType" minOccurs="0"/>
+      <xs:element name="OrgDID" type="dm:OrgDIDType" minOccurs="0"/>
+      <xs:element name="RegistracijasNumurs" type="dm:RegistracijasNumursType" minOccurs="0"/>
+      <xs:element name="Kontakti" type="dm:KontaktiType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="PusesTipsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ValstsIestade"/>
+      <xs:enumeration value="Pasvaldiba"/>
+      <xs:enumeration value="JuridiskaPersona"/>
+      <xs:enumeration value="FiziskaPersona"/>
+      <xs:enumeration value="Cits"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="PersonaType">
+    <xs:annotation><xs:documentation>Iestādes darbinieks. Personas kodu šeit neiekļauj.</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="LietotajaID" type="dm:NetuksTeksts" minOccurs="0"/>
+      <xs:element name="VardsUzvards" type="dm:NetuksTeksts"/>
+      <xs:element name="Amats" type="xs:string" minOccurs="0"/>
+      <xs:element name="Strukturvieniba" type="xs:string" minOccurs="0"/>
+      <xs:element name="Epasts" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="KontaktiType">
+    <xs:sequence>
+      <xs:element name="EAdrese" type="xs:string" minOccurs="0"/>
+      <xs:element name="Epasts" type="xs:string" minOccurs="0"/>
+      <xs:element name="Talrunis" type="xs:string" minOccurs="0"/>
+      <xs:element name="Adrese" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="VideType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PROD"/>
+      <xs:enumeration value="TEST"/>
+      <xs:enumeration value="DEV"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="NetuksTeksts">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:pattern value=".*\S.*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="KodsType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Za-z0-9._\-]{1,64}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MimeVeidsType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[a-z]+/[a-zA-Z0-9.+\-]+"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RegistracijasNumursType">
+    <xs:annotation><xs:documentation>Uzņēmumu reģistra / nodokļu maksātāja reģistrācijas numurs (11 cipari).</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]{11}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Identifikatori — skat. specifikacija/identifikatori.md -->
+
+  <xs:simpleType name="OrgKodsType">
+    <xs:annotation>
+      <xs:documentation>
+        Organizācijas autoritatīvais kods: valsts pārvaldes iestādei VPK ID
+        (valsts-kanceleja/organizations_register), pašvaldībai ATVK kods
+        (CSP/pasvaldibu-registrs), citai juridiskai personai (valsts un
+        pašvaldību kapitālsabiedrības, slimnīcas u.c.) Uzņēmumu reģistra
+        reģistrācijas numurs. Formāti nepārklājas (6, 7 un 11 zīmes).
+      </xs:documentation>
+    </xs:annotation>
+    <xs:union memberTypes="dm:VpkIDType dm:AtvkKodsType dm:RegistracijasNumursType"/>
+  </xs:simpleType>
+
+  <xs:simpleType name="VpkIDType">
+    <xs:annotation><xs:documentation>VPK ID: resora kods un iestādes kods, piem., "21-0000".</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]{2}-[0-9]{4}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AtvkKodsType">
+    <xs:annotation><xs:documentation>Pašvaldības ATVK kods (7 cipari), piem., "0052000" (Tukuma novads).</xs:documentation></xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]{7}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DokumentaIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV-DOK:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LietasIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV-LIETA:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DatnesIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV-DATNE:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="OrgDIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kisc\.gov\.lv"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DokumentaDIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="did:web:[a-z0-9\-]+\.pac\.kisc\.gov\.lv:doc:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

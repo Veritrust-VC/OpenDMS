@@ -27,6 +27,7 @@ export class HostClient {
       input: invocation.input,
       guardrails: invocation.guardrails,
       schemaRef: invocation.schemaRef,
+      target: invocation.target,
     };
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -37,7 +38,10 @@ export class HostClient {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.opts.timeoutMs ?? 30000);
+    // Model-backed capabilities (redaction, semantic description) can take minutes.
+    const fromEnv = Number(process.env.UAPF_HOST_TIMEOUT_MS || "");
+    const timeout = setTimeout(() => controller.abort(),
+      this.opts.timeoutMs ?? (Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 180000));
 
     try {
       const res = await fetch(url, {

@@ -16,3 +16,14 @@ async def get_default_org_required():
     if not org:
         raise HTTPException(409, "No default organization selected")
     return org
+
+
+async def org_label() -> str:
+    """The organisation this DVS serves, for AI instructions ("… received by <org>").
+    Falls back to a neutral phrase so a DVS without an organisation still works."""
+    try:
+        org = await get_default_org()
+    except Exception:
+        org = None
+    name = ((org or {}).get("name") or "").strip()
+    return name or "a Latvian organisation"

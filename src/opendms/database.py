@@ -22,6 +22,8 @@ async def init_db():
     _pool = await asyncpg.create_pool(s.database_url, min_size=s.db_pool_min, max_size=s.db_pool_max)
     async with _pool.acquire() as conn:
         await _create_schema(conn)
+        from opendms.uapf.templates import seed as _seed_templates
+        await _seed_templates(conn)
     # Ensure superadmin exists
     await _ensure_superadmin()
     logger.info("Database initialized")
@@ -434,7 +436,7 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             package_version TEXT,
             process_id TEXT NOT NULL,
             trigger_event TEXT NOT NULL
-                CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','manual')),
+                CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','document.forwarding','manual')),
             match_condition JSONB DEFAULT '{}',
             org_id BIGINT REFERENCES organizations(id),
             is_active BOOLEAN DEFAULT TRUE,
@@ -445,6 +447,10 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
 
         CREATE INDEX IF NOT EXISTS idx_triggers_event_active
             ON process_triggers(trigger_event) WHERE is_active = TRUE;
+        -- document.forwarding: staff request to forward the document (e-adrese)
+        ALTER TABLE process_triggers DROP CONSTRAINT IF EXISTS process_triggers_trigger_event_check;
+        ALTER TABLE process_triggers ADD CONSTRAINT process_triggers_trigger_event_check
+            CHECK (trigger_event IN ('document.created','document.received','document.assigned','document.decided','document.forwarding','manual'));
         CREATE INDEX IF NOT EXISTS idx_triggers_org ON process_triggers(org_id);
 
         CREATE TABLE IF NOT EXISTS uapf_sessions (
@@ -497,22 +503,8 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE INDEX IF NOT EXISTS idx_class_priority ON complaint_classifications(priority);
         CREATE INDEX IF NOT EXISTS idx_class_topic ON complaint_classifications(topic);
 
-        -- Seed: default Tiesibsargs complaint-classification trigger.
-        -- Fires for every DocumentReceived event. Tweak match_condition to
-        -- restrict (e.g. only documents in a specific register).
-        INSERT INTO process_triggers (name, description, package_id, process_id, trigger_event, match_condition)
-        SELECT
-            'Tiesibsargs iesniegums classification',
-            'Algorithmated topic classification + priority + department routing for Ombudsman complaints. Fires on every DocumentReceived event. Edit match_condition to restrict.',
-            'lv.tiesibsargs.iesnieguma-izskatisana',
-            'iesnieguma-izskatisana',
-            'document.received',
-            '{}'::jsonb
-        WHERE NOT EXISTS (
-            SELECT 1 FROM process_triggers
-            WHERE package_id = 'lv.tiesibsargs.iesnieguma-izskatisana'
-              AND trigger_event = 'document.received'
-        );
+        -- (No seeded triggers: each instance binds its own processes from
+        -- ProcessGit; a seeded default kept coming back after it was replaced.)
 
         -- ──────────────────────────────────────────────────────────
         -- Connectors: connections to external systems.
@@ -545,6 +537,15 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             ON connections(kind, name);
         CREATE INDEX IF NOT EXISTS idx_connections_enabled
             ON connections(kind, is_enabled);
+
+        -- Namejs (RIX Flow) is the classic DVS the pilot institutions work in today,
+        -- so every DVS ships with its connection row; the admin only enters the
+        -- address and credentials in Savienojumi and tests it.
+        INSERT INTO connections (kind, name, description, config)
+        VALUES ('namejs', 'Namejs',
+                'Namejs DVS (RIX Flow) REST API — ievadiet adresi un pieejas datus, saglabājiet un pārbaudiet',
+                '{"api_path": "/API", "grant_type": "client_credentials", "verify_tls": true}')
+        ON CONFLICT (kind, name) DO NOTHING;
 
         -- Encrypted credential bundles. Deliberately a separate table so that
         -- no SELECT * on connections can leak a token, and so that access to
@@ -653,6 +654,59 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
         CREATE INDEX IF NOT EXISTS idx_agent_messages_pending
             ON agent_messages(run_id) WHERE consumed_at IS NULL AND role = 'user';
 
+        -- Versioned response templates (Darba uzdevums: templates live in the
+        -- DMS; the process DMN only returns a template ID).
+        CREATE TABLE IF NOT EXISTS response_templates (
+            id BIGSERIAL PRIMARY KEY,
+            template_id TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            synthetic BOOLEAN NOT NULL DEFAULT TRUE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (template_id, version)
+        );
+
+        -- Reviewer corrections kept as precedents for the classifier
+        -- (uapf/learning.py). Stays in this DVS; nothing here is sent out.
+        -- Inputs (opendms/intake): one row per item received on a channel —
+        -- e-mail message or web form submission — and its acknowledgement.
+        CREATE TABLE IF NOT EXISTS intake_items (
+            id BIGSERIAL PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            channel_kind TEXT NOT NULL,
+            external_ref TEXT NOT NULL,
+            sender_address TEXT,
+            subject TEXT,
+            document_id BIGINT,
+            status TEXT NOT NULL DEFAULT 'registrets',
+            detail JSONB,
+            ack_status TEXT,
+            ack_sent_at TIMESTAMPTZ,
+            ack_error TEXT,
+            received_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (channel_id, external_ref)
+        );
+
+        CREATE TABLE IF NOT EXISTS uapf_precedents (
+            id BIGSERIAL PRIMARY KEY,
+            package_id TEXT,
+            document_id BIGINT,
+            session_id TEXT,
+            kind TEXT NOT NULL,              -- klasifikacija | marsrutesana
+            excerpt TEXT,
+            stems TEXT[],
+            predicted JSONB,
+            corrected JSONB,
+            reason TEXT,
+            reviewer TEXT,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            applied_count INTEGER NOT NULL DEFAULT 0,
+            last_applied_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
         -- Indexes
         CREATE INDEX IF NOT EXISTS idx_docs_org ON documents(org_id);
         CREATE INDEX IF NOT EXISTS idx_docs_status ON documents(status);
@@ -687,4 +741,35 @@ IBAN|\\b[A-Z]{2}\\d{2}[A-Z0-9]{4,30}\\b',
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
         CREATE TRIGGER trg_agent_runs_updated BEFORE UPDATE ON agent_runs
             FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+    """)
+    await _create_standard_schema(conn)
+
+
+async def _create_standard_schema(conn):
+    """Columns and tables for the Dokumentu metadatu standarts v2.0 (opendms.standard)."""
+    await conn.execute("""
+        -- Authoritative organisation code: VPK ID, ATVK code or UR registration number
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS std_code TEXT;
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS reg_number TEXT;
+        ALTER TABLE organizations ADD COLUMN IF NOT EXISTS e_address TEXT;
+
+        -- Standard identifiers: LV-DOK / LV-DATNE / LV-NOT
+        ALTER TABLE documents       ADD COLUMN IF NOT EXISTS doc_uid TEXT;
+        ALTER TABLE document_files  ADD COLUMN IF NOT EXISTS std_id TEXT;
+        ALTER TABLE document_events ADD COLUMN IF NOT EXISTS std_id TEXT;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_uid ON documents(doc_uid) WHERE doc_uid IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_document_files_std_id ON document_files(std_id) WHERE std_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_document_events_std_id ON document_events(std_id) WHERE std_id IS NOT NULL;
+
+        -- LV-LIETA: one identifier per nomenclature case and year
+        CREATE TABLE IF NOT EXISTS standard_cases (
+            id BIGSERIAL PRIMARY KEY,
+            org_id BIGINT NOT NULL REFERENCES organizations(id),
+            case_index TEXT NOT NULL,
+            case_year INTEGER NOT NULL,
+            case_id TEXT UNIQUE NOT NULL,
+            case_name TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (org_id, case_index, case_year)
+        );
     """)

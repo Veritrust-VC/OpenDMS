@@ -86,6 +86,7 @@ async def dispatch_capability(
         "input": body.get("input"),
         "guardrails": body.get("guardrails"),
         "schema_ref": body.get("schemaRef"),
+        "target": body.get("target") or {},   # executor from the package's mappings.yaml
     }
 
     logger.info(

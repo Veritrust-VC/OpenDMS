@@ -21,7 +21,9 @@ from opendms.uapf.triggers import find_matching_triggers
 logger = logging.getLogger(__name__)
 
 
-async def on_document_event(event_type: str, doc_id: int) -> None:
+async def on_document_event(event_type: str, doc_id: int,
+                            exclude_package: Optional[str] = None,
+                            source_package: Optional[str] = None) -> None:
     """
     Hook called after a document lifecycle transition succeeds.
 
@@ -52,7 +54,13 @@ async def on_document_event(event_type: str, doc_id: int) -> None:
         except Exception:
             document["metadata"] = {}
 
+    # The process that just finished, so a trigger can say "after package X"
+    # (match_condition {"source_package": "..."}).
+    document["source_package"] = source_package
     triggers = await find_matching_triggers(event_type, document)
+    # A process finishing must not re-start itself (e.g. approval → decided).
+    if exclude_package:
+        triggers = [t for t in triggers if t["package_id"] != exclude_package]
     if not triggers:
         return
 
@@ -79,6 +87,13 @@ async def _dispatch_trigger(trigger: dict, document: dict) -> None:
         "title": document.get("title"),
         "registrationNumber": document.get("registration_number"),
     }
+    # Chaining: a process started after another one gets that one's decisions
+    # (e.g. P2 response draft starts from the approved P1 outcome/topic).
+    prev = (document.get("metadata") or {}).get("uapf_result") or {}
+    from opendms.uapf.handlers import PROCESS_RESULT_KEYS
+    for k in PROCESS_RESULT_KEYS:
+        if prev.get(k) is not None and k not in ("decision", "comment"):
+            input_payload.setdefault(k, prev[k])
 
     session_id = None
     state = "starting"

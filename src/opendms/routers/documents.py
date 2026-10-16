@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from pydantic import BaseModel
 from opendms.database import get_pool
 from opendms.middleware.auth import get_current_user, require_role
-from opendms.storage import get_storage, generate_storage_key
+
+# Lifecycle actions by hand (send, assign, decide, archive) belong to the System:
+# everyday work moves documents through process steps in the Agent (concept
+# 'Sistēma un Aģents'), so only administrators may force a transition here.
+_SYSTEM_ADMIN = require_role("admin", "superadmin")
+from opendms.storage import get_storage, layout
 from opendms.config import get_settings
 from opendms import sdk_client
 from opendms.audit import log_integration_event, summarize_payload
@@ -25,6 +30,11 @@ class DocumentCreate(BaseModel):
     semantic_summary: Optional[dict[str, Any]] = None
     sensitivity_control: Optional[dict[str, Any]] = None
     ai_summary_status: Optional[str] = None
+    # An existing register document (a document received from another institution
+    # keeps its register identity; this DVS becomes its holder instead of creating a new one).
+    register_did: Optional[str] = None
+    # Arhivēšana P2: lieta no spēkā esošās klasifikācijas shēmas (obligāta, ja P2 ieslēgts)
+    case_id: Optional[int] = None
 
 
 class DocumentSend(BaseModel):
@@ -223,8 +233,14 @@ async def list_documents(
         total = await conn.fetchval(f"SELECT COUNT(*) FROM documents d WHERE {where}", *params)
         rows = await conn.fetch(
             f"""SELECT d.*, o.name as org_name, r.name as register_name, c.name as classification_name,
-                       u.full_name as assigned_name, cr.full_name as creator_name
+                       u.full_name as assigned_name, cr.full_name as creator_name,
+                       (SELECT COUNT(*) FROM document_files f WHERE f.document_id = d.id) AS file_count,
+                       (SELECT f.mime_type FROM document_files f WHERE f.document_id = d.id
+                         ORDER BY f.is_primary DESC, f.id LIMIT 1) AS primary_mime,
+                       (SELECT COUNT(*) FROM document_events e WHERE e.document_id = d.id) AS event_count,
+                       sc.case_index AS case_index, sc.case_year AS case_year, sc.case_name AS case_name
                 FROM documents d
+                LEFT JOIN standard_cases sc ON sc.id = d.case_id
                 LEFT JOIN organizations o ON d.org_id = o.id
                 LEFT JOIN registers r ON d.register_id = r.id
                 LEFT JOIN classifications c ON d.classification_id = c.id
@@ -253,8 +269,13 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
     async with pool.acquire() as conn:
         default_org = await get_default_org_required()
         org_id = default_org["id"]
-        count = await conn.fetchval("SELECT COUNT(*) FROM documents WHERE org_id = $1", org_id)
-        reg_num = f"{org_id}-{count + 1:05d}"
+        from opendms.archive import cases as _cases, registration as _reg
+        try:
+            await _reg.require_case_for_new(conn, org_id, req.case_id)
+        except _cases.CaseError as e:
+            raise HTTPException(400, str(e))
+        from opendms import vocab
+        reg_num = await vocab.next_number(conn, org_id, req.register_id)   # format from ProcessGit (numurs.json)
 
         await log_integration_event(
             trace_id=trace_id,
@@ -278,7 +299,9 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         reg_summary, reg_sensitivity = _sanitize_for_registry(
             req.semantic_summary, req.sensitivity_control
         )
-        if s.sdk_enabled:
+        if req.register_did:
+            doc_did = req.register_did
+        elif s.sdk_enabled:
             sdk_result = await sdk_client.create_document(
                 title=req.title,
                 classification=req.metadata.get("classification", ""),
@@ -326,8 +349,8 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
 
         await conn.execute(
             "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,$2,$3,$4,$5)",
-            row["id"], "DocumentCreated", user["id"], doc_did is not None,
-            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "sdk_error": sdk_error, "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
+            row["id"], "DocumentCreated", user["id"], doc_did is not None and not req.register_did,
+            json.dumps({"registration_number": reg_num, "sdk_did": doc_did, "sdk_error": sdk_error, "registraDokumentsSanemts": bool(req.register_did), "semanticSummary": semantic_summary, "sensitivityControl": sensitivity_control, "aiSummaryStatus": ai_summary_status}))
 
     await log_integration_event(
         trace_id=trace_id,
@@ -348,6 +371,13 @@ async def create_document(req: DocumentCreate, user=Depends(get_current_user)):
         error_message=None if sdk_result else "SDK document creation unavailable",
     )
 
+
+    if req.case_id:
+        try:
+            await _reg.prepare(dict(default_org), row["id"], user.get("email"), user.get("id"), case_pk=req.case_id)
+        except Exception as _arh_err:
+            import logging
+            logging.getLogger(__name__).warning("Arhivēšana P2 pēc izveides: %s", _arh_err)
 
     # UAPF Integration Protocol hook: fire any process_triggers that match
     # DocumentCreated. Non-blocking; failure must not break create.
@@ -381,13 +411,13 @@ async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(ge
 
     storage = get_storage()
     content = await file.read()
-    key = generate_storage_key(doc["org_id"] or 0, file.filename)
+    key, fname = await layout.file_key(storage, doc_id, doc["doc_uid"], file.filename, content)
     await storage.put(key, content, file.content_type or "")
 
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE documents SET storage_key=$1, storage_backend=$2, file_name=$3, file_size=$4, mime_type=$5 WHERE id=$6",
-            key, get_settings().storage_backend, file.filename, len(content), file.content_type, doc_id)
+            key, get_settings().storage_backend, fname, len(content), file.content_type, doc_id)
 
     # UAPF: the document now has a file and is processable. Fire the
     # 'document.received' lifecycle event so matching process_triggers run.
@@ -399,7 +429,7 @@ async def upload_file(doc_id: int, file: UploadFile = File(...), user=Depends(ge
         except Exception as _uapf_err:
             logging.getLogger(__name__).warning("UAPF bridge error on upload: %s", _uapf_err)
 
-    return {"status": "uploaded", "key": key, "size": len(content), "filename": file.filename}
+    return {"status": "uploaded", "key": key, "size": len(content), "filename": fname}
 
 
 @router.get("/{doc_id}/download")
@@ -445,14 +475,14 @@ async def add_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_c
     pool = await get_pool()
     async with pool.acquire() as conn:
         doc = await conn.fetchrow(
-            "SELECT id, org_id FROM documents WHERE id = $1 AND org_id = $2",
+            "SELECT id, org_id, doc_uid FROM documents WHERE id = $1 AND org_id = $2",
             doc_id, default_org["id"])
         if not doc:
             raise HTTPException(404, "Document not found")
 
     content = await file.read()
-    key = generate_storage_key(doc["org_id"], file.filename)
     storage = get_storage()
+    key, fname = await layout.file_key(storage, doc_id, doc["doc_uid"], file.filename, content)
     await storage.put(key, content, file.content_type or "")
 
     import hashlib as _hl
@@ -469,7 +499,7 @@ async def add_file(doc_id: int, file: UploadFile = File(...), user=Depends(get_c
                 storage_backend, checksum_sha256, is_primary, uploaded_by)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
                RETURNING id, file_uid, file_name, mime_type, file_size, is_primary, created_at""",
-            doc_id, file.filename, file.content_type, len(content),
+            doc_id, fname, file.content_type, len(content),
             key, get_settings().storage_backend, checksum, is_primary, user["id"])
 
     # UAPF: first file attached — the document is processable. Fire the
@@ -697,6 +727,68 @@ async def generate_metadata(doc_id: int, correlation_id: str = "", user=Depends(
         "aiModelVersion": processing.get("model"),
         "validationErrors": result.get("_pii_errors", []),
     }
+
+
+@router.get("/{doc_id}/package")
+async def download_standard_package(doc_id: int, user=Depends(get_current_user)):
+    """Download the document package of the Dokumentu metadatu standarts v2.0
+    (metadati.xml, izsekosana.xml, datnes/, SHA256SUMS) as a ZIP. The package
+    is produced by a UAPF process through the package.build capability."""
+    from fastapi.responses import Response
+    from opendms.standard.service import package_zip
+
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        owned = await conn.fetchval(
+            "SELECT 1 FROM documents WHERE id = $1 AND org_id = $2", doc_id, default_org["id"])
+    if not owned:
+        raise HTTPException(404, "Document not found")
+    try:
+        name, data = await package_zip(doc_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    return Response(content=data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+async def _require_owned(doc_id: int) -> None:
+    default_org = await get_default_org_required()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        owned = await conn.fetchval(
+            "SELECT 1 FROM documents WHERE id = $1 AND org_id = $2", doc_id, default_org["id"])
+    if not owned:
+        raise HTTPException(404, "Document not found")
+
+
+@router.get("/{doc_id}/package/files")
+async def list_standard_package_files(doc_id: int, user=Depends(get_current_user)):
+    """Files of the document package: path, size, SHA-256, media type."""
+    from opendms.standard.service import package_files
+    await _require_owned(doc_id)
+    try:
+        return await package_files(doc_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.get("/{doc_id}/package/files/{path:path}")
+async def get_standard_package_file(doc_id: int, path: str, download: bool = False,
+                                    user=Depends(get_current_user)):
+    """One file of the document package (metadati.xml, izsekosana.xml, datnes/…, SHA256SUMS)."""
+    from fastapi.responses import Response
+    from opendms.standard.service import package_file
+    await _require_owned(doc_id)
+    try:
+        data, media = await package_file(doc_id, path)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    name = path.rsplit("/", 1)[-1]
+    disp = "attachment" if download else "inline"
+    from urllib.parse import quote
+    return Response(content=data, media_type=media,
+                    headers={"Content-Disposition": f"{disp}; filename*=UTF-8''{quote(name)}"})
 
 
 @router.get("/{doc_id}/export-metadata")
@@ -1056,7 +1148,7 @@ async def _transition(doc_id: int, event_type: str, new_status: str, user: dict,
 
 
 @router.post("/{doc_id}/send")
-async def send_document(doc_id: int, req: DocumentSend, user=Depends(get_current_user)):
+async def send_document(doc_id: int, req: DocumentSend, user=Depends(_SYSTEM_ADMIN)):
     return await _transition(doc_id, "DocumentSent", "sent", user,
         sdk_client.send_document, {"recipient_did": req.recipient_org_did, "method": req.delivery_method},
         {"recipient": req.recipient_org_did, "method": req.delivery_method}, action_name="opendms.doc.send")
@@ -1070,7 +1162,7 @@ async def receive_document(doc_id: int, req: DocumentReceive, user=Depends(get_c
 
 
 @router.post("/{doc_id}/assign")
-async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(get_current_user)):
+async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(_SYSTEM_ADMIN)):
     pool = await get_pool()
     async with pool.acquire() as conn:
         assignee = await conn.fetchrow("SELECT id, full_name FROM users WHERE id = $1", req.user_id)
@@ -1081,14 +1173,14 @@ async def assign_document(doc_id: int, req: DocumentAssign, user=Depends(get_cur
 
 
 @router.post("/{doc_id}/decide")
-async def decide_document(doc_id: int, req: DocumentDecide, user=Depends(get_current_user)):
+async def decide_document(doc_id: int, req: DocumentDecide, user=Depends(_SYSTEM_ADMIN)):
     return await _transition(doc_id, "DocumentDecided", "decided", user,
         sdk_client.decide_document, {"decision": req.decision, "resolution": req.resolution or ""},
         {"decision": req.decision, "resolution": req.resolution}, action_name="opendms.doc.decide")
 
 
 @router.post("/{doc_id}/archive")
-async def archive_document(doc_id: int, archive_reference: Optional[str] = None, user=Depends(get_current_user)):
+async def archive_document(doc_id: int, archive_reference: Optional[str] = None, user=Depends(_SYSTEM_ADMIN)):
     return await _transition(doc_id, "DocumentArchived", "archived", user,
         sdk_client.archive_document, {"ref": archive_reference or ""},
         {"archive_reference": archive_reference}, action_name="opendms.doc.archive")

@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  KISC dokumentu arhivēšanas standarts — XML shēma
+  Nosaukumvieta: urn:lv:kisc:arhivesana:1.0 · Versija 0.1.0-uzmetums
+  Tiesiskais pamats: MK 07.05.2024. noteikumi Nr. 282 "Dokumentu un arhīvu pārvaldības noteikumi".
+  Saistība: identifikatoru formāti sakrīt ar LV-DOK 2.0 (urn:lv:vdvc:dokumentu-metadati:2.0);
+  ark:DokumentaArhivaMetadati izmanto LV-DOK elementā Paplasinajumi.
+  Saknes elementi:
+    KlasifikacijasShema        lietu klasifikācijas shēma (nomenklatūra) periodam       31.–45. p.
+    Lieta                      lietas eksemplārs periodā un tā stāvoklis                20.–26., 47. p.
+    LietasDokumentuRegistrs    lietas dokumentu reģistrs (LNA paraugs)                   23.6., 69.2. p.
+    UzskaitesSaraksts          uzskaites saraksts                                        83.–88. p.
+    IznicinasanasAkts          iznīcināšanai atlasīto dokumentu akts                     104.–109. p., 5. piel.
+    NodosanasAkts              nodošanas un pieņemšanas akts                             175.–176. p.
+    DokumentaArhivaMetadati    dokumenta papildu metadati LNA EAD3 profilam               30. p.; LNA EAD3
+    ParakstisanasPieradijumi   parakstīšanas pierādījumu datne                           30. p.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ark="urn:lv:kisc:arhivesana:1.0"
+           targetNamespace="urn:lv:kisc:arhivesana:1.0"
+           elementFormDefault="qualified" attributeFormDefault="unqualified"
+           version="0.1.0">
+
+  <!-- ═════════════ Kopīgie tipi ═════════════ -->
+
+  <xs:simpleType name="NetuksTeksts">
+    <xs:restriction base="xs:string"><xs:minLength value="1"/><xs:pattern value=".*\S.*"/></xs:restriction>
+  </xs:simpleType>
+
+  <!-- Organizācijas kods kā LV-DOK: VPK ID (SS-IIII), ATVK (7 cipari) vai UR reģ. nr. (11 cipari) -->
+  <xs:simpleType name="OrgKodsType">
+    <xs:restriction base="xs:string"><xs:pattern value="[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9})"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DokumentaIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV-DOK:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LietasIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV-LIETA:[0-9]{2}(-[0-9]{4}|[0-9]{5}|[0-9]{9}):[0-9]{4}:[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- LNA "Identifikācijas Nr." (EAD3 unitid): 40 nejaušas heksadecimālas zīmes -->
+  <xs:simpleType name="ArhivaIDType">
+    <xs:restriction base="xs:string"><xs:pattern value="[0-9a-f]{40}"/></xs:restriction>
+  </xs:simpleType>
+
+  <!-- LNA uzskaites kods: LV_LNA_<Arh>_F<Fonds>[_US[_GV[_Dok]]] -->
+  <xs:simpleType name="UzskaitesKodsType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="LV_LNA_[A-Z]{2,10}(_F[0-9A-Z]+(_[0-9]+(_[0-9]+(_[0-9]+)?)?)?)?"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Klasifikācijas shēmas indekss: 1, 1.6, A.2.6, 1-12 (iestādēs lietotais domuzīmes pieraksts) -->
+  <xs:simpleType name="IndekssType">
+    <xs:restriction base="xs:string"><xs:pattern value="[0-9A-Z]{1,4}([.\-/][0-9A-Z]{1,4}){0,4}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Sha256Type">
+    <xs:restriction base="xs:string"><xs:pattern value="[0-9a-f]{64}"/></xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="PersonaType">
+    <xs:sequence>
+      <xs:element name="LietotajaID" type="ark:NetuksTeksts" minOccurs="0"/>
+      <xs:element name="VardsUzvards" type="ark:NetuksTeksts"/>
+      <xs:element name="Amats" type="xs:string" minOccurs="0"/>
+      <xs:element name="Strukturvieniba" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="IestadeType">
+    <xs:sequence>
+      <xs:element name="OrgKods" type="ark:OrgKodsType"/>
+      <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+      <xs:element name="RegistracijasNr" type="xs:string" minOccurs="0"/>
+      <xs:element name="JuridiskaAdrese" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Glabāšanas termiņš: veids Gadi (ar skaitli) vai Pastavigi; atzīmes EK (ekspertu komisija), AI (atkārtota izvērtēšana) -->
+  <xs:complexType name="GlabasanasTerminsType">
+    <xs:simpleContent>
+      <xs:extension base="ark:GaduSkaitsVaiTukss">
+        <xs:attribute name="veids" use="required">
+          <xs:simpleType><xs:restriction base="xs:string">
+            <xs:enumeration value="Gadi"/><xs:enumeration value="Pastavigi"/><xs:enumeration value="LidzDatumam"/>
+          </xs:restriction></xs:simpleType>
+        </xs:attribute>
+        <!-- veids="LidzDatumam": glabā līdz noteiktam datumam (piem. ES fondu projekti "līdz 31.12.2039."); teksts tukšs -->
+        <xs:attribute name="lidz" type="xs:date" use="optional"/>
+        <xs:attribute name="atzimes" use="optional">
+          <xs:simpleType><xs:list>
+            <xs:simpleType><xs:restriction base="xs:string">
+              <xs:enumeration value="EK"/><xs:enumeration value="AI"/>
+            </xs:restriction></xs:simpleType>
+          </xs:list></xs:simpleType>
+        </xs:attribute>
+        <xs:attribute name="tiesiskaisPamatojums" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+  <xs:simpleType name="GaduSkaitsVaiTukss">
+    <xs:union memberTypes="xs:positiveInteger">
+      <xs:simpleType><xs:restriction base="xs:string"><xs:length value="0"/></xs:restriction></xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
+  <xs:simpleType name="GlabasanasTriggerisType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="NoDokumentaDatuma"/><xs:enumeration value="NoLietasSlegsanas"/>
+      <xs:enumeration value="NoIzpildes"/><xs:enumeration value="NoNotikuma"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RicibaType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Iznicinat"/><xs:enumeration value="NodotArhivam"/><xs:enumeration value="Parskatit"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- E elektronisks, P papīrs, C cits nesējs, H hibrīds -->
+  <xs:simpleType name="NesejsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="E"/><xs:enumeration value="P"/><xs:enumeration value="C"/><xs:enumeration value="H"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SaturaVeidsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Teksts"/><xs:enumeration value="Foto"/><xs:enumeration value="Audio"/>
+      <xs:enumeration value="Video"/><xs:enumeration value="Datubaze"/><xs:enumeration value="Cits"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="PiekluvesIerobezojumsType">
+    <xs:sequence>
+      <xs:element name="TiesiskaisPamatojums" type="ark:NetuksTeksts"/>
+      <xs:element name="IerobezojumsLidz" type="xs:date" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="DatumuRobezasType">
+    <xs:sequence>
+      <xs:element name="No" type="xs:date"/>
+      <xs:element name="Lidz" type="xs:date"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ApjomsType">
+    <xs:simpleContent>
+      <xs:extension base="xs:nonNegativeInteger">
+        <xs:attribute name="mervieniba" use="required">
+          <xs:simpleType><xs:restriction base="xs:string">
+            <xs:enumeration value="dokumenti"/><xs:enumeration value="datnes"/><xs:enumeration value="lapas"/>
+            <xs:enumeration value="baiti"/><xs:enumeration value="sejumi"/>
+          </xs:restriction></xs:simpleType>
+        </xs:attribute>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="SaskanosanaType">
+    <xs:sequence>
+      <xs:element name="Statuss">
+        <xs:simpleType><xs:restriction base="xs:string">
+          <xs:enumeration value="Projekts"/><xs:enumeration value="IzskatitsEK"/>
+          <xs:enumeration value="IesniegtsLNA"/><xs:enumeration value="SaskanotsLNA"/>
+          <xs:enumeration value="NoraiditsLNA"/><xs:enumeration value="NavJasaskano"/>
+          <xs:enumeration value="Apstiprinats"/>
+        </xs:restriction></xs:simpleType>
+      </xs:element>
+      <xs:element name="Datums" type="xs:date" minOccurs="0"/>
+      <xs:element name="Atsauce" type="xs:string" minOccurs="0"/>
+      <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ═════════════ Klasifikācijas shēma ═════════════ -->
+
+  <xs:element name="KlasifikacijasShema">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Iestade" type="ark:IestadeType"/>
+        <xs:element name="Periods">
+          <xs:complexType><xs:sequence>
+            <xs:element name="No" type="xs:date"/>
+            <xs:element name="Lidz" type="xs:date"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Versija" type="ark:NetuksTeksts"/>
+        <xs:element name="Saskanosana" type="ark:SaskanosanaType" maxOccurs="unbounded"/>
+        <xs:element name="Limenis" type="ark:LimenisType" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" use="required"/>
+    </xs:complexType>
+    <xs:unique name="UnikalsIndekss">
+      <xs:selector xpath=".//ark:Limenis|.//ark:LietasIeraksts"/>
+      <xs:field xpath="ark:Indekss"/>
+    </xs:unique>
+  </xs:element>
+
+  <xs:complexType name="LimenisType">
+    <xs:sequence>
+      <xs:element name="Indekss" type="ark:IndekssType"/>
+      <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+      <xs:choice maxOccurs="unbounded">
+        <xs:element name="Limenis" type="ark:LimenisType"/>
+        <xs:element name="LietasIeraksts" type="ark:LietasIerakstsType"/>
+      </xs:choice>
+    </xs:sequence>
+    <xs:attribute name="numurs" use="required">
+      <xs:simpleType><xs:restriction base="xs:positiveInteger"><xs:maxInclusive value="3"/></xs:restriction></xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <xs:complexType name="LietasIerakstsType">
+    <xs:sequence>
+      <xs:element name="Indekss" type="ark:IndekssType"/>
+      <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+      <xs:element name="GlabasanasTermins" type="ark:GlabasanasTerminsType"/>
+      <xs:element name="GlabasanasTriggeris" type="ark:GlabasanasTriggerisType"/>
+      <xs:element name="Riciba" type="ark:RicibaType"/>
+      <xs:element name="Atbildigais">
+        <xs:complexType><xs:sequence>
+          <xs:element name="Strukturvieniba" type="ark:NetuksTeksts"/>
+          <xs:element name="Persona" type="ark:PersonaType" minOccurs="0"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="Nesejs" type="ark:NesejsType"/>
+      <xs:element name="InformacijasSistema" type="xs:string" minOccurs="0"/>
+      <xs:element name="NoklusetaisInformacijasStatuss" minOccurs="0">
+        <xs:simpleType><xs:restriction base="xs:string">
+          <xs:enumeration value="Visparpieejama"/><xs:enumeration value="IerobezotasPieejamibas"/>
+          <xs:enumeration value="DienestaVajadzibam"/>
+        </xs:restriction></xs:simpleType>
+      </xs:element>
+      <xs:element name="PiekluvesIerobezojums" type="ark:PiekluvesIerobezojumsType" minOccurs="0"/>
+      <xs:element name="Ilgstosa" type="xs:boolean" minOccurs="0"/>
+      <xs:element name="TurpinasNoPerioda" type="xs:gYear" minOccurs="0"/>
+      <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- ═════════════ Lieta ═════════════ -->
+
+  <xs:element name="Lieta">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="LietasID" type="ark:LietasIDType"/>
+        <xs:element name="ShemasAtsauce">
+          <xs:complexType><xs:sequence>
+            <xs:element name="ShemasID" type="ark:NetuksTeksts"/>
+            <xs:element name="Indekss" type="ark:IndekssType"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Gads" type="xs:gYear"/>
+        <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+        <xs:element name="Statuss">
+          <xs:simpleType><xs:restriction base="xs:string">
+            <xs:enumeration value="Atverta"/><xs:enumeration value="Slegta"/><xs:enumeration value="Izverteta"/>
+            <xs:enumeration value="GlabaIestade"/><xs:enumeration value="AtlasitaIznicinasanai"/>
+            <xs:enumeration value="Iznicinata"/><xs:enumeration value="Aprakstita"/>
+            <xs:enumeration value="NodosanaiSagatavota"/><xs:enumeration value="NodotaLNA"/>
+          </xs:restriction></xs:simpleType>
+        </xs:element>
+        <xs:element name="AtvertaUz" type="xs:dateTime"/>
+        <xs:element name="SlegtaUz" type="xs:dateTime" minOccurs="0"/>
+        <xs:element name="Karto" minOccurs="0">
+          <xs:simpleType><xs:restriction base="xs:string">
+            <xs:enumeration value="Hronologiski"/><xs:enumeration value="PecVeida"/>
+            <xs:enumeration value="Alfabetiski"/><xs:enumeration value="Cits"/>
+          </xs:restriction></xs:simpleType>
+        </xs:element>
+        <xs:element name="DatumuRobezas" type="ark:DatumuRobezasType" minOccurs="0"/>
+        <xs:element name="Sejums" maxOccurs="unbounded">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Numurs" type="xs:positiveInteger"/>
+            <xs:element name="Nesejs" type="ark:NesejsType"/>
+            <xs:element name="SaturaVeids" type="ark:SaturaVeidsType"/>
+            <xs:element name="Apjoms" type="ark:ApjomsType" maxOccurs="unbounded"/>
+            <xs:element name="SaistitaisSejums" type="xs:positiveInteger" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="GlabasanasBeigas" type="xs:date" minOccurs="0"/>
+        <xs:element name="Riciba" type="ark:RicibaType" minOccurs="0"/>
+        <xs:element name="RegistraKontrolsumma" type="ark:Sha256Type" minOccurs="0"/>
+        <xs:element name="UzskaitesKods" type="ark:UzskaitesKodsType" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═════════════ Lietas dokumentu reģistrs (LNA paraugs) ═════════════ -->
+
+  <xs:element name="LietasDokumentuRegistrs">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Iestade" type="ark:IestadeType"/>
+        <xs:element name="LietasID" type="ark:LietasIDType"/>
+        <xs:element name="LietasIndekss" type="ark:IndekssType"/>
+        <xs:element name="LietasNosaukums" type="ark:NetuksTeksts"/>
+        <xs:element name="Ieraksts" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType><xs:sequence>
+            <xs:element name="RegistracijasNumurs" type="ark:NetuksTeksts"/>
+            <xs:element name="RegistracijasDatums" type="xs:date"/>
+            <xs:element name="InformacijasVide">
+              <xs:simpleType><xs:restriction base="xs:string">
+                <xs:enumeration value="E"/><xs:enumeration value="P"/>
+              </xs:restriction></xs:simpleType>
+            </xs:element>
+            <xs:element name="Autors" type="xs:string" maxOccurs="unbounded"/>
+            <xs:element name="Adresats" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="DokumentaNosaukums" type="ark:NetuksTeksts"/>
+            <xs:element name="DatnesNosaukums" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="Veids" type="ark:DokumentuGrupaType"/>
+            <xs:element name="SaistitaisDokuments" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+            <xs:element name="DokumentaID" type="ark:DokumentaIDType" minOccurs="0"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Parakstitajs" type="ark:PersonaType" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="DokumentuGrupaType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Sanemtais"/><xs:enumeration value="Nosutamais"/><xs:enumeration value="Ieksejais"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- ═════════════ Uzskaites saraksts ═════════════ -->
+
+  <xs:element name="UzskaitesSaraksts">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Iestade" type="ark:IestadeType"/>
+        <xs:element name="Arhivs">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Kods" type="ark:NetuksTeksts"/>
+            <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="FondaNumurs" type="ark:NetuksTeksts"/>
+        <xs:element name="FondaNosaukums" type="ark:NetuksTeksts"/>
+        <xs:element name="GlabasanasTermins" type="ark:GlabasanasTerminsType"/>
+        <xs:element name="Nesejs" type="ark:NesejsType"/>
+        <xs:element name="SaturaVeids" type="ark:SaturaVeidsType"/>
+        <xs:element name="ParedzetaisNodosanasGads" type="xs:gYear" minOccurs="0"/>
+        <xs:element name="Vieniba" maxOccurs="unbounded">
+          <xs:complexType><xs:sequence>
+            <xs:element name="ApaksfondaKods" type="xs:string" minOccurs="0"/>
+            <xs:element name="SerijasKods" type="ark:NetuksTeksts"/>
+            <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+            <xs:element name="DatumuRobezas" type="ark:DatumuRobezasType"/>
+            <xs:element name="Apjoms" type="ark:ApjomsType" maxOccurs="unbounded"/>
+            <xs:element name="HibridasNorades" type="xs:string" minOccurs="0"/>
+            <xs:element name="Valoda" type="xs:language" maxOccurs="unbounded"/>
+            <xs:element name="PiekluvesIerobezojums" type="ark:PiekluvesIerobezojumsType" minOccurs="0"/>
+            <xs:element name="Saturs" type="xs:string" minOccurs="0"/>
+            <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+            <xs:element name="LietasID" type="ark:LietasIDType" minOccurs="0"/>
+            <xs:element name="UzskaitesKods" type="ark:UzskaitesKodsType"/>
+          </xs:sequence>
+          <xs:attribute name="kartasNumurs" type="xs:positiveInteger" use="required"/></xs:complexType>
+        </xs:element>
+        <xs:element name="Kopsavilkums">
+          <xs:complexType><xs:sequence>
+            <xs:element name="VienibuSkaits" type="xs:nonNegativeInteger"/>
+            <xs:element name="NumeracijasPiezimes" type="xs:string" minOccurs="0"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Sastadija" type="ark:PersonaType" maxOccurs="unbounded"/>
+        <xs:element name="Saskanosana" type="ark:SaskanosanaType" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="numurs" type="xs:positiveInteger" use="required"/>
+    </xs:complexType>
+    <xs:unique name="UnikalsKartasNumurs">
+      <xs:selector xpath="ark:Vieniba"/><xs:field xpath="@kartasNumurs"/>
+    </xs:unique>
+  </xs:element>
+
+  <!-- ═════════════ Iznīcināšanai atlasīto dokumentu akts ═════════════ -->
+
+  <xs:element name="IznicinasanasAkts">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Numurs" type="ark:NetuksTeksts"/>
+        <xs:element name="Datums" type="xs:date"/>
+        <xs:element name="Iestade" type="ark:IestadeType"/>
+        <xs:element name="FondaNumurs" type="xs:string" minOccurs="0"/>
+        <xs:element name="Ieraksts" maxOccurs="unbounded">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+            <xs:element name="ShemasIndekss" type="ark:IndekssType" minOccurs="0"/>
+            <xs:element name="DatumuRobezas" type="ark:DatumuRobezasType"/>
+            <xs:element name="Apjoms" type="ark:ApjomsType" maxOccurs="unbounded"/>
+            <xs:element name="GlabasanasTermins" type="ark:GlabasanasTerminsType"/>
+            <xs:element name="Pamatojums" type="xs:string" minOccurs="0"/>
+            <xs:element name="LietasID" type="ark:LietasIDType" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Kopskaits" type="ark:ApjomsType" maxOccurs="unbounded"/>
+        <xs:element name="Izvertetaji">
+          <xs:complexType><xs:sequence>
+            <xs:element name="EkspertuKomisija" minOccurs="0">
+              <xs:complexType><xs:sequence>
+                <xs:element name="ProtokolaNr" type="xs:string"/>
+                <xs:element name="Datums" type="xs:date"/>
+              </xs:sequence></xs:complexType>
+            </xs:element>
+            <xs:element name="Persona" type="ark:PersonaType" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Saskanosana" type="ark:SaskanosanaType" maxOccurs="unbounded"/>
+        <xs:element name="IznicinasanasAtzime" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Datums" type="xs:date"/>
+            <xs:element name="Veids" type="ark:NetuksTeksts"/>
+            <xs:element name="Atbildigais" type="ark:PersonaType"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═════════════ Nodošanas un pieņemšanas akts (176. p.) ═════════════ -->
+
+  <xs:element name="NodosanasAkts">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Numurs" type="ark:NetuksTeksts"/>
+        <xs:element name="Datums" type="xs:date"/>
+        <xs:element name="Iemesls" type="ark:NetuksTeksts"/>
+        <xs:element name="NododosaIestade">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Iestade" type="ark:IestadeType"/>
+            <xs:element name="Atbildigais" type="ark:PersonaType"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="PienemosaStrukturvieniba">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+            <xs:element name="Atbildigais" type="ark:PersonaType"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Fonds">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Numurs" type="ark:NetuksTeksts"/>
+            <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+            <xs:element name="DatumuRobezas" type="ark:DatumuRobezasType"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="UzzinuSistema" maxOccurs="unbounded">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Veids" type="ark:NetuksTeksts"/>
+            <xs:element name="Nosaukums" type="ark:NetuksTeksts"/>
+            <xs:element name="Numurs" type="xs:string"/>
+            <xs:element name="VienibuSkaits" type="xs:nonNegativeInteger"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="NodotoVienibuSkaits" type="xs:nonNegativeInteger"/>
+        <xs:element name="Pakotne">
+          <xs:complexType><xs:sequence>
+            <xs:element name="PakotnesID" type="ark:NetuksTeksts"/>
+            <xs:element name="Kontrolsumma" type="ark:Sha256Type"/>
+            <xs:element name="IzmersBaitos" type="xs:nonNegativeInteger"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="ParbaudesRezultati" type="xs:string" minOccurs="0"/>
+        <xs:element name="Neatbilstibas" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═════════════ Dokumenta arhīva metadati (LV-DOK Paplasinajumi) ═════════════ -->
+
+  <xs:complexType name="AtzimeType">
+    <xs:sequence>
+      <xs:element name="Persona" type="ark:PersonaType"/>
+      <xs:element name="Datums" type="xs:dateTime"/>
+      <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="DokumentaArhivaMetadati">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ArhivaID" type="ark:ArhivaIDType"/>
+        <xs:element name="Autori" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Autors" type="ark:PersonaType" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="NosutisanasDatums" type="xs:date" minOccurs="0"/>
+        <xs:element name="NosutitajaDokumentaNr" type="xs:string" minOccurs="0"/>
+        <xs:element name="DokumentuGrupa" type="ark:DokumentuGrupaType"/>
+        <xs:element name="Anotacija" type="xs:string" minOccurs="0"/>
+        <xs:element name="Atslegvardi" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Atslegvards" type="ark:NetuksTeksts" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Vizas" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Viza" type="ark:AtzimeType" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="IepazisanasAtzimes" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Atzime" type="ark:AtzimeType" maxOccurs="unbounded"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="Rezolucijas" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Rezolucija" maxOccurs="unbounded">
+              <xs:complexType><xs:sequence>
+                <xs:element name="Autors" type="ark:PersonaType"/>
+                <xs:element name="Datums" type="xs:dateTime"/>
+                <xs:element name="Uzdevums" maxOccurs="unbounded">
+                  <xs:complexType><xs:sequence>
+                    <xs:element name="Atbildigais" type="ark:PersonaType" maxOccurs="unbounded"/>
+                    <xs:element name="Apraksts" type="ark:NetuksTeksts"/>
+                    <xs:element name="IzpildesTermins" type="xs:date" minOccurs="0"/>
+                  </xs:sequence></xs:complexType>
+                </xs:element>
+                <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+              </xs:sequence></xs:complexType>
+            </xs:element>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="LietosanasIerobezojums" minOccurs="0">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Teksts" type="ark:NetuksTeksts"/>
+            <xs:element name="Lidz" type="xs:date" minOccurs="0"/>
+          </xs:sequence></xs:complexType>
+        </xs:element>
+        <xs:element name="TehniskaInformacija" type="xs:string" minOccurs="0"/>
+        <xs:element name="Piezimes" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═════════════ Parakstīšanas pierādījumi (30. p.) ═════════════ -->
+
+  <xs:element name="ParakstisanasPieradijumi">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="DokumentaID" type="ark:DokumentaIDType"/>
+        <xs:element name="Pieradijums" maxOccurs="unbounded">
+          <xs:complexType><xs:sequence>
+            <xs:element name="Parakstitajs" type="ark:PersonaType"/>
+            <xs:element name="ParakstitsUz" type="xs:dateTime"/>
+            <xs:element name="Metode" type="ark:NetuksTeksts"/>
+            <xs:element name="Datne" maxOccurs="unbounded">
+              <xs:complexType><xs:sequence>
+                <xs:element name="DatnesID" type="ark:NetuksTeksts"/>
+                <xs:element name="DatnesNosaukums" type="ark:NetuksTeksts"/>
+                <xs:element name="Sha256" type="ark:Sha256Type"/>
+              </xs:sequence></xs:complexType>
+            </xs:element>
+            <xs:element name="AizstajIerakstu" type="xs:positiveInteger" minOccurs="0"/>
+          </xs:sequence>
+          <xs:attribute name="nr" type="xs:positiveInteger" use="required"/></xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

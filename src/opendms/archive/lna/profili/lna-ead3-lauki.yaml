@@ -1,0 +1,66 @@
+# LNA EAD3 dokumenta apraksta lauki (no LNA "OPEX/EAD elementu apraksts", arhivi.gov.lv/lv/media/3141)
+# un to avoti DVS. XPath relatīvi pret <ead> (nosaukumvieta ead = http://ead3.archivists.org/schema/undeprecated/).
+#   obligats: ja  – laukam jābūt aizpildītam (LNA "*")
+#   atkartojams: ja – var būt vairākas vērtības
+#   avots: LV-DOK ceļš (dm:), arhivēšanas paplašinājums (ark:), DVS konfigurācija (cfg:) vai konstante (konst:)
+versija: 0.1.0
+nosaukumvietas:
+  ead: http://ead3.archivists.org/schema/undeprecated/
+  opex: http://www.openpreservationexchange.org/opex/v1.1
+lauki:
+  - {id: iestades_nosaukums, nosaukums: "Iestādes nosaukums", xpath: "ead:control/ead:filedesc/ead:titlestmt/ead:titleproper", obligats: ja, avots: "cfg:iestade.nosaukums", piezimes: "vienāds visiem pakotnes dokumentiem"}
+  - {id: iestades_reg_nr, nosaukums: "Iestādes reģistrācijas Nr.", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Iestādes reģistrācijas Nr.']/ead:item", obligats: ja, avots: "cfg:iestade.registracijas_nr", piezimes: "UR reģistrācijas numurs; vienāds visiem pakotnes dokumentiem"}
+  - {id: dokumenta_nosaukums, nosaukums: "Dokumenta nosaukums", xpath: "ead:archdesc/ead:did/ead:unittitle", obligats: ja, avots: "dm:Virsraksts"}
+  - {id: dokumenta_datums, nosaukums: "Dokumenta datums", xpath: "ead:archdesc/ead:did/ead:unitdate[@label='Dokumenta datums']/@normal", obligats: ja, tips: datums, avots: "dm:DokumentaDatums"}
+  - {id: sagatavosanas_datums, nosaukums: "Sagatavošanas datums", xpath: "ead:archdesc/ead:did/ead:unitdate[@label='Sagatavošanas datums']/@normal", tips: datums, avots: "dm:Izcelsme/dm:IzveidotsUz"}
+  - {id: nosutisanas_datums, nosaukums: "Nosūtīšanas datums", xpath: "ead:archdesc/ead:did/ead:unitdate[@label='Nosūtīšanas datums']/@normal", tips: datums, avots: "ark:NosutisanasDatums"}
+  - {id: autors, nosaukums: "Dokumenta autors", xpath: "ead:archdesc/ead:did/ead:origination/ead:persname[@relator='author']/ead:part", atkartojams: ja, avots: "ark:Autori/ark:Autors | dm:Izcelsme/dm:Iesniedzejs (saņemtajiem)"}
+  - {id: sagatavotajs, nosaukums: "Dokumenta sagatavotājs", xpath: "ead:archdesc/ead:did/ead:origination/ead:persname[@relator='creator']/ead:part", atkartojams: ja, avots: "dm:Izcelsme/dm:Izveidotajs"}
+  - {id: parakstitajs, nosaukums: "Dokumenta parakstītājs", xpath: "ead:archdesc/ead:did/ead:origination/ead:persname[@relator='signer']/ead:part", atkartojams: ja, avots: "dm:Paraksti/dm:Paraksts/dm:Parakstitajs"}
+  - {id: valoda, nosaukums: "Valoda", xpath: "ead:archdesc/ead:did/ead:langmaterial/ead:language/@langcode", tips: iso639_2b, avots: "dm:Valoda (ISO 639-1 → 639-2/B, lv → lav)"}
+  - {id: anotacija, nosaukums: "Anotācija", xpath: "ead:archdesc/ead:did/ead:abstract[@label='Anotācija']", avots: "ark:Anotacija | dm:Apraksts"}
+  - {id: atslegvardi, nosaukums: "Atslēgvārdi", xpath: "ead:archdesc/ead:did/ead:didnote", avots: "ark:Atslegvardi (atdalīti ar komatu)"}
+  - {id: dok_reg_nr, nosaukums: "Dokumenta reģistrācijas Nr.", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Dokumenta reģistrācijas Nr.']/ead:item", obligats: ja, avots: "dm:RegistracijasNumurs"}
+  - {id: sutitaja_nr, nosaukums: "Nosūtītāja dokumenta Nr.", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Nosūtītāja dokumenta Nr.']/ead:item", avots: "ark:NosutitajaDokumentaNr"}
+  - {id: dokumentu_grupa, nosaukums: "Dokumentu grupa", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Dokumentu grupa']/ead:item", avots: "ark:DokumentuGrupa", piezimes: "precizēt ar LNA"}
+  - {id: dokumenta_tips, nosaukums: "Dokumenta tips", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Dokumentu tips']/ead:item", avots: "dm:DokumentaVeids/dm:VeidaNosaukums"}
+  - {id: lietas_numurs, nosaukums: "Lietas Numurs", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Lietas Numurs']/ead:item", obligats: ja, avots: "dm:Klasifikacija/dm:KlasifikacijasLieta/dm:LietasIndekss"}
+  - {id: adresats, nosaukums: "Adresāts", xpath: "ead:archdesc/ead:odd/ead:list[ead:head='Adresāts']/ead:item", atkartojams: ja, avots: "dm:Adresati/dm:Adresats"}
+  - {id: viza_persona, nosaukums: "Vīza: Persona", xpath: "ead:archdesc/ead:odd/ead:table[@id='t1']/ead:tgroup/ead:tbody/ead:row/ead:entry[1]", atkartojams: ja, avots: "ark:Vizas/ark:Viza/ark:Persona"}
+  - {id: viza_datums, nosaukums: "Vīza: Datums", xpath: "ead:archdesc/ead:odd/ead:table[@id='t1']/ead:tgroup/ead:tbody/ead:row/ead:entry[2]", atkartojams: ja, tips: datums, avots: "ark:Vizas/ark:Viza/ark:Datums"}
+  - {id: viza_piezimes, nosaukums: "Vīza: Piezīmes", xpath: "ead:archdesc/ead:odd/ead:table[@id='t1']/ead:tgroup/ead:tbody/ead:row/ead:entry[3]", atkartojams: ja, avots: "ark:Vizas/ark:Viza/ark:Piezimes"}
+  - {id: iepaz_persona, nosaukums: "Iepazīšanās atzīme: Persona", xpath: "ead:archdesc/ead:odd/ead:table[@id='t2']/ead:tgroup/ead:tbody/ead:row/ead:entry[1]", atkartojams: ja, avots: "ark:IepazisanasAtzimes/ark:Atzime/ark:Persona"}
+  - {id: iepaz_datums, nosaukums: "Iepazīšanās atzīme: Datums", xpath: "ead:archdesc/ead:odd/ead:table[@id='t2']/ead:tgroup/ead:tbody/ead:row/ead:entry[2]", atkartojams: ja, tips: datums, avots: "ark:IepazisanasAtzimes/ark:Atzime/ark:Datums"}
+  - {id: iepaz_piezimes, nosaukums: "Iepazīšanās atzīme: Piezīmes", xpath: "ead:archdesc/ead:odd/ead:table[@id='t2']/ead:tgroup/ead:tbody/ead:row/ead:entry[3]", atkartojams: ja, avots: "ark:IepazisanasAtzimes/ark:Atzime/ark:Piezimes"}
+  - {id: rez_atbildigais, nosaukums: "Rezolūcija: Atbildīgā persona", xpath: "ead:archdesc/ead:odd/ead:table[@id='t3']/ead:tgroup/ead:tbody/ead:row/ead:entry[1]", atkartojams: ja, avots: "ark:Rezolucijas/ark:Rezolucija/ark:Uzdevums/ark:Atbildigais"}
+  - {id: rez_autors, nosaukums: "Rezolūcija: Rezolūcijas autors", xpath: "ead:archdesc/ead:odd/ead:table[@id='t3']/ead:tgroup/ead:tbody/ead:row/ead:entry[2]", atkartojams: ja, avots: "ark:Rezolucijas/ark:Rezolucija/ark:Autors"}
+  - {id: rez_uzdevums, nosaukums: "Rezolūcija: Uzdevums", xpath: "ead:archdesc/ead:odd/ead:table[@id='t3']/ead:tgroup/ead:tbody/ead:row/ead:entry[3]", atkartojams: ja, avots: "ark:Rezolucijas/ark:Rezolucija/ark:Uzdevums/ark:Apraksts"}
+  - {id: rez_termins, nosaukums: "Rezolūcija: Izpildes termiņš", xpath: "ead:archdesc/ead:odd/ead:table[@id='t3']/ead:tgroup/ead:tbody/ead:row/ead:entry[4]", atkartojams: ja, avots: "ark:Rezolucijas/ark:Rezolucija/ark:Uzdevums/ark:IzpildesTermins"}
+  - {id: rez_datums, nosaukums: "Rezolūcija: Datums", xpath: "ead:archdesc/ead:odd/ead:table[@id='t3']/ead:tgroup/ead:tbody/ead:row/ead:entry[5]", atkartojams: ja, avots: "ark:Rezolucijas/ark:Rezolucija/ark:Datums"}
+  - {id: rez_piezimes, nosaukums: "Rezolūcija: Piezīmes", xpath: "ead:archdesc/ead:odd/ead:table[@id='t3']/ead:tgroup/ead:tbody/ead:row/ead:entry[6]", atkartojams: ja, avots: "ark:Rezolucijas/ark:Rezolucija/ark:Piezimes"}
+  - {id: saistitie, nosaukums: "Saistīto dokumentu ID", xpath: "ead:archdesc/ead:did/ead:daoset/ead:dao/@identifier", atkartojams: ja, avots: "dm:Saistibas → mērķa dokumenta ark:ArhivaID", piezimes: "identifier satur saistītā dokumenta Identifikācijas Nr. (unitid)"}
+  - {id: piezimes, nosaukums: "Piezīmes", xpath: "ead:archdesc/ead:scopecontent/ead:p", avots: "ark:Piezimes"}
+  - {id: piekluves_ierob, nosaukums: "Piekļuves ierobežojumi", xpath: "ead:archdesc/ead:accessrestrict/ead:p", avots: "dm:Drosiba/dm:PiekluvesIerobezojums/dm:TiesiskaisPamatojums"}
+  - {id: lietosanas_ierob_datums, nosaukums: "Lietošanas ierobežojumi – datums", xpath: "ead:control/ead:localcontrol/ead:datesingle/@standarddate", tips: datums, avots: "ark:LietosanasIerobezojums/ark:Lidz | dm:Drosiba/dm:PiekluvesIerobezojums/dm:IerobezojumsLidz"}
+  - {id: lietosanas_ierob, nosaukums: "Lietošanas ierobežojumi", xpath: "ead:archdesc/ead:userestrict/ead:p", avots: "ark:LietosanasIerobezojums/ark:Teksts"}
+  - {id: tehniska_info, nosaukums: "Tehniskā informācija", xpath: "ead:archdesc/ead:phystech/ead:p", avots: "ark:TehniskaInformacija | dm:Datnes (formāti)"}
+  - {id: apjoms, nosaukums: "Fiziskais apraksts: apjoms", xpath: "ead:archdesc/ead:did/ead:physdescset/ead:physdescstructured[1]/ead:quantity", obligats: ja, tips: vesels, avots: "skaits(dm:Datnes/dm:Datne)", piezimes: "datņu skaits dokumentam"}
+  - {id: merviena, nosaukums: "Fiziskais apraksts: mērvienība", xpath: "ead:archdesc/ead:did/ead:physdescset/ead:physdescstructured[1]/ead:unittype", obligats: ja, vertiba: "datnes", avots: "konst:datnes"}
+  - {id: identifikacijas_nr, nosaukums: "Identifikācijas Nr.", xpath: "ead:archdesc/ead:did/ead:unitid", obligats: ja, tips: hex40, avots: "ark:ArhivaID"}
+  - {id: uzskaites_kods, nosaukums: "Uzskaites kods", xpath: "ead:control/ead:recordid", obligats: ja, tips: uzskaites_kods, avots: "aprakstīšana (4.3.)"}
+  - {id: arhiva_kods, nosaukums: "Arhīva abreviatūra", xpath: "ead:control/ead:maintenanceagency/ead:agencycode", obligats: ja, avots: "cfg:arhivs.kods"}
+  - {id: arhiva_nosaukums, nosaukums: "Arhīva nosaukums", xpath: "ead:control/ead:maintenanceagency/ead:agencyname", obligats: ja, avots: "cfg:arhivs.nosaukums"}
+  - {id: uzturesanas_statuss, nosaukums: "Uzturēšanas statuss", xpath: "ead:control/ead:maintenancestatus/@value", obligats: ja, vertibas: [new, revised, deleted, deletedsplit, deletedmerged, deletedreplaced, cancelled, derived], avots: "konst:new"}
+  - {id: glabatava, nosaukums: "Glabātava: Arhīvs", xpath: "ead:archdesc/ead:did/ead:repository/ead:name/@source", obligats: ja, vertiba: "LVKFFDA", avots: "konst:LVKFFDA"}
+  - {id: atrasanas_vieta, nosaukums: "Materiāla atrašanās vieta", xpath: "ead:archdesc/ead:did/ead:repository/ead:name/ead:part", obligats: ja, vertiba: "Elektronisko dokumentu glabātava", avots: "konst"}
+  - {id: glabatavas_adrese, nosaukums: "Glabātavas adrese", xpath: "ead:archdesc/ead:did/ead:repository/ead:address/ead:addressline", obligats: ja, vertiba: "LNB", avots: "konst"}
+  - {id: arhiva_valoda, nosaukums: "Arhīva valoda", xpath: "ead:control/ead:languagedeclaration/ead:language/@langcode", obligats: ja, vertiba: "lav", avots: "konst"}
+  - {id: skripts, nosaukums: "Skripta valoda", xpath: "ead:control/ead:languagedeclaration/ead:script/@scriptcode", obligats: ja, vertiba: "latn", avots: "konst"}
+  - {id: vesture_veids, nosaukums: "Uzturēšanas vēsture: darbības veids", xpath: "ead:control/ead:maintenancehistory/ead:maintenanceevent/ead:eventtype/@value", obligats: ja, vertibas: [created, revised, deleted, cancelled, derived, updated, unknown], avots: "konst:created"}
+  - {id: vesture_laiks, nosaukums: "Uzturēšanas vēsture: darbības laiks", xpath: "ead:control/ead:maintenancehistory/ead:maintenanceevent/ead:eventdatetime/@standarddatetime", obligats: ja, tips: datums, avots: "pakotnes izveides datums"}
+  - {id: vesture_izpilditajs, nosaukums: "Uzturēšanas vēsture: izpildītājs", xpath: "ead:control/ead:maintenancehistory/ead:maintenanceevent/ead:agenttype/@value", obligats: ja, vertibas: [human, machine], avots: "konst:machine"}
+  - {id: vesture_agents, nosaukums: "Uzturēšanas vēsture: aģents", xpath: "ead:control/ead:maintenancehistory/ead:maintenanceevent/ead:agent", obligats: ja, avots: "konst:OpenDMS OPEX pakotņu sagatavotājs"}
+opex:
+  - {id: opex_title, nosaukums: "Title", xpath: "opex:Properties/opex:Title", obligats: ja, tips: uzskaites_kods, piezimes: "dokumentam = EAD recordid"}
+  - {id: opex_description, nosaukums: "Description", xpath: "opex:Properties/opex:Description", piezimes: "dokumenta nosaukums"}
+  - {id: opex_security, nosaukums: "SecurityDescriptor", xpath: "opex:Properties/opex:SecurityDescriptor", obligats: ja, vertibas: [open, closed, public]}
