@@ -112,3 +112,72 @@ def test_status_shows_only_own_documents(monkeypatch):
     r = asyncio.run(a2a_channel.status_for({"a2a_zvanitajs": "Svešs aģents", "registracijas_numurs": "1-00091"}))
     assert r["atrasts"] is False
     assert seen["caller"] == "Svešs aģents" and "zvanitajs" in seen["sql"]
+
+
+def test_outbound_tools_need_the_agent_user():
+    assert tools.TOOL_INDEX["a2a_izsutamais_dokuments"]["class"] == tools.WRITE
+    assert tools.TOOL_INDEX["a2a_atzimet_nosutitu"]["class"] == tools.WRITE
+
+
+def _out_pool(monkeypatch, doc, file_row=None, data=b""):
+    seen = {"exec": []}
+
+    class Conn:
+        async def fetchrow(self, sql, *a):
+            if "FROM documents" in sql:
+                seen["find"] = a
+                return doc
+            return file_row
+
+        async def execute(self, sql, *a):
+            seen["exec"].append((sql, a))
+
+    class Acq:
+        async def __aenter__(self): return Conn()
+        async def __aexit__(self, *a): return False
+
+    class Pool:
+        def acquire(self): return Acq()
+
+    async def get_pool():
+        return Pool()
+    import opendms.database as db
+    monkeypatch.setattr(db, "get_pool", get_pool)
+
+    class St:
+        async def get(self, key):
+            seen["key"] = key
+            return data
+    import opendms.storage as storage
+    monkeypatch.setattr(storage, "get_storage", lambda: St())
+    return seen
+
+
+def test_outgoing_gives_file_and_metadata(monkeypatch):
+    import datetime
+    from opendms import a2a_out
+    doc = {"id": 55, "registration_number": "2026/0038", "title": "Iesniegums", "status": "registered",
+           "metadata": {"dokumentaVeids": "Iesniegums"}, "content_summary": "Īsi.",
+           "created_at": datetime.datetime(2026, 10, 20, 18, 40)}
+    seen = _out_pool(monkeypatch, doc, {"file_name": "a.odt", "mime_type": "application/vnd.oasis.opendocument.text",
+                                        "file_size": 3, "storage_key": "k1"}, b"odt")
+    r = asyncio.run(a2a_out.outgoing({"registracijas_numurs": "2026/0038"}))
+    assert seen["find"] == ("2026/0038",) and seen["key"] == "k1"
+    assert base64.b64decode(r["file_b64"]) == b"odt" and r["file_name"] == "a.odt"
+    assert r["temats"] == "Iesniegums" and r["dokumentaDatums"] == "2026-10-20"
+
+
+def test_record_sent_once_per_task(monkeypatch):
+    from opendms import a2a_out
+    doc = {"id": 55, "registration_number": "2026/0038", "title": "T", "status": "registered",
+           "metadata": {}, "content_summary": None, "created_at": None}
+    seen = _out_pool(monkeypatch, doc)
+    r = asyncio.run(a2a_out.record_sent({"registracijas_numurs": "2026/0038", "adresats": "VARAM Lietvedības aģents",
+                                         "adresata_reg_nr": "1-00007", "a2a_uzdevums": "t9"}, {"id": 3}))
+    assert r["atzimets"] and not r["jauAtzimets"]
+    sqls = " ".join(s for s, _ in seen["exec"])
+    assert "nosutisana" in sqls and "AtzimetsNosutits" in sqls and "status" not in sqls.split("SET")[1].split("WHERE")[0]
+    doc["metadata"] = {"nosutisana": [{"uzdevums": "t9"}]}
+    seen = _out_pool(monkeypatch, doc)
+    r = asyncio.run(a2a_out.record_sent({"document_id": 55, "adresats": "X", "a2a_uzdevums": "t9"}, {"id": 3}))
+    assert r["jauAtzimets"] and seen["exec"] == []

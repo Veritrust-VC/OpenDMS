@@ -198,6 +198,31 @@ TOOLS: list[dict[str, Any]] = [
         }, ["a2a_zvanitajs", "registracijas_numurs"]),
     },
     {
+        "name": "a2a_izsutamais_dokuments",
+        # write class: it hands out the file, so only the organisation's own agent (its DVS user) gets it
+        "class": "write",
+        "description": "A2A sūtīšana (izsauc aģenta vide, ne valodas modelis): dokumenta galvenā datne (base64) un "
+                       "īsie metadati nosūtīšanai citas iestādes MI aģentam.",
+        "inputSchema": _schema({
+            "registracijas_numurs": {"type": "string"},
+            "document_id": {"type": "integer"},
+        }, []),
+    },
+    {
+        "name": "a2a_atzimet_nosutitu",
+        "class": "write",
+        "description": "A2A sūtīšana (izsauc aģenta vide): atzīmē dokumentā, ka tas nosūtīts citas iestādes MI aģentam "
+                       "— adresāts, adresāta reģistrācijas numurs, A2A uzdevums. Dokumenta statusu nemaina.",
+        "inputSchema": _schema({
+            "registracijas_numurs": {"type": "string"},
+            "document_id": {"type": "integer"},
+            "adresats": {"type": "string"}, "adresata_iestade": {"type": "string"},
+            "adresata_reg_nr": {"type": "string"}, "a2a_uzdevums": {"type": "string"},
+            "stavoklis": {"type": "string"},
+            "persona": {"type": "string", "description": "Kurš apstiprināja nosūtīšanu."},
+        }, ["adresats", "a2a_uzdevums"]),
+    },
+    {
         "name": "pabeigt_uzdevumu",
         "class": "write",
         "description": "Complete the process step waiting on a document with the person's decision; "
@@ -506,6 +531,24 @@ async def _dokumenta_statuss_a2a(args: dict, ctx: dict) -> dict:
         return {"error": str(e)}
 
 
+async def _a2a_izsutamais_dokuments(args: dict, ctx: dict) -> dict:
+    from opendms import a2a_out
+    _actor(ctx)
+    try:
+        return await a2a_out.outgoing(args)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+async def _a2a_atzimet_nosutitu(args: dict, ctx: dict) -> dict:
+    from opendms import a2a_out
+    actor = _actor(ctx)
+    try:
+        return await a2a_out.record_sent(args, actor)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
 HANDLERS = {
     "worklist": _worklist,
     "document_history": _document_history,
@@ -521,4 +564,6 @@ HANDLERS = {
     "iesniegt_dokumentu": _iesniegt_dokumentu,
     "pienemt_dokumentu_a2a": _pienemt_dokumentu_a2a,
     "dokumenta_statuss_a2a": _dokumenta_statuss_a2a,
+    "a2a_izsutamais_dokuments": _a2a_izsutamais_dokuments,
+    "a2a_atzimet_nosutitu": _a2a_atzimet_nosutitu,
 }
