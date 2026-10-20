@@ -180,6 +180,9 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": _schema({
             "a2a_zvanitajs": {"type": "string", "description": "Sūtītāja aģents (aizpilda aģenta vide)."},
             "a2a_uzdevums": {"type": "string", "description": "A2A uzdevuma identifikators (aizpilda aģenta vide)."},
+            "a2a_zvanitaja_did": {"type": "string", "description": "Sūtītāja organizācijas DID no žetona (aizpilda aģenta vide)."},
+            "a2a_identitate": {"type": "object", "description": "Dokumenta identitāte no sūtītāja: DokumentaID, RegistraDID, "
+                               "SutitajaDID, SutitajaRegNr (aizpilda aģenta vide)."},
             "fields": {"type": "object", "description": "temats (required), sutitajaOrganizacija, dokumentaDatums, "
                        "dokumentaVeids, kopsavilkums, sutitajaAtsauce (sūtītāja dokumenta numurs)"},
             "file_name": {"type": "string"}, "mime_type": {"type": "string"},
@@ -206,6 +209,8 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": _schema({
             "registracijas_numurs": {"type": "string"},
             "document_id": {"type": "integer"},
+            "adresata_did": {"type": "string", "description": "Adresāta organizācijas DID: ja norādīts, centrālajā "
+                             "reģistrā vispirms reģistrē DocumentSent."},
         }, []),
     },
     {
@@ -217,7 +222,7 @@ TOOLS: list[dict[str, Any]] = [
             "registracijas_numurs": {"type": "string"},
             "document_id": {"type": "integer"},
             "adresats": {"type": "string"}, "adresata_iestade": {"type": "string"},
-            "adresata_reg_nr": {"type": "string"}, "a2a_uzdevums": {"type": "string"},
+            "adresata_reg_nr": {"type": "string"}, "adresata_did": {"type": "string"}, "a2a_uzdevums": {"type": "string"},
             "stavoklis": {"type": "string"},
             "persona": {"type": "string", "description": "Kurš apstiprināja nosūtīšanu."},
         }, ["adresats", "a2a_uzdevums"]),

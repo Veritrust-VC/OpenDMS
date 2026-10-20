@@ -11,6 +11,12 @@ a2a_zvanitajs from the bearer token the peer presented, and a2a_uzdevums from
 the A2A task. A task delivered twice is one document (external_ref per task).
 A peer sees the status only of documents it sent itself.
 
+Central register: when the peer sends the document's identity (register DID,
+document ID) and the sender's organisation DID matches the one recorded for its
+token (a2a_zvanitaja_did, filled by the runtime), this DVS records
+DocumentReceived on the SAME register document and keeps its identifier — one
+document, one timeline across institutions; the content travelled directly.
+
 Channel code DVSIntegracija (standard: dokumenta-metadati-v2.xsd) — another
 institution's system delivering into this DVS.
 """
@@ -66,15 +72,24 @@ async def receive(args: dict) -> dict:
         raise ValueError("pievienojiet datni vai dokumenta tekstu")
 
     org = str(fields.get("sutitajaOrganizacija") or "").strip() or None
+    reg = await _register_received(args, task)
     sender = {"name": caller, "organization": org}
     atts = [{"file_name": args.get("file_name") or "dokuments",
              "mime_type": args.get("mime_type") or "application/octet-stream", "data": data}] if data else []
-    extra = {"a2a": {"zvanitajs": caller, "uzdevums": task, "iestade": org},
+    ident = args.get("a2a_identitate") or {}
+    if not fields.get("sutitajaAtsauce") and reg.get("pienemts") and ident.get("SutitajaRegNr"):
+        fields = {**fields, "sutitajaAtsauce": ident["SutitajaRegNr"]}
+    extra = {"a2a": {"zvanitajs": caller, "uzdevums": task, "iestade": org,
+                     "zvanitajaDid": args.get("a2a_zvanitaja_did") or None},
+             "centralaisRegistrs": {k: v for k, v in reg.items() if k != "pienemts"},
              "ievadesVeids": "Citas iestādes MI aģents (A2A)",
              **{k: fields.get(k) for k in ("dokumentaDatums", "dokumentaVeids", "kopsavilkums", "sutitajaAtsauce")
                 if fields.get(k) not in (None, "")}}
     r = await ingest(CHANNEL, external_ref=f"a2a-{task}", sender=sender, subject=temats,
-                     body=text, attachments=atts, extra=extra)
+                     body=text, attachments=atts, extra=extra,
+                     register_did=reg.get("registraDid") if reg.get("pienemts") else None,
+                     received_vc=bool(reg.get("pienemts")),
+                     doc_uid=ident.get("DokumentaID") if reg.get("pienemts") else None)
     doc_id = r["documentId"]
     if fields.get("kopsavilkums") and not r.get("dublikats"):
         from opendms.database import get_pool
@@ -87,7 +102,32 @@ async def receive(args: dict) -> dict:
                 " (already received)" if r.get("dublikats") else "")
     return {"sanemts": True, "jauASanemts": bool(r.get("dublikats")),
             "registracijasNr": st.get("registracijasNr") or r.get("registrationNumber"),
-            "izsekosanasKods": st.get("izsekosanasKods"), "izsekosanasSaite": st.get("izsekosanasSaite")}
+            "izsekosanasKods": st.get("izsekosanasKods"), "izsekosanasSaite": st.get("izsekosanasSaite"),
+            "centralaisRegistrs": "tas pats dokuments (DocumentReceived)" if reg.get("pienemts") else "jauns ieraksts"}
+
+
+async def _register_received(args: dict, task: str) -> dict:
+    """DocumentReceived on the sender's register document, if the identity is trustworthy."""
+    ident = args.get("a2a_identitate") or {}
+    reg_did = str(ident.get("RegistraDID") or "").strip()
+    caller_did = str(args.get("a2a_zvanitaja_did") or "").strip()
+    if not reg_did:
+        return {"pienemts": False, "iemesls": "sūtītājs nenodeva reģistra identitāti"}
+    if not caller_did or caller_did != str(ident.get("SutitajaDID") or "").strip():
+        # the organisation in the message must be the one the token was issued to
+        return {"pienemts": False, "iemesls": "sūtītāja DID neatbilst žetonam", "registraDid": reg_did}
+    from opendms import sdk_client
+    from opendms.config import get_settings
+    if not get_settings().sdk_enabled:
+        return {"pienemts": False, "iemesls": "reģistra savienojums izslēgts", "registraDid": reg_did}
+    try:
+        res = await sdk_client.receive_document(reg_did, sender_did=caller_did, local_reg=f"a2a-{task}")
+    except Exception as exc:
+        logger.warning("register DocumentReceived %s: %s", reg_did, exc)
+        return {"pienemts": False, "iemesls": str(exc), "registraDid": reg_did}
+    ok = bool(res) and (res.get("_meta", {}).get("status_code", 200) in (200, 201))
+    return {"pienemts": ok, "registraDid": reg_did, "sutitajaDid": caller_did,
+            **({} if ok else {"iemesls": (res or {}).get("detail") or "reģistrs nepieņēma notikumu"})}
 
 
 async def status_for(args: dict) -> dict:

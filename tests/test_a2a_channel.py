@@ -59,7 +59,9 @@ def test_receive_goes_through_intake_with_caller_from_runtime(monkeypatch):
     assert got["channel"]["veids"] == "a2a" and got["channel"]["apstiprinajums"]["ieslegts"] is False
     assert got["external_ref"] == "a2a-task-1"
     assert got["sender"] == {"name": "VARAM Lietvedības aģents", "organization": "VARAM"}
-    assert got["extra"]["a2a"] == {"zvanitajs": "VARAM Lietvedības aģents", "uzdevums": "task-1", "iestade": "VARAM"}
+    assert got["extra"]["a2a"] == {"zvanitajs": "VARAM Lietvedības aģents", "uzdevums": "task-1", "iestade": "VARAM",
+                                   "zvanitajaDid": None}
+    assert got["register_did"] is None   # no identity sent: a new register record
     assert got["body"] == "Iesnieguma teksts." and got["attachments"] == []
 
 
@@ -181,3 +183,51 @@ def test_record_sent_once_per_task(monkeypatch):
     seen = _out_pool(monkeypatch, doc)
     r = asyncio.run(a2a_out.record_sent({"document_id": 55, "adresats": "X", "a2a_uzdevums": "t9"}, {"id": 3}))
     assert r["jauAtzimets"] and seen["exec"] == []
+
+
+def _reg_patch(monkeypatch, ok=True):
+    calls = []
+
+    async def receive_document(did, sender_did, local_reg="", **k):
+        calls.append((did, sender_did, local_reg))
+        return {"_meta": {"status_code": 200 if ok else 403}, **({} if ok else {"detail": "nav adresāts"})}
+    import opendms.sdk_client as sdk
+    monkeypatch.setattr(sdk, "receive_document", receive_document)
+
+    class S:
+        sdk_enabled = True
+    import opendms.config as cfg
+    monkeypatch.setattr(cfg, "get_settings", lambda: S())
+    return calls
+
+
+IDENT = {"DokumentaID": "LV-DOK:05-0000:2026:01a1", "RegistraDID": "did:web:dokregistrs.x:doc:3e35",
+         "SutitajaDID": "did:web:ombud.x", "SutitajaRegNr": "2026/0038"}
+
+
+def test_receive_continues_the_senders_register_document(monkeypatch):
+    got = _patch(monkeypatch)
+    calls = _reg_patch(monkeypatch)
+    r = asyncio.run(a2a_channel.receive({"a2a_zvanitajs": "TB aģents", "a2a_uzdevums": "t5", "a2a_zvanitaja_did": "did:web:ombud.x",
+                                         "a2a_identitate": IDENT, "fields": {"temats": "T"}, "text": "x"}))
+    assert calls == [("did:web:dokregistrs.x:doc:3e35", "did:web:ombud.x", "a2a-t5")]
+    assert got["register_did"] == IDENT["RegistraDID"] and got["received_vc"] is True and got["doc_uid"] == IDENT["DokumentaID"]
+    assert got["extra"]["sutitajaAtsauce"] == "2026/0038"
+    assert r["centralaisRegistrs"].startswith("tas pats")
+
+
+def test_receive_ignores_identity_not_matching_the_token(monkeypatch):
+    got = _patch(monkeypatch)
+    calls = _reg_patch(monkeypatch)
+    asyncio.run(a2a_channel.receive({"a2a_zvanitajs": "TB aģents", "a2a_uzdevums": "t6", "a2a_zvanitaja_did": "did:web:cits.x",
+                                     "a2a_identitate": IDENT, "fields": {"temats": "T"}, "text": "x"}))
+    assert calls == [] and got["register_did"] is None and got["doc_uid"] is None
+    assert "neatbilst" in got["extra"]["centralaisRegistrs"]["iemesls"]
+
+
+def test_register_refusal_falls_back_to_a_new_record(monkeypatch):
+    got = _patch(monkeypatch)
+    _reg_patch(monkeypatch, ok=False)
+    asyncio.run(a2a_channel.receive({"a2a_zvanitajs": "TB aģents", "a2a_uzdevums": "t7", "a2a_zvanitaja_did": "did:web:ombud.x",
+                                     "a2a_identitate": IDENT, "fields": {"temats": "T"}, "text": "x"}))
+    assert got["register_did"] is None and got["received_vc"] is False
