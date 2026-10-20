@@ -3,6 +3,8 @@
 READ   worklist, document_history, people_and_categories, mans_darbs, uzdevums, dokumenta_priekslikums,
        meklet_dokumentus
 WRITE  assign_document, apply_classification, add_note, pabeigt_uzdevumu, iesniegt_dokumentu
+A2A    pienemt_dokumentu_a2a (write), dokumenta_statuss_a2a (read) — documents from other institutions'
+       agents; the caller is filled in by the agent runtime from the peer's token, never by the model
 
 Every write runs as the authenticated DVS user (for the Lietvedības aģents:
 its own named user, see config.mcp_agent_*), lands in document_events with a
@@ -167,6 +169,33 @@ TOOLS: list[dict[str, Any]] = [
             "person": {"type": "string", "description": "E-mail of the person who entered the document."},
             "confirmed": {"type": "boolean"},
         }, ["fields", "person", "confirmed"]),
+    },
+    {
+        "name": "pienemt_dokumentu_a2a",
+        "class": "write",
+        "description": "A2A: pieņem dokumentu, ko nosūtījis citas iestādes MI aģents (piem. iesniegumu, kas pārsūtīts "
+                       "pēc piekritības), un reģistrē to kā saņemtu dokumentu; iestādes procesi to virza kā jebkuru "
+                       "saņemtu dokumentu, lēmumu pieņem cilvēks. Atgriež reģistrācijas numuru. a2a_zvanitajs un "
+                       "a2a_uzdevums aizpilda aģenta vide, nevis valodas modelis.",
+        "inputSchema": _schema({
+            "a2a_zvanitajs": {"type": "string", "description": "Sūtītāja aģents (aizpilda aģenta vide)."},
+            "a2a_uzdevums": {"type": "string", "description": "A2A uzdevuma identifikators (aizpilda aģenta vide)."},
+            "fields": {"type": "object", "description": "temats (required), sutitajaOrganizacija, dokumentaDatums, "
+                       "dokumentaVeids, kopsavilkums, sutitajaAtsauce (sūtītāja dokumenta numurs)"},
+            "file_name": {"type": "string"}, "mime_type": {"type": "string"},
+            "file_b64": {"type": "string", "description": "Datne base64 (pievieno aģenta vide no A2A ziņojuma)."},
+            "text": {"type": "string", "maxLength": 50000, "description": "Dokumenta teksts, ja datnes nav."},
+        }, ["a2a_zvanitajs", "a2a_uzdevums", "fields"]),
+    },
+    {
+        "name": "dokumenta_statuss_a2a",
+        "class": "read",
+        "description": "A2A: parāda citas iestādes aģenta iepriekš nosūtīta dokumenta stāvokli pēc reģistrācijas "
+                       "numura — tikai dokumentiem, ko nosūtījis tas pats aģents.",
+        "inputSchema": _schema({
+            "a2a_zvanitajs": {"type": "string", "description": "Sūtītāja aģents (aizpilda aģenta vide)."},
+            "registracijas_numurs": {"type": "string"},
+        }, ["a2a_zvanitajs", "registracijas_numurs"]),
     },
     {
         "name": "pabeigt_uzdevumu",
@@ -460,6 +489,23 @@ async def _iesniegt_dokumentu(args: dict, ctx: dict) -> dict:
     return {"done": True, **r}
 
 
+async def _pienemt_dokumentu_a2a(args: dict, ctx: dict) -> dict:
+    from opendms.intake import a2a_channel
+    _actor(ctx)   # the organisation's own agent, with its own DVS user
+    try:
+        return await a2a_channel.receive(args)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
+async def _dokumenta_statuss_a2a(args: dict, ctx: dict) -> dict:
+    from opendms.intake import a2a_channel
+    try:
+        return await a2a_channel.status_for(args)
+    except ValueError as e:
+        return {"error": str(e)}
+
+
 HANDLERS = {
     "worklist": _worklist,
     "document_history": _document_history,
@@ -473,4 +519,6 @@ HANDLERS = {
     "dokumenta_priekslikums": _dokumenta_priekslikums,
     "meklet_dokumentus": _meklet_dokumentus,
     "iesniegt_dokumentu": _iesniegt_dokumentu,
+    "pienemt_dokumentu_a2a": _pienemt_dokumentu_a2a,
+    "dokumenta_statuss_a2a": _dokumenta_statuss_a2a,
 }

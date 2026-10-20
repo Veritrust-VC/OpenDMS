@@ -37,9 +37,11 @@ from opendms.intake import edoc
 logger = logging.getLogger(__name__)
 
 SYSTEM_EMAIL = "ievade@opendms.local"
-CHANNEL_CODE = {"epasts": "EPasts", "tiessaistes-forma": "Portals", "e-adrese": "EAdrese"}
+CHANNEL_CODE = {"epasts": "EPasts", "tiessaistes-forma": "Portals", "e-adrese": "EAdrese",
+                # another institution's MI agent (A2A): a system delivering into this DVS
+                "a2a": "DVSIntegracija"}
 TITLES = {"epasts": "Iesniegums (e-pasts)", "tiessaistes-forma": "Iesniegums (tiešsaistes forma)",
-          "e-adrese": "Dokuments (e-adrese)"}
+          "e-adrese": "Dokuments (e-adrese)", "a2a": "Dokuments (citas iestādes MI aģents)"}
 # Signed / main documents first — the primary file is what the processes read.
 PRIMARY_RANK = {"application/pdf": 0,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 1,
