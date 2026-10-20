@@ -165,46 +165,10 @@ def _sanitize_for_registry(semantic_summary: Optional[dict], sensitivity_control
 
 
 def _extract_text(file_data: bytes, mime_type: str, filename: str) -> str:
-    """Extract text from file bytes. Simple extraction for common formats."""
-    try:
-        if mime_type in ("text/plain", "text/csv", "text/html"):
-            return file_data.decode("utf-8", errors="replace")[:20000]
-        if "pdf" in mime_type or filename.lower().endswith(".pdf"):
-            try:
-                import subprocess
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-                    f.write(file_data)
-                    tmp = f.name
-                result = subprocess.run(
-                    ["pdftotext", "-enc", "UTF-8", tmp, "-"],
-                    capture_output=True, text=True, timeout=30)
-                os.unlink(tmp)
-                if result.returncode == 0:
-                    return result.stdout[:20000]
-            except Exception:
-                pass
-        if "wordprocessingml" in mime_type or filename.lower().endswith(".docx"):
-            try:
-                import subprocess
-                import tempfile
-                import os
-                with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as f:
-                    f.write(file_data)
-                    tmp = f.name
-                result = subprocess.run(
-                    ["pandoc", "--to=plain", tmp],
-                    capture_output=True, text=True, timeout=30)
-                os.unlink(tmp)
-                if result.returncode == 0:
-                    return result.stdout[:20000]
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return ""
-
+    """Full text of an uploaded file (PDF, DOCX, ODT, DOC, RTF, text, HTML).
+    See opendms.text_extract; callers that feed a model use text_extract.fit()."""
+    from opendms.text_extract import extract_text
+    return extract_text(file_data, mime_type, filename)
 
 # ── List / Search ──
 
@@ -582,7 +546,7 @@ async def generate_metadata_preview(
     if not document_text:
         raise HTTPException(
             400,
-            "Could not extract text from file. Supported formats: PDF, DOCX, TXT, CSV, HTML.",
+            "Could not extract text from file. Supported formats: PDF, DOCX, ODT, DOC, RTF, TXT, CSV, HTML.",
         )
 
     title = parsed_metadata.get("title", file.filename or "")

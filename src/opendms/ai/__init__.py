@@ -244,7 +244,8 @@ Respond ONLY with JSON:
 
     # Truncate very long texts
     if len(text) > 10000:
-        text = text[:10000] + "\n\n[... truncated ...]"
+        from opendms.text_extract import fit
+        text = fit(text, 10000)
 
     result = await _complete_json(system, text)
     if result:
@@ -554,7 +555,8 @@ async def generate_semantic_metadata(
         return None
 
     start = _time.time()
-    text = document_text[:15000]
+    from opendms.text_extract import fit
+    text = fit(document_text, 15000)
 
     route = "CENTRAL"
     anonymized = False

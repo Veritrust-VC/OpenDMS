@@ -234,7 +234,8 @@ async def handle_ai_redact(ctx: dict) -> dict:
     # Enforce guardrails: text length cap.
     MAX_CHARS = 15000
     if len(content) > MAX_CHARS:
-        content = content[:MAX_CHARS]
+        from opendms.text_extract import fit
+        content = fit(content, MAX_CHARS)
 
     user_msg = (
         f"Categories to redact: {inp.get('categories', ['pii_name','pii_id_number','pii_address','pii_financial','pii_health'])}\n\n"
@@ -432,7 +433,8 @@ async def handle_ai_extract(ctx: dict) -> dict:
 
     MAX_CHARS = 15000
     if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
+        from opendms.text_extract import fit
+        text = fit(text, MAX_CHARS)
 
     # ---- VDVC semantic-metadata extraction (selected by uapf:schemaRef) ----
     if "semantic-summary" in schema_ref or "vdvc" in schema_ref.lower():

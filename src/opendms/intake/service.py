@@ -43,7 +43,7 @@ TITLES = {"epasts": "Iesniegums (e-pasts)", "tiessaistes-forma": "Iesniegums (ti
 # Signed / main documents first — the primary file is what the processes read.
 PRIMARY_RANK = {"application/pdf": 0,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document": 1,
-                "application/msword": 2, "application/vnd.oasis.opendocument.text": 2,
+                "application/msword": 2, "application/vnd.oasis.opendocument.text": 2, "application/rtf": 2, "text/rtf": 2,
                 "text/plain": 3}
 
 
