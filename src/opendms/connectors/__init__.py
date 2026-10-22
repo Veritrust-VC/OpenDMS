@@ -11,10 +11,10 @@ from __future__ import annotations
 from types import ModuleType
 from typing import Any, Optional
 
-from opendms.connectors import email_box, jira_cloud, medus_dvs, sap
+from opendms.connectors import email_box, jira_cloud, medus_dvs, namejs, sap
 from opendms.connectors.base import Field, Operation, Result
 
-_MODULES: tuple[ModuleType, ...] = (jira_cloud, email_box, sap, medus_dvs)
+_MODULES: tuple[ModuleType, ...] = (jira_cloud, email_box, namejs, sap, medus_dvs)
 
 DRIVERS: dict[str, ModuleType] = {m.KIND: m for m in _MODULES}
 KINDS: tuple[str, ...] = tuple(DRIVERS)
