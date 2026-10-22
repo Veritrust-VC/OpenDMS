@@ -24,6 +24,7 @@ export interface PackageSummary {
   artifacts?: ArtifactRef[];
   requiredClaims?: string[];
   guardrails?: Record<string, unknown>;  // G7: package guardrails snapshot
+  mappings?: Record<string, unknown>;    // resources/mappings.* task bindings
   algorithmCards?: Record<string, AlgorithmCard>;  // v2.4.0: cards keyed by id
   source: { mode: RegistryMode; location: string };
 }
@@ -68,6 +69,7 @@ export interface IUapfRegistry {
     sourceUrl: string;
     packageId?: string;
     filename?: string;
+    authToken?: string;
   }): Promise<{ filename: string; packageId: string; version?: string }>;
   /**
    * Resolve the L0-L4 cross-package reference graph rooted at a package,

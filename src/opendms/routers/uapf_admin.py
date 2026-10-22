@@ -58,7 +58,7 @@ class TriggerIn(BaseModel):
     package_id: str
     package_version: Optional[str] = None
     process_id: str
-    trigger_event: str  # document.received | document.created | document.assigned | document.decided
+    trigger_event: str  # document.received | document.created | document.assigned | document.decided | document.forwarding
     match_condition: dict = {}
     is_active: bool = True
 
@@ -81,7 +81,7 @@ async def list_triggers(user=Depends(get_current_user)):
 async def create_trigger(t: TriggerIn, user=Depends(require_role("admin", "superadmin"))):
     if t.trigger_event not in (
         "document.created", "document.received", "document.assigned",
-        "document.decided", "manual",
+        "document.decided", "document.forwarding", "manual",
     ):
         raise HTTPException(400, f"Invalid trigger_event: {t.trigger_event}")
     pool = await get_pool()
@@ -359,6 +359,7 @@ async def list_packages(user=Depends(get_current_user)):
     return {
         "engine_alive": engine_alive,
         "engine_url": s.uapf_engine_url,
+        "processgit_url": s.processgit_url.rstrip("/"),
         "packages": enriched,
     }
 
@@ -382,7 +383,8 @@ async def sync_package(
     async with httpx.AsyncClient(timeout=120.0) as hc:
         r = await hc.post(
             f"{s.uapf_engine_url.rstrip('/')}/uapf/admin/install-from-url",
-            json={"sourceUrl": body.source_url, "packageId": body.package_id},
+            json={"sourceUrl": body.source_url, "packageId": body.package_id,
+                  **({"authToken": s.processgit_token} if s.processgit_token else {})},
         )
         if r.status_code >= 400:
             raise HTTPException(502, f"Engine install failed: {r.text[:400]}")
@@ -513,6 +515,209 @@ async def run_now(
         # Trigger-based — same code path as automatic lifecycle hook
         await on_document_event(body.event_type, doc_id)
         return {"mode": "trigger", "event_type": body.event_type, "document_id": doc_id}
+
+
+class ReviewDecisionIn(BaseModel):
+    decision: str            # apstiprinats | labots | noraidits
+    comment: Optional[str] = None
+    changes: Optional[dict] = None   # fields the reviewer corrected (decision "labots")
+
+
+REVIEW_DECISIONS = ("apstiprinats", "labots", "noraidits")
+CORRECTION_KEYS = ("labotsKods", "labotaVieniba", "labojumaIemesls")
+
+
+@router.get("/review/{doc_id}/options")
+async def review_options(doc_id: int, user=Depends(get_current_user)):
+    """What a reviewer can choose from when correcting: the classifier codes and
+    the units, read from the ProcessGit repositories the process names."""
+    from opendms.uapf.learning import reference_data
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
+    if meta is None:
+        raise HTTPException(404, "Document not found")
+    meta = json.loads(meta) if isinstance(meta, str) else meta
+    refs = ((meta or {}).get("uapf_review") or {}).get("references")
+    if not refs:
+        return {"kodi": [], "vienibas": [], "avoti": {}}
+    try:
+        ref = await reference_data(refs)
+    except LookupError as e:
+        raise HTTPException(502, str(e))
+    klas = ref["klasifikators"] or {"kodi": [], "versija": ""}
+    return {"kodi": [c for c in klas["kodi"] if c["izvelams"]], "versija": klas["versija"],
+            "vienibas": ref["vienibas"] or [], "avoti": ref["avoti"]}
+
+
+def _semantics_schema_ref(package_id: str) -> Optional[str]:
+    """schemaRef of the package's semantics.generate binding (resources/mappings.yaml)."""
+    import yaml, zipfile
+    from opendms.uapf.package_inspector import find_package_file
+    path = find_package_file(package_id) if package_id else None
+    if not path:
+        return None
+    with zipfile.ZipFile(path) as z:
+        name = next((n for n in z.namelist() if n.endswith("resources/mappings.yaml")), None)
+        if not name:
+            return None
+        m = yaml.safe_load(z.read(name)) or {}
+    targets = {t.get("id"): t for t in m.get("targets") or []}
+    for b in m.get("bindings") or []:
+        caps = (targets.get(b.get("targetId")) or {}).get("capabilities") or []
+        if "capability.semantics.generate" in caps and b.get("schemaRef"):
+            return b["schemaRef"]
+    return None
+
+
+@router.post("/semantics/{doc_id}/regenerate")
+async def regenerate_semantics(doc_id: int, user=Depends(get_current_user)):
+    """Write the semantic description again (e.g. after the text could not be read):
+    read the document, redact it, describe it with the profile the process names."""
+    from opendms.semantics.service import handle_semantics_generate
+    from opendms.uapf.handlers import handle_ai_redact, handle_document_fetch
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        meta = await conn.fetchval("SELECT metadata FROM documents WHERE id = $1", doc_id)
+        pkgs = [r["package_id"] for r in await conn.fetch(
+            "SELECT DISTINCT package_id FROM uapf_sessions WHERE document_id = $1", doc_id)]
+    if meta is None:
+        raise HTTPException(404, "Document not found")
+    meta = json.loads(meta) if isinstance(meta, str) else (meta or {})
+    ref = (meta.get("semantika") or {}).get("schemaRef")
+    for p in pkgs:
+        ref = ref or _semantics_schema_ref(p)
+    if not ref:
+        raise HTTPException(409, "No process of this document describes documents (no semantics.generate binding)")
+    fetched = (await handle_document_fetch({"input": {"documentId": doc_id}}))["output"]
+    red = (await handle_ai_redact({"input": fetched}))["output"]
+    result = meta.get("uapf_result") or {}
+    sem_meta = meta.get("semantika") or {}
+    if sem_meta.get("lokals"):   # a fresh description, not an update
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE documents SET metadata = metadata - 'semantika' WHERE id = $1", doc_id)
+    out = await handle_semantics_generate({"input": {**result, **fetched, **red, "documentId": doc_id},
+                                           "schema_ref": ref, "session_id": result.get("sessionId")})
+    return out.get("output") or {}
+
+
+@router.get("/classifiers")
+async def active_classifiers(user=Depends(get_current_user)):
+    """The classifiers this DVS works with: every ProcessGit XML that an installed
+    process names in its mappings (schemaRef), read from ProcessGit as it is now.
+    A process with an active trigger makes the classifier active."""
+    import csv, io, re, yaml, zipfile
+    from lxml import etree
+    from opendms.uapf.learning import fetch_file, fetch_repo_zip, parse_klasifikators, parse_strukturvienibas
+    from opendms.uapf.package_inspector import PACKAGES_DIR
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        active = {r["package_id"] for r in await conn.fetch(
+            "SELECT DISTINCT package_id FROM process_triggers WHERE is_active = TRUE")}
+    refs: dict[str, dict] = {}
+    for path in sorted(PACKAGES_DIR.glob("*.uapf")) if PACKAGES_DIR.exists() else []:
+        try:
+            with zipfile.ZipFile(path) as z:
+                pkg = yaml.safe_load(z.read(next(n for n in z.namelist() if n.endswith("uapf.yaml")))) or {}
+                mname = next((n for n in z.namelist() if n.endswith("resources/mappings.yaml")), None)
+                m = yaml.safe_load(z.read(mname)) if mname else {}
+        except Exception:
+            continue
+        pid = pkg.get("id") or path.stem
+        for b in (m or {}).get("bindings") or []:
+            for ref in re.split(r"[,\s]+", str(b.get("schemaRef") or "")):
+                if ref.startswith("processgit:") and ref.endswith(".xml"):
+                    e = refs.setdefault(ref[len("processgit:"):], {"packages": {}, "steps": set()})
+                    e["packages"][pid] = {"id": pid, "version": pkg.get("version"), "active": pid in active}
+                    e["steps"].add((b.get("source") or {}).get("ref"))
+    s = get_settings()
+    out = []
+    for ref, use in sorted(refs.items()):
+        owner, repo, file = ref.split("/", 2)
+        item = {"ref": ref, "repo": f"{owner}/{repo}", "file": file,
+                "url": f"{s.processgit_url.rstrip('/')}/{owner}/{repo}/src/branch/main/{file}",
+                "packages": sorted(use["packages"].values(), key=lambda p: p["id"]),
+                "steps": sorted(x for x in use["steps"] if x),
+                "active": any(p["active"] for p in use["packages"].values())}
+        try:
+            data = await fetch_file(ref)
+            root = etree.fromstring(data)
+            local = etree.QName(root).localname
+            item["namespace"] = etree.QName(root).namespace
+            item["root"] = local
+            if local == "Klasifikators":
+                k = parse_klasifikators(data)
+                item.update({"kind": "klasifikators", "version": k["versija"], "codes": k["kodi"]})
+            elif local == "Strukturvienibas":
+                item.update({"kind": "strukturvienibas", "version": root.get("versija") or "",
+                             "units": parse_strukturvienibas(data), "institution": root.get("iestade")})
+            else:
+                item.update({"kind": "cits", "elements": len(list(root.iter()))})
+            zdata = await fetch_repo_zip(owner, repo)
+            with zipfile.ZipFile(io.BytesIO(zdata)) as z:
+                item["revision"] = (z.comment or b"").decode("ascii", "ignore")[:12]
+                name = next((n for n in z.namelist() if n.split("/", 1)[-1] == "kartejumi/eurovoc.csv"), None)
+                if name:
+                    item["eurovoc"] = list(csv.DictReader(z.read(name).decode("utf-8").splitlines()))
+        except Exception as e:  # show what failed, not an empty page
+            item["error"] = str(e)[:300]
+        out.append(item)
+    return {"classifiers": out}
+
+
+@router.get("/precedents")
+async def list_precedents(user=Depends(get_current_user)):
+    """Reviewer corrections the classifier learns from (newest first)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT p.id, p.package_id, p.document_id, d.registration_number, p.kind, p.excerpt,
+                      p.predicted, p.corrected, p.reason, p.reviewer, p.active, p.applied_count,
+                      p.last_applied_at, p.created_at
+                 FROM uapf_precedents p LEFT JOIN documents d ON d.id = p.document_id
+                ORDER BY p.created_at DESC LIMIT 200""")
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("predicted", "corrected"):
+            d[k] = json.loads(d[k]) if isinstance(d[k], str) else d[k]
+        for k in ("last_applied_at", "created_at"):
+            d[k] = d[k].isoformat() if d[k] else None
+        out.append(d)
+    return out
+
+
+class PrecedentActiveIn(BaseModel):
+    active: bool
+
+
+@router.post("/precedents/{pid}/active")
+async def set_precedent_active(pid: int, body: PrecedentActiveIn,
+                               user=Depends(require_role("admin", "superadmin"))):
+    """Switch a precedent off (a wrong correction must not be learned) or on again."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        n = await conn.execute("UPDATE uapf_precedents SET active = $2 WHERE id = $1", pid, body.active)
+    if n.endswith(" 0"):
+        raise HTTPException(404, "Precedent not found")
+    return {"id": pid, "active": body.active}
+
+
+@router.post("/review/{doc_id}")
+async def decide_review(doc_id: int, body: ReviewDecisionIn, user=Depends(get_current_user)):
+    """The person's decision on a process step waiting for them (BPMN userTask).
+
+    Resumes the suspended engine session; the process continues from there
+    (e.g. emits the routing event or ends as handed over for manual work).
+    Same as POST /api/tasks/{doc_id}/complete (opendms.tasks.complete).
+    """
+    from opendms.tasks import TaskError, complete
+    try:
+        res = await complete(doc_id, body.decision, user=user, comment=body.comment, changes=body.changes)
+    except TaskError as e:
+        raise HTTPException(e.status, e.message)
+    return {"sessionId": res["sessionId"], "state": res["state"], "review": res["review"]}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -748,6 +953,8 @@ async def get_package_info(package_id: str, user=Depends(get_current_user)):
                 ORDER BY id""",
             package_id,
         )
+        src_row = await conn.fetchrow(
+            "SELECT source_url FROM uapf_package_sources WHERE package_id = $1", package_id)
         all_triggers = await conn.fetch(
             """SELECT id, name, trigger_event, package_id, process_id, is_active, match_condition
                  FROM process_triggers
@@ -756,6 +963,10 @@ async def get_package_info(package_id: str, user=Depends(get_current_user)):
             package_id,
         )
 
+    # Repository page (drop /archive/<ref>.zip) for the "↗ ProcessGit" link.
+    if src_row and src_row["source_url"]:
+        info["source_url"] = (src_row["source_url"].split("/archive/")[0]
+                              .replace("/api/v1/repos/", "/"))
     info["triggers"] = {
         "active": [dict(t) for t in triggers],
         "all": [dict(t) for t in all_triggers],

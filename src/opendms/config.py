@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     # a credential this coarse must not be able to start work. Blank disables it.
     mcp_node_token: str = ""
 
+    # An agent that acts in this DVS (e.g. the Lietvedības aģents). Its token
+    # authenticates as ONE named, active DVS user, so every write it makes is
+    # recorded under that user. Deactivating the user, or blanking either value,
+    # revokes it on the next call. Approve/decide/send/archive stay unavailable.
+    mcp_agent_token: str = ""
+    mcp_agent_user: str = ""
+
+    # Lietvedības vārdnīcas in ProcessGit ("processgit:<org>/<repo>"): status names
+    # (statusi.json) and the registration number format (numurs.json). See opendms.vocab.
+    lietvediba_vardnicas: str = ""
+
     # Branding
     brand_name: str = "Dokumentu vadības aģents"
     brand_logo_url: str = ""
@@ -67,6 +78,12 @@ class Settings(BaseSettings):
     uapf_engine_auth_token: Optional[str] = None
     opendms_host_did: str = "did:web:opendms.local"
     opendms_host_base_url: str = "http://api:8002"
+    # Read-only ProcessGit access token, sent when syncing UAPF packages from ProcessGit
+    processgit_token: Optional[str] = None
+    # ProcessGit this instance takes its processes from (the sync dialog default).
+    processgit_url: str = "https://processgit.org"
+    # Extra CA certificate for a ProcessGit with a private CA (reference data reads).
+    processgit_ca_file: Optional[str] = None
 
     model_config = {"env_prefix": "OPENDMS_", "env_file": ".env"}
 

@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LNA EAD3 profils — EAD3 ("undeprecated") apakškopa, ko LNA izmanto iestāžu
+  elektronisko dokumentu aprakstā OPEX pakotnēs (līmenis archdesc/@level="item").
+  Avots: LNA "OPEX/EAD elementu apraksts" un pakotnes paraugs. Pilnā EAD3 shēma: https://www.loc.gov/ead/
+  Shēma pārbauda struktūru; vērtību formātus (datumi, unitid, obligātums) pārbauda
+  riki/validet_pakotni.py pēc profili/lna-ead3-lauki.yaml.
+  Precizēt pret MK 282 4. pielikuma XSD, kad tā būs pieejama.
+  Versija 0.1.0 · KISC dokumentu arhivēšanas standarts
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ead="http://ead3.archivists.org/schema/undeprecated/"
+           targetNamespace="http://ead3.archivists.org/schema/undeprecated/"
+           elementFormDefault="qualified" version="0.1.0">
+
+  <xs:element name="ead">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="control" type="ead:controlType"/>
+        <xs:element name="archdesc" type="ead:archdescType"/>
+      </xs:sequence>
+      <xs:attribute name="audience" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- control -->
+  <xs:complexType name="controlType">
+    <xs:sequence>
+      <xs:element name="recordid">
+        <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+          <xs:attribute name="instanceurl" type="xs:string"/>
+        </xs:extension></xs:simpleContent></xs:complexType>
+      </xs:element>
+      <xs:element name="filedesc">
+        <xs:complexType><xs:sequence>
+          <xs:element name="titlestmt">
+            <xs:complexType><xs:sequence>
+              <xs:element name="titleproper" type="xs:string"/>
+              <xs:element name="author" type="xs:string" minOccurs="0"/>
+            </xs:sequence></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="maintenancestatus">
+        <xs:complexType><xs:attribute name="value" use="required">
+          <xs:simpleType><xs:restriction base="xs:string">
+            <xs:enumeration value="new"/><xs:enumeration value="revised"/><xs:enumeration value="deleted"/>
+            <xs:enumeration value="deletedsplit"/><xs:enumeration value="deletedmerged"/>
+            <xs:enumeration value="deletedreplaced"/><xs:enumeration value="cancelled"/><xs:enumeration value="derived"/>
+          </xs:restriction></xs:simpleType>
+        </xs:attribute></xs:complexType>
+      </xs:element>
+      <xs:element name="maintenanceagency">
+        <xs:complexType><xs:sequence>
+          <xs:element name="agencycode" type="xs:string"/>
+          <xs:element name="agencyname" type="xs:string"/>
+        </xs:sequence><xs:attribute name="countrycode" type="xs:string"/></xs:complexType>
+      </xs:element>
+      <xs:element name="languagedeclaration">
+        <xs:complexType><xs:sequence>
+          <xs:element name="language" type="ead:langType"/>
+          <xs:element name="script">
+            <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+              <xs:attribute name="scriptcode" type="xs:string" use="required"/>
+            </xs:extension></xs:simpleContent></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="localcontrol" minOccurs="0">
+        <xs:complexType><xs:sequence>
+          <xs:element name="datesingle">
+            <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+              <xs:attribute name="standarddate" type="xs:string"/>
+            </xs:extension></xs:simpleContent></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="maintenancehistory">
+        <xs:complexType><xs:sequence>
+          <xs:element name="maintenanceevent" maxOccurs="unbounded">
+            <xs:complexType><xs:sequence>
+              <xs:element name="eventtype" type="ead:valueAttr"/>
+              <xs:element name="eventdatetime">
+                <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+                  <xs:attribute name="standarddatetime" type="xs:string"/>
+                </xs:extension></xs:simpleContent></xs:complexType>
+              </xs:element>
+              <xs:element name="agenttype" type="ead:valueAttr"/>
+              <xs:element name="agent">
+                <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+                  <xs:attribute name="audience" type="xs:string"/>
+                </xs:extension></xs:simpleContent></xs:complexType>
+              </xs:element>
+            </xs:sequence></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:anyAttribute processContents="skip"/>
+  </xs:complexType>
+
+  <!-- archdesc -->
+  <xs:complexType name="archdescType">
+    <xs:sequence>
+      <xs:element name="did" type="ead:didType"/>
+      <xs:element name="odd" type="ead:oddType" minOccurs="0"/>
+      <xs:element name="phystech" type="ead:blockType" minOccurs="0"/>
+      <xs:element name="accessrestrict" type="ead:blockType" minOccurs="0"/>
+      <xs:element name="userestrict" type="ead:blockType" minOccurs="0"/>
+      <xs:element name="scopecontent" type="ead:blockType" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="level" use="required">
+      <xs:simpleType><xs:restriction base="xs:string"><xs:enumeration value="item"/></xs:restriction></xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <xs:complexType name="didType">
+    <xs:sequence>
+      <xs:element name="repository">
+        <xs:complexType><xs:sequence>
+          <xs:element name="name">
+            <xs:complexType><xs:sequence>
+              <xs:element name="part" type="xs:string" maxOccurs="unbounded"/>
+            </xs:sequence><xs:attribute name="source" type="xs:string"/></xs:complexType>
+          </xs:element>
+          <xs:element name="address" minOccurs="0">
+            <xs:complexType><xs:sequence>
+              <xs:element name="addressline" type="xs:string" maxOccurs="unbounded"/>
+            </xs:sequence></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="unittitle" type="xs:string"/>
+      <xs:element name="unitid" type="xs:string"/>
+      <xs:element name="unitdate" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+          <xs:attribute name="calendar" type="xs:string"/>
+          <xs:attribute name="era" type="xs:string"/>
+          <xs:attribute name="normal" type="xs:string"/>
+          <xs:attribute name="label" type="xs:string"/>
+        </xs:extension></xs:simpleContent></xs:complexType>
+      </xs:element>
+      <xs:element name="origination" minOccurs="0">
+        <xs:complexType><xs:sequence>
+          <xs:element name="persname" minOccurs="0" maxOccurs="unbounded">
+            <xs:complexType><xs:sequence>
+              <xs:element name="part" type="xs:string" maxOccurs="unbounded"/>
+            </xs:sequence>
+            <xs:attribute name="relator" use="required">
+              <xs:simpleType><xs:restriction base="xs:string">
+                <xs:enumeration value="creator"/><xs:enumeration value="author"/><xs:enumeration value="signer"/>
+              </xs:restriction></xs:simpleType>
+            </xs:attribute></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="physdescset" minOccurs="0">
+        <xs:complexType><xs:sequence>
+          <xs:element name="physdescstructured" maxOccurs="unbounded">
+            <xs:complexType><xs:sequence>
+              <xs:element name="quantity" type="xs:string"/>
+              <xs:element name="unittype" type="xs:string"/>
+              <xs:element name="descriptivenote" type="xs:string" minOccurs="0"/>
+            </xs:sequence>
+            <xs:attribute name="physdescstructuredtype" type="xs:string"/>
+            <xs:attribute name="coverage" type="xs:string"/></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="langmaterial" minOccurs="0">
+        <xs:complexType><xs:sequence>
+          <xs:element name="language" type="ead:langType" maxOccurs="unbounded"/>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="abstract" minOccurs="0">
+        <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+          <xs:attribute name="label" type="xs:string"/>
+        </xs:extension></xs:simpleContent></xs:complexType>
+      </xs:element>
+      <xs:element name="didnote" type="xs:string" minOccurs="0"/>
+      <xs:element name="daoset" minOccurs="0">
+        <xs:complexType><xs:sequence>
+          <xs:element name="dao" maxOccurs="unbounded">
+            <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+              <xs:attribute name="daotype" type="xs:string" use="required"/>
+              <xs:attribute name="identifier" type="xs:string"/>
+            </xs:extension></xs:simpleContent></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="oddType">
+    <xs:choice maxOccurs="unbounded">
+      <xs:element name="list">
+        <xs:complexType><xs:sequence>
+          <xs:element name="head" type="xs:string"/>
+          <xs:element name="item" minOccurs="0" maxOccurs="unbounded">
+            <xs:complexType><xs:simpleContent><xs:extension base="xs:string">
+              <xs:attribute name="id" type="xs:string"/>
+            </xs:extension></xs:simpleContent></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType>
+      </xs:element>
+      <xs:element name="table">
+        <xs:complexType><xs:sequence>
+          <xs:element name="head" type="xs:string"/>
+          <xs:element name="tgroup">
+            <xs:complexType><xs:sequence>
+              <xs:element name="thead"><xs:complexType><xs:sequence>
+                <xs:element name="row" type="ead:rowType"/>
+              </xs:sequence></xs:complexType></xs:element>
+              <xs:element name="tbody"><xs:complexType><xs:sequence>
+                <xs:element name="row" type="ead:rowType" minOccurs="0" maxOccurs="unbounded"/>
+              </xs:sequence></xs:complexType></xs:element>
+            </xs:sequence><xs:attribute name="cols" type="xs:positiveInteger" use="required"/></xs:complexType>
+          </xs:element>
+        </xs:sequence>
+        <xs:attribute name="id" use="required">
+          <xs:simpleType><xs:restriction base="xs:string">
+            <xs:enumeration value="t1"/><xs:enumeration value="t2"/><xs:enumeration value="t3"/>
+          </xs:restriction></xs:simpleType>
+        </xs:attribute></xs:complexType>
+      </xs:element>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="rowType">
+    <xs:sequence><xs:element name="entry" type="xs:string" maxOccurs="unbounded"/></xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="blockType">
+    <xs:sequence>
+      <xs:element name="head" type="xs:string" minOccurs="0"/>
+      <xs:element name="p" type="xs:string" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="langType">
+    <xs:simpleContent><xs:extension base="xs:string">
+      <xs:attribute name="langcode" type="xs:string" use="required"/>
+    </xs:extension></xs:simpleContent>
+  </xs:complexType>
+  <xs:complexType name="valueAttr">
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+</xs:schema>

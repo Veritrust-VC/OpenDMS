@@ -74,6 +74,7 @@ function summarize(pkg: LoadedPackage, mode: RegistryMode): PackageSummary {
     requiredClaims: manifest.policies?.requiredClaims || pkg.policies?.requiredClaims,
     guardrails: pkg.guardrails,  // G7
     algorithmCards: pkg.algorithmCards,  // v2.4.0
+    mappings: pkg.mappings,
     source: { mode, location: pkg.sourcePath },
   };
 }
@@ -141,6 +142,8 @@ export class DirectoryRegistry implements IUapfRegistry {
     sourceUrl: string;
     packageId?: string;
     filename?: string;
+    /** ProcessGit/Gitea access token; sent as "Authorization: token <value>". */
+    authToken?: string;
   }): Promise<{ filename: string; packageId: string; version?: string }> {
     if (!opts.sourceUrl) {
       throw new Error("installFromUrl: sourceUrl is required");
@@ -151,7 +154,10 @@ export class DirectoryRegistry implements IUapfRegistry {
 
     // Download the bytes
     logger.info(`installFromUrl: fetching ${opts.sourceUrl}`);
-    const res = await fetch(opts.sourceUrl);
+    const res = await fetch(
+      opts.sourceUrl,
+      opts.authToken ? { headers: { Authorization: `token ${opts.authToken}` } } : undefined
+    );
     if (!res.ok) {
       throw new Error(`installFromUrl: HTTP ${res.status} fetching ${opts.sourceUrl}`);
     }

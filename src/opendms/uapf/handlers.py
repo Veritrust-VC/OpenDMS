@@ -13,6 +13,8 @@ and return a dict that will be merged into the UAPF session variables.
 """
 
 import json
+import re
+from datetime import datetime, timezone
 import logging
 import os
 import subprocess
@@ -29,6 +31,21 @@ logger = logging.getLogger(__name__)
 # document.fetch@1
 # ─────────────────────────────────────────────────────────────
 
+async def _fetch_template(inp: dict) -> dict:
+    from opendms.uapf.templates import latest
+    tid = inp.get("templateId")
+    if not tid:
+        raise ValueError("template fetch needs templateId (from the SelectTemplate decision)")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        t = await latest(conn, tid)
+    if not t:
+        raise LookupError(f"Template not in the OpenDMS template library: {tid}")
+    return {"output": {"templateId": t["template_id"], "templateVersion": t["version"],
+                       "templateTitle": t["title"], "templateBody": t["body"],
+                       "templateSynthetic": t["synthetic"]}}
+
+
 async def handle_document_fetch(ctx: dict) -> dict:
     """
     Fetch a document's content + metadata.
@@ -39,6 +56,11 @@ async def handle_document_fetch(ctx: dict) -> dict:
     inp = ctx.get("input") or {}
     doc_did = inp.get("documentDid")
     doc_id = inp.get("documentId")
+
+    # The package bound this step to the template library: fetch the current
+    # version of the template the DMN picked, not the document.
+    if str((ctx.get("target") or {}).get("id", "")).endswith("template-library"):
+        return await _fetch_template(inp)
 
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -66,6 +88,16 @@ async def handle_document_fetch(ctx: dict) -> dict:
 
     doc = dict(row)
     content_text = ""
+
+    # Files uploaded as attachments live in document_files (documents.storage_key is
+    # only set by the older single-file upload). Read the primary attachment then.
+    if not doc.get("storage_key"):
+        async with pool.acquire() as conn:
+            f = await conn.fetchrow(
+                """SELECT storage_key, file_name, mime_type, file_size FROM document_files
+                    WHERE document_id = $1 ORDER BY is_primary DESC, id LIMIT 1""", doc["id"])
+        if f:
+            doc.update({k: f[k] for k in ("storage_key", "file_name", "mime_type", "file_size")})
 
     # If a file is attached, read and extract text
     if doc.get("storage_key"):
@@ -202,7 +234,8 @@ async def handle_ai_redact(ctx: dict) -> dict:
     # Enforce guardrails: text length cap.
     MAX_CHARS = 15000
     if len(content) > MAX_CHARS:
-        content = content[:MAX_CHARS]
+        from opendms.text_extract import fit
+        content = fit(content, MAX_CHARS)
 
     user_msg = (
         f"Categories to redact: {inp.get('categories', ['pii_name','pii_id_number','pii_address','pii_financial','pii_health'])}\n\n"
@@ -230,7 +263,26 @@ async def handle_ai_redact(ctx: dict) -> dict:
             }
         }
 
+    # The model can miss identifiers (e.g. "+371 29123456" passed through).
+    # Deterministic shapes are always masked after it, whatever it returned.
+    red = result.get("redactedContent")
+    if isinstance(red, str):
+        result["redactedContent"] = scrub_identifiers(red)
     return {"output": {**result, **_pii}}
+
+
+_SCRUB = [
+    (re.compile(r"\b[0-3]\d[01]\d\d{2}-?[0-2]\d{4}\b"), "[PERSONAS_KODS]"),
+    (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "[EMAIL_REDACTED]"),
+    (re.compile(r"\b[A-Z]{2}\d{2}[A-Z]{4}[A-Z0-9]{8,26}\b"), "[BANKAS_KONTS]"),
+    (re.compile(r"(?:\+371|00371)[\s-]?\d{8}\b|\b[2-6]\d{7}\b"), "[TALRUNIS]"),
+]
+
+
+def scrub_identifiers(text: str) -> str:
+    for rx, repl in _SCRUB:
+        text = rx.sub(repl, text)
+    return text
 
 
 # ─────────────────────────────────────────────────────────────
@@ -256,6 +308,14 @@ Respond ONLY with JSON in this exact shape, all booleans required:
   "vulnerablePerson": <bool>,
   "urgency": <bool>,
   "ongoingHarm": <bool>,
+  "mentionsChild": <bool>,
+  "discriminationGround": <bool>,
+  "socialRights": <bool>,
+  "civilPolitical": <bool>,
+  "publicAuthorityConduct": <bool>,
+  "respondentType": "iestade|privatpersona|tiesa|nav-zinams",
+  "courtPending": <bool>,
+  "competentAuthorityKnown": <bool>,
   "languageDetected": "lv|ru|en|..."
 }
 
@@ -272,8 +332,85 @@ Definitions:
   - vulnerablePerson: subject is a minor, elderly, disabled, prisoner, or otherwise dependent
   - urgency: text explicitly states urgency or time-sensitivity
   - ongoingHarm: harm is happening now, not historical
+  - mentionsChild: same as mentionsChildren
+  - discriminationGround: a protected ground (sex, race, disability, age, religion,
+    orientation ...) is named as the reason for unequal treatment
+  - socialRights: social, economic or cultural rights (benefits, housing, health care,
+    education, pensions, work)
+  - civilPolitical: civil and political rights (fair trial, privacy, expression,
+    assembly, liberty, property)
+  - publicAuthorityConduct: the complaint is about how a state or municipal body acted
+    or failed to act
+  - respondentType: who the complaint is against — "iestade" (state or municipal body),
+    "privatpersona" (private person or company), "tiesa" (a court or a court ruling),
+    "nav-zinams" (cannot tell)
+  - courtPending: the same matter is being heard in court now
+  - competentAuthorityKnown: another body clearly competent for the matter is named or obvious
 
 No markdown, no preamble, no commentary. Booleans must be true/false (not strings)."""
+
+
+INCOMING_FACETS_PROMPT = """You read a document received by {org} (a Latvian organisation;
+the text is already PII-redacted) and answer a few yes/no questions about it.
+
+Respond ONLY with JSON:
+{
+  "prasaAtbildi": <bool>,            // the sender asks for an answer, decision or action
+  "irZinojums": <bool>,              // it is only for information (notice, report, FYI)
+  "irTermins": <bool>,               // the text sets or mentions a deadline for the organisation
+  "terminsDokumenta": <bool>,        // the deadline is given in the document itself
+  "iesniegumsNoFiziskasPersonas": <bool>, // the sender is a private individual (iesniegums)
+  "kopsavilkums": "<one sentence in Latvian>"
+}
+No markdown, no commentary."""
+
+INCOMING_BOOL_KEYS = ("prasaAtbildi", "irZinojums", "irTermins", "terminsDokumenta",
+                      "iesniegumsNoFiziskasPersonas")
+
+
+def _incoming_facets_by_keywords(text: str) -> dict:
+    """Deterministic fallback when the model is unavailable."""
+    t = (text or "").lower()
+    no_answer = any(k in t for k in ("atbilde nav nepieciešama", "atbilde nav vajadzīga", "informācijai", "zināšanai"))
+    asks = (not no_answer) and any(k in t for k in ("lūdzam", "lūdzu", "sniegt atbildi", "izvērtēšanai", "izskatīt"))
+    deadline = any(k in t for k in ("līdz ", "termiņ"))
+    return {
+        "prasaAtbildi": asks,
+        "irZinojums": no_answer or "paziņojum" in t,
+        "irTermins": deadline,
+        "terminsDokumenta": deadline,
+        "iesniegumsNoFiziskasPersonas": "iesniegum" in t and "iestāde" not in t,
+        "kopsavilkums": "",
+        "_faktiAvots": "atslēgvārdi (valodas modelis nav pieejams)",
+    }
+
+
+async def _incoming_document_facets(text: str) -> dict:
+    if not text:
+        out = _incoming_facets_by_keywords("")
+        out["_warning"] = "no text to extract from"
+        return out
+    from opendms.org_context import org_label
+    result = await _complete_json(INCOMING_FACETS_PROMPT.replace("{org}", await org_label()),
+                                  f"--- DOKUMENTS ---\n{text}\n--- BEIGAS ---")
+    if not result:
+        return _incoming_facets_by_keywords(text)
+    out = {}
+    for k in INCOMING_BOOL_KEYS:
+        v = result.get(k)
+        if isinstance(v, str):
+            v = v.lower() in ("true", "yes", "1", "jā")
+        out[k] = bool(v)
+    out["kopsavilkums"] = str(result.get("kopsavilkums") or "")[:400]
+    out["_faktiAvots"] = "valodas modelis"
+    return out
+
+
+P1_FALLBACK = {
+    "mentionsChild": False, "discriminationGround": False, "socialRights": False,
+    "civilPolitical": False, "publicAuthorityConduct": False,
+    "respondentType": "nav-zinams", "courtPending": False, "competentAuthorityKnown": False,
+}
 
 
 async def handle_ai_extract(ctx: dict) -> dict:
@@ -296,7 +433,8 @@ async def handle_ai_extract(ctx: dict) -> dict:
 
     MAX_CHARS = 15000
     if len(text) > MAX_CHARS:
-        text = text[:MAX_CHARS]
+        from opendms.text_extract import fit
+        text = fit(text, MAX_CHARS)
 
     # ---- VDVC semantic-metadata extraction (selected by uapf:schemaRef) ----
     if "semantic-summary" in schema_ref or "vdvc" in schema_ref.lower():
@@ -327,6 +465,10 @@ async def handle_ai_extract(ctx: dict) -> dict:
             "detectedLanguage": _ss.get("detectedLanguage") or "und",
         }}
 
+    # ---- Incoming-document facets for the DVS flows (VDVC/RS sanemto) ----
+    if "ienakosa-dokumenta-pazimes" in schema_ref:
+        return {"output": await _incoming_document_facets(text)}
+
     # ---- Tiesibsargs triage facets (default contract) ----
     if not text:
         return {
@@ -336,6 +478,7 @@ async def handle_ai_extract(ctx: dict) -> dict:
                 "mentionsHealth": False, "mentionsSocialServices": False,
                 "mentionsPrivacy": False, "mentionsPublicAdministration": False,
                 "vulnerablePerson": False, "urgency": False, "ongoingHarm": False,
+                **P1_FALLBACK,
                 "languageDetected": "und",
                 "_warning": "no text to extract from",
             }
@@ -354,6 +497,7 @@ async def handle_ai_extract(ctx: dict) -> dict:
                 "mentionsHealth": False, "mentionsSocialServices": False,
                 "mentionsPrivacy": False, "mentionsPublicAdministration": False,
                 "vulnerablePerson": False, "urgency": False, "ongoingHarm": False,
+                **P1_FALLBACK,
                 "languageDetected": "und",
                 "_warning": "AI extraction unavailable; conservative defaults applied",
             }
@@ -372,6 +516,25 @@ async def handle_ai_extract(ctx: dict) -> dict:
         if isinstance(v, str):
             v = v.lower() in ("true", "yes", "1")
         coerced[k] = bool(v)
+    # P1 facets (lv.tiesibsargs.iesnieguma-virzisana) — defaulted from the
+    # triage facets when the model leaves them out.
+    p1_defaults = {
+        "mentionsChild": coerced["mentionsChildren"],
+        "discriminationGround": coerced["mentionsDiscrimination"],
+        "socialRights": coerced["mentionsSocialServices"] or coerced["mentionsHealth"],
+        "civilPolitical": coerced["mentionsPrivacy"] or coerced["mentionsPolice"] or coerced["mentionsPrisons"],
+        "publicAuthorityConduct": coerced["mentionsPublicAdministration"],
+        "courtPending": False,
+        "competentAuthorityKnown": False,
+    }
+    for k, dflt in p1_defaults.items():
+        v = result.get(k)
+        if isinstance(v, str):
+            v = v.lower() in ("true", "yes", "1")
+        coerced[k] = bool(v) if v is not None else dflt
+    rt = str(result.get("respondentType") or "").strip().lower()
+    coerced["respondentType"] = rt if rt in ("iestade", "privatpersona", "tiesa", "nav-zinams") else (
+        "iestade" if coerced["publicAuthorityConduct"] else "nav-zinams")
     coerced["languageDetected"] = result.get("languageDetected") or "und"
     return {"output": coerced}
 
@@ -379,6 +542,32 @@ async def handle_ai_extract(ctx: dict) -> dict:
 # ─────────────────────────────────────────────────────────────
 # data.write@1
 # ─────────────────────────────────────────────────────────────
+
+# Decision outputs of the lab process packages, recorded as they come.
+PROCESS_RESULT_KEYS = (
+    # lv.tiesibsargs.iesnieguma-virzisana (tēmu klasifikators + organizācijas reģistrs)
+    "joma", "kategorija", "kategorijasNosaukums", "vieniba",
+    "kods", "kodaNosaukums", "klasifikacijasAvots", "klasifikacijasPamatojums",
+    "piemerotsPrecedents", "klasifikatorsVersija",
+    # learning from corrections
+    "labots", "precedents", "labojumaVeids", "ieprieksejais",
+    # semantic description
+    "semantikaDeriga", "semantikaVersija", "centralaisSlanis", "centralaisIemesls",
+    "topic", "confidence", "topicConfidence", "jurisdiction", "reason", "priority",
+    "responseDays", "slaHours", "outcome", "department", "role", "reviewerRole",
+    # VDVC / RS incoming flows
+    "klasifikacijasIndekss", "klasifikacijasNosaukums", "strukturvieniba", "loma",
+    "plusma", "termins", "glabasanasTermins",
+    # P2 response draft
+    "templateId", "templateVersion", "missingElements",
+    # outgoing documents (RS UC-007): approval route and status
+    "saskanotajs", "parakstitajs", "statuss", "dokumentaVeids",
+    # manager's resolution (rezolūcija)
+    "izpilditajs", "izpilditajaId", "rezolucija",
+    # human step
+    "decision", "comment",
+)
+
 
 async def handle_data_write(ctx: dict) -> dict:
     """
@@ -407,6 +596,17 @@ async def handle_data_write(ctx: dict) -> dict:
         ) if inp.get(k) is not None
     }
 
+    # Whatever the package's DMN tables decided, as plain fields — so a process
+    # changed in ProcessGit shows its new outputs without host changes.
+    decision_fields = {
+        k: inp.get(k) for k in PROCESS_RESULT_KEYS if inp.get(k) is not None
+    }
+    sla_hours = inp.get("slaHours")
+    if sla_hours is None and inp.get("responseDays") is not None:
+        sla_hours = int(float(inp.get("responseDays")) * 24)
+    reviewer_role = inp.get("reviewerRole") or inp.get("role") or inp.get("loma")
+    topic_conf = inp.get("topicConfidence") if inp.get("topicConfidence") is not None else inp.get("confidence")
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         # Pre-create uapf_sessions row to satisfy FK. The run-now handler in
@@ -425,18 +625,32 @@ async def handle_data_write(ctx: dict) -> dict:
                 session_id, int(document_id),
             )
 
-        row = await conn.fetchrow(
-            """INSERT INTO complaint_classifications (
-                   document_id, session_id, topic, topic_confidence,
-                   priority, sla_hours, department, reviewer_role, raw_facets
-               ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-               RETURNING id, created_at""",
-            int(document_id), session_id,
-            inp.get("topic"), float(inp.get("topicConfidence") or 0.0),
-            inp.get("priority"), int(inp.get("slaHours") or 0),
-            inp.get("department"), inp.get("reviewerRole"),
-            json.dumps(raw_facets),
-        )
+        row = None
+        if (inp.get("topic") or inp.get("joma")) and inp.get("priority"):
+            row = await conn.fetchrow(
+              """INSERT INTO complaint_classifications (
+                     document_id, session_id, topic, topic_confidence,
+                     priority, sla_hours, department, reviewer_role, raw_facets
+                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                 RETURNING id, created_at""",
+              int(document_id), session_id,
+              inp.get("topic") or inp.get("joma"), float(topic_conf or 0.0),
+              inp.get("priority"), int(sla_hours or 0),
+              inp.get("department"), reviewer_role,
+              json.dumps(raw_facets),
+            )
+
+        if inp.get("draftText"):
+            await conn.execute(
+                "UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+                json.dumps({"uapf_draft": {
+                    "templateId": inp.get("templateId"), "templateVersion": inp.get("templateVersion"),
+                    "templateSynthetic": inp.get("templateSynthetic"),
+                    "text": inp.get("draftText"), "source": inp.get("draftSource"),
+                    "elementsChecked": inp.get("elementsChecked"),
+                    "missingElements": inp.get("missingElements"),
+                    "sessionId": session_id,
+                }}), int(document_id))
 
         # Mirror to document metadata for visibility in OpenDMS UI
         await conn.execute(
@@ -445,21 +659,27 @@ async def handle_data_write(ctx: dict) -> dict:
             json.dumps({
                 "uapf_classification": {
                     "topic": inp.get("topic"),
-                    "topicConfidence": inp.get("topicConfidence"),
+                    "topicConfidence": topic_conf,
                     "priority": inp.get("priority"),
-                    "slaHours": inp.get("slaHours"),
+                    "slaHours": sla_hours,
                     "department": inp.get("department"),
-                    "reviewerRole": inp.get("reviewerRole"),
+                    "reviewerRole": reviewer_role,
                     "sessionId": session_id,
-                }
+                },
+                "uapf_result": {
+                    **decision_fields,
+                    "sessionId": session_id,
+                    "stepId": ctx.get("step_id"),
+                    "recordedAt": datetime.now(timezone.utc).isoformat(),
+                },
             }),
             int(document_id),
         )
 
     return {
         "output": {
-            "recordId": row["id"],
-            "persistedAt": row["created_at"].isoformat(),
+            "recordId": row["id"] if row else None,
+            "persistedAt": (row["created_at"] if row else datetime.now(timezone.utc)).isoformat(),
         }
     }
 
@@ -479,7 +699,8 @@ async def handle_event_emit(ctx: dict) -> dict:
     """
     inp = ctx.get("input") or {}
     document_id = inp.get("documentId")
-    event_type = inp.get("eventType") or "iesniegums.classified"
+    step = ctx.get("step_id")
+    event_type = inp.get("eventType") or (f"uapf.{step}" if step else "iesniegums.classified")
     session_id = ctx.get("session_id")
 
     if not document_id:
@@ -493,6 +714,7 @@ async def handle_event_emit(ctx: dict) -> dict:
         "slaHours": inp.get("slaHours"),
         "department": inp.get("department"),
         "reviewerRole": inp.get("reviewerRole"),
+        **{k: inp.get(k) for k in PROCESS_RESULT_KEYS if inp.get(k) is not None},
         "sessionId": session_id,
     }
 
@@ -505,25 +727,549 @@ async def handle_event_emit(ctx: dict) -> dict:
             int(document_id), event_type, json.dumps(payload),
         )
 
+    # The routing decision is a lifecycle fact for the central register: the
+    # document is now with a department (a unit, never a named person).
+    assigned = None
+    if step == "EmitRouted" and payload.get("department"):
+        assigned = await _register_assignment(int(document_id), payload, session_id)
+
     return {
         "output": {
             "eventId": row["id"],
             "eventType": event_type,
             "persistedAt": row["created_at"].isoformat(),
+            **({"registraNotikums": assigned} if assigned is not None else {}),
         }
     }
+
+
+async def _register_assignment(doc_id: int, payload: dict, session_id) -> bool:
+    """DocumentAssigned in the central register: department name and unit id only."""
+    from opendms import sdk_client
+    from opendms.config import get_settings
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        did = await conn.fetchval("SELECT doc_did FROM documents WHERE id = $1", doc_id)
+        done = await conn.fetchval(
+            """SELECT 1 FROM document_events WHERE document_id = $1 AND event_type = 'DocumentAssigned'
+               AND vc_submitted AND details->>'department' = $2""", doc_id, payload.get("department"))
+    if not did or done or not get_settings().sdk_enabled:
+        return False
+    res = await sdk_client.assign_document(did, assignee=payload.get("vieniba") or payload["department"],
+                                           department=payload["department"], trace_id=session_id)
+    ok = bool(res) and res.get("_meta", {}).get("status_code", 200) in (200, 201)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details) VALUES ($1,'DocumentAssigned',NULL,$2,$3)",
+            doc_id, ok, json.dumps({"department": payload["department"], "vieniba": payload.get("vieniba"),
+                                    "registrs": ok}, ensure_ascii=False))
+    return ok
+
+
+# ─────────────────────────────────────────────────────────────
+# Dokumentu metadatu standarts v2.0 — identifier, storage, package
+#
+# The rules (document type, nomenclature case, retention, access) come from
+# the process package — typically its DMN tables — as session variables. The
+# host only applies the standard: identifier format, package layout, schemas.
+# ─────────────────────────────────────────────────────────────
+
+def _document_id(ctx: dict) -> int:
+    inp = ctx.get("input") or {}
+    doc_id = inp.get("documentId")
+    if doc_id is None:
+        raise ValueError("documentId is required (it is in the session input of every trigger)")
+    return int(doc_id)
+
+
+async def handle_identifier_assign(ctx: dict) -> dict:
+    """
+    identifier.assign@1 — give the document its LV-DOK identifier and each
+    file its LV-DATNE identifier; record DokumentsRegistrets. Idempotent.
+
+    Input:  { documentId }
+    Output: { dokumentaId, datnuId[], jaunsIdentifikators, orgKods }
+    """
+    from opendms.standard.service import assign_identifiers
+    return {"output": await assign_identifiers(_document_id(ctx))}
+
+
+async def handle_storage_prepare(ctx: dict) -> dict:
+    """
+    storage.prepare@1 — create the package folder in document storage and
+    copy the document's files into its datnes/ folder.
+
+    Input:  { documentId }
+    Output: { pakotnesMape, pakotnesAtslega, datnes[] }
+    """
+    from opendms.standard.service import prepare_storage
+    return {"output": await prepare_storage(_document_id(ctx))}
+
+
+async def handle_package_build(ctx: dict) -> dict:
+    """
+    package.build@1 — write metadati.xml, izsekosana.xml and SHA256SUMS,
+    validate the package against the standard's schemas and file checksums.
+    Fails the step if the package does not conform.
+
+    Input:  { documentId, plus rule variables from the process:
+              dokumentaVeidaKods, dokumentaVeidaNosaukums, lietasIndekss,
+              lietasNosaukums, glabasanasTerminsGadi, glabasanasPastavigi,
+              glabasanasTriggeris, iznicinasanasDarbiba, informacijasStatuss,
+              saturPersonasDatus, piekluvesPamatojums, nomenklaturasShemasId }
+    Output: { pakotnesMape, dokumentaId, datnes[], derigs, problemas[] }
+    """
+    from opendms.standard.service import build_package, rules_from_variables
+    inp = ctx.get("input") or {}
+    doc_id = _document_id(ctx)
+    out = await build_package(doc_id, rules_from_variables(inp))
+    try:   # arhivēšana P2: ieteiktā lieta, minimums, arhīva ID — nekad nebloķē procesu
+        from opendms.archive.registration import prepare
+        from opendms.org_context import get_default_org_required
+        r = await prepare(dict(await get_default_org_required()), doc_id, "uapf:package.build")
+        out = {**out, "arhivesanai": {"gatavs": r["gatavs"], "trukumi": r["trukumi"], "arhivaId": r["arhivaId"]}}
+        if r["gatavs"]:   # arhīva ID ir — pakotnē ieliek ark:DokumentaArhivaMetadati
+            from opendms.standard.service import refresh_package
+            await refresh_package(doc_id)
+    except Exception as e:
+        out = {**out, "arhivesanai": {"kluda": str(e)[:200]}}
+    return {"output": out}
+
+
+async def handle_document_list(ctx: dict) -> dict:
+    """
+    Recent documents of this organisation, newest first. Read-only.
+
+    Input:  { limit?: int (1-50, default 10), status?: str, query?: str (title contains),
+              sinceDays?: int }
+    Output: { total, returned, documents: [{ documentId, registrationNumber, title, status,
+              createdAt, documentUid, sender, files }] }
+    """
+    from opendms.org_context import get_default_org
+
+    inp = ctx.get("input") or {}
+    try:
+        limit = max(1, min(50, int(inp.get("limit") or 10)))
+    except (TypeError, ValueError):
+        limit = 10
+    org = await get_default_org()
+    where, args = [], []
+    if org:
+        args.append(org["id"]); where.append(f"d.org_id = ${len(args)}")
+    if inp.get("status"):
+        args.append(str(inp["status"])); where.append(f"d.status = ${len(args)}")
+    if inp.get("query"):
+        args.append(f"%{inp['query']}%"); where.append(f"d.title ILIKE ${len(args)}")
+    if inp.get("sinceDays"):
+        args.append(int(inp["sinceDays"])); where.append(f"d.created_at >= NOW() - make_interval(days => ${len(args)})")
+    cond = ("WHERE " + " AND ".join(where)) if where else ""
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(f"SELECT COUNT(*) FROM documents d {cond}", *args)
+        rows = await conn.fetch(
+            f"""SELECT d.id, d.registration_number, d.title, d.status, d.created_at, d.doc_uid,
+                       d.metadata->'sender'->>'name' AS sender,
+                       (SELECT COUNT(*) FROM document_files f WHERE f.document_id = d.id) AS files
+                  FROM documents d {cond}
+                 ORDER BY d.created_at DESC, d.id DESC
+                 LIMIT {limit}""", *args)
+    docs = [{
+        "documentId": r["id"], "registrationNumber": r["registration_number"], "title": r["title"],
+        "status": r["status"], "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
+        "documentUid": r["doc_uid"], "sender": r["sender"], "files": r["files"],
+    } for r in rows]
+    return {"output": {"total": total, "returned": len(docs), "documents": docs}}
+
+
+# ─────────────────────────────────────────────────────────────
+# ai.draft@1 / ai.verify@1 — response draft from a template (P2)
+# ─────────────────────────────────────────────────────────────
+
+class _Blank(dict):
+    def __missing__(self, key):
+        return "[…]"
+
+
+ELEMENT_MARKERS = {
+    "rekviziti": "Rekvizīti",
+    "normativa-atsauce": "Normatīvā atsauce",
+    "parsudzibas-kartiba": "Pārsūdzības kārtība",
+    "kompetenta-iestade": "Kompetentā iestāde",
+}
+
+# Tiesībsarga tēmu klasifikatora jomas (tiesibsargs/temu-klasifikators)
+JOMAS_LV = {
+    "BT": "Bērnu tiesības", "PPT": "Pilsoniskās un politiskās tiesības",
+    "SEK": "Sociālās, ekonomiskās un kultūras tiesības",
+    "TV": "Tiesiskā vienlīdzība un diskriminācijas novēršana",
+}
+
+VALUE_LV = {
+    "bernu-tiesibas": "bērnu tiesības", "diskriminacijas-noversana": "diskriminācijas novēršana",
+    "laba-parvaldiba": "laba pārvaldība", "socialas-tiesibas": "sociālās tiesības",
+    "civilas-tiesibas": "civilās un politiskās tiesības", "neskaidrs": "neskaidrs jautājums",
+}
+
+
+async def handle_ai_draft(ctx: dict) -> dict:
+    """Fill the template with the case facts; the model writes one neutral
+    sentence on the substance of the complaint (from redacted text only)."""
+    inp = ctx.get("input") or {}
+    body = inp.get("templateBody") or ""
+    if not body:
+        raise ValueError("ai.draft needs templateBody (from the template fetch step)")
+    values = _Blank(
+        datums=datetime.now(timezone.utc).strftime("%d.%m.%Y"),
+        registracijas_nr=inp.get("registrationNumber") or "[…]",
+        joma=(inp.get("kategorijasNosaukums") or JOMAS_LV.get(inp.get("joma"))
+              or VALUE_LV.get(inp.get("topic"), inp.get("topic") or "[…]")).lower(),
+        nodala=inp.get("department") or "[…]",
+        termins=inp.get("responseDays") or "[…]",
+        pamatojums=(inp.get("reason") or "[…]").lower(),
+        kompetenta_iestade=inp.get("competentAuthority") or "[norādīt kompetento iestādi]",
+    )
+    # Any other process variable (scalar) may be named in a template, e.g.
+    # {adresats} or {temats}; the fixed names above win when both exist.
+    meta = inp.get("metadata") if isinstance(inp.get("metadata"), dict) else {}
+    for src in (inp, meta):
+        for k, v in src.items():
+            if k not in values and isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                values[k] = v
+    draft = body.format_map(values)
+
+    substance, source = "", "veidne"
+    doc_id = inp.get("documentId")
+    if doc_id:
+        try:
+            fetched = (await handle_document_fetch({"input": {"documentId": doc_id}}))["output"]
+            # Only a document that has a file (a received letter) has a substance to
+            # summarise; an outgoing draft without one would only echo its own title.
+            has_file = bool(fetched.get("fileName"))
+            red = (await handle_ai_redact({"input": {"content": fetched.get("content") or ""}}))["output"] if has_file else {}
+            text = (red.get("redactedContent") or "")[:6000]
+            if text:
+                from opendms.org_context import org_label
+                res = await _complete_json(
+                    f"Tu raksti organizācijas „{await org_label()}” izejošā dokumenta projektu. Atbildi tikai ar JSON "
+                    '{"butiba": "<viens neitrāls teikums latviski par iesnieguma būtību, bez personas datiem>"}',
+                    f"--- IESNIEGUMS (personas dati aizklāti) ---\n{text}\n--- BEIGAS ---")
+                if res and res.get("butiba"):
+                    substance, source = str(res["butiba"])[:400], "veidne + valodas modelis"
+        except Exception as e:  # the draft still stands on the template alone
+            logger.warning("ai.draft: substance sentence skipped: %s", e)
+    if substance:
+        # after the Rekvizīti block (or at the end if the template has none)
+        at = draft.find("\n\n", max(draft.find("Rekvizīti"), 0))
+        line = f"\n\nIesnieguma būtība: {substance}"
+        draft = draft[:at] + line + draft[at:] if at >= 0 else draft + line
+    return {"output": {"draftText": draft, "draftSource": source}}
+
+
+async def handle_ai_verify(ctx: dict) -> dict:
+    """Deterministic check that the draft contains every required element."""
+    inp = ctx.get("input") or {}
+    draft = inp.get("draftText") or ""
+    required = inp.get("element") or []
+    if isinstance(required, str):
+        required = [required]
+    missing = [e for e in required if ELEMENT_MARKERS.get(e, e).lower() not in draft.lower()]
+    return {"output": {"elementsChecked": required, "missingElements": missing,
+                       "elementsOk": not missing}}
+
+
+# ─────────────────────────────────────────────────────────────
+# task.request@1 — a human step (BPMN userTask)
+#
+# The host accepts the task and answers {status: "pending"}; the engine
+# suspends the session. The reviewer decides in OpenDMS, which resumes the
+# session with {decision, comment} (see routers/uapf_admin.py).
+# ─────────────────────────────────────────────────────────────
+
+async def handle_task_request(ctx: dict) -> dict:
+    inp = ctx.get("input") or {}
+    session_id = ctx.get("session_id")
+    step_id = ctx.get("step_id")
+    document_id = inp.get("documentId")
+    if not document_id and (inp.get("sarakstaId") or inp.get("pakotnesId") or inp.get("gads")) and not inp.get("aktaId"):
+        from opendms.archive.host import object_task
+        return await object_task(ctx)
+    if not document_id and inp.get("aktaId"):
+        from opendms.archive.host import act_task
+        return await act_task(ctx)
+    if not document_id and inp.get("lietasId"):
+        # arhivēšanas process (lv.kisc.dokumentu-arhivesana): uzdevums lietai — redzams Arhīvs → Lietas
+        from opendms.archive.host import case_task
+        return await case_task(ctx)
+    if not document_id:
+        raise ValueError("task.request requires documentId in input")
+
+    proposal = {k: inp.get(k) for k in PROCESS_RESULT_KEYS if inp.get(k) is not None}
+    review = {
+        "status": "gaida",
+        "sessionId": session_id,
+        "stepId": step_id,
+        "role": inp.get("role") or inp.get("loma") or inp.get("reviewerRole"),
+        "department": inp.get("department") or inp.get("strukturvieniba"),
+        "unitId": inp.get("vieniba"),
+        "proposal": proposal,
+        # reference data the reviewer picks corrections from (processgit:... refs)
+        "references": ctx.get("schema_ref"),
+        "requestedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    # The process may name the choices the person has at this step (the buttons);
+    # without them the step takes apstiprinats | labots | noraidits.
+    lemumi = inp.get("lemumi") or inp.get("decisions")
+    if isinstance(lemumi, str):
+        lemumi = [x.strip() for x in lemumi.split(",") if x.strip()]
+    if isinstance(lemumi, list) and lemumi:
+        review["decisions"] = [str(x) for x in lemumi]
+    if inp.get("labojams"):          # the step lets the person edit e.g. the draft ("projekts")
+        review["editable"] = str(inp["labojams"])
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+            json.dumps({"uapf_review": review}), int(document_id),
+        )
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'uapf.review.requested', NULL, FALSE, $2)""",
+            int(document_id), json.dumps(review),
+        )
+    return {"output": {"status": "pending", "reviewTaskId": f"{session_id}:{step_id}"}}
+
+
+# ─────────────────────────────────────────────────────────────
+# vc.issue@1 — attest the document's registration in the register
+#
+# A document created through OpenDMS is normally already in the register
+# (DocumentCreated VC, did:web:dokregistrs…:doc:<uuid>). Then this step only
+# confirms it. If it is not, the SDK registers it now.
+# ─────────────────────────────────────────────────────────────
+
+async def handle_vc_issue(ctx: dict) -> dict:
+    inp = ctx.get("input") or {}
+    document_id = inp.get("documentId")
+    if not document_id:
+        raise ValueError("vc.issue requires documentId in input")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow(
+            "SELECT id, title, registration_number, doc_did, metadata FROM documents WHERE id = $1",
+            int(document_id))
+    if not doc:
+        raise LookupError(f"Document not found: {document_id}")
+    if doc["doc_did"]:
+        return {"output": {"documentDid": doc["doc_did"], "vcIssued": True, "vcEvent": "DocumentCreated",
+                           "jauns": False}}
+
+    from opendms import sdk_client
+    res = await sdk_client.create_document(
+        title=doc["title"], classification=str(inp.get("klasifikacijasIndekss") or ""),
+        reg_number=doc["registration_number"] or "", metadata={}, trace_id=ctx.get("session_id"),
+        include_error_payload=True)
+    status = (res or {}).get("_meta", {}).get("status_code", 502)
+    did = (res or {}).get("docDid") if status in (200, 201) else None
+    if not did:
+        return {"output": {"documentDid": None, "vcIssued": False,
+                           "_warning": f"register did not accept the document (HTTP {status})"}}
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE documents SET doc_did = $1 WHERE id = $2", did, int(document_id))
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'DocumentCreated', NULL, TRUE, $2)""",
+            int(document_id), json.dumps({"sdk_did": did, "sessionId": ctx.get("session_id")}))
+    return {"output": {"documentDid": did, "vcIssued": True, "vcEvent": "DocumentCreated", "jauns": True}}
+
+
+# ─────────────────────────────────────────────────────────────
+# register.submit@1 — metadata to the central register, without personal data
+# ─────────────────────────────────────────────────────────────
+
+async def handle_register_submit(ctx: dict) -> dict:
+    """
+    Input:  { documentId, nodosanasApjoms: "pilns" | "bez-apraksta" (from the
+              process decision), pakotnesAtslega (from package.build) }
+    Output: { nodots, apjoms, izņemtieLauki, aizklatasVertibas, registrs }
+    """
+    from opendms import sdk_client
+    from opendms.standard.central import project
+    from opendms.storage import get_storage
+
+    inp = ctx.get("input") or {}
+    doc_id = _document_id(ctx)
+    scope = inp.get("nodosanasApjoms") or "bez-apraksta"
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        doc = await conn.fetchrow("SELECT doc_did, metadata FROM documents WHERE id = $1", doc_id)
+    meta = doc["metadata"] if doc else None
+    meta = json.loads(meta) if isinstance(meta, str) else (meta or {})
+    prefix = inp.get("pakotnesAtslega") or (meta.get("standartaPakotne") or {}).get("pakotnesAtslega")
+    if not prefix:
+        raise ValueError("register.submit needs the built package (run package.build first)")
+    xml = await get_storage().get(f"{prefix}/metadati.xml")
+    if xml is None:
+        raise LookupError(f"metadati.xml not found in {prefix}")
+    if not doc or not doc["doc_did"]:
+        return {"output": {"nodots": False, "_warning": "document has no register DID (not registered with dokregistrs)"}}
+
+    p = project(xml, scope)
+    central_layer = (meta.get("semantika") or {}).get("centrals")
+    if central_layer:
+        from opendms.standard.central import attach_semantics
+        p = attach_semantics(p, central_layer)
+    res = await sdk_client.submit_metadata(doc["doc_did"], p["metadata"], scope, p["sha256"],
+                                           trace_id=ctx.get("session_id"))
+    status = (res or {}).get("_meta", {}).get("status_code", 502)
+    ok = status in (200, 201)
+    registry = (res or {}).get("registry") or {}
+    out = {"nodots": ok, "apjoms": scope, "semantika": bool(central_layer), "izņemtieLauki": p["removed"], "aizklatasVertibas": p["masked"],
+           "metadatuSha256": p["sha256"],
+           "registrs": {"statuss": registry.get("status"), "eventId": registry.get("event_id")} if ok
+                       else {"kluda": (res or {}).get("detail") or (res or {}).get("error") or f"HTTP {status}"}}
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE documents SET metadata = metadata || $1::jsonb WHERE id = $2",
+                           json.dumps({"registraNodosana": {**out, "sessionId": ctx.get("session_id"),
+                                       "laiks": datetime.now(timezone.utc).isoformat()}}), doc_id)
+        await conn.execute(
+            """INSERT INTO document_events (document_id, event_type, actor_id, vc_submitted, details)
+               VALUES ($1, 'DocumentMetadataSubmitted', NULL, $2, $3)""",
+            doc_id, ok, json.dumps(out, ensure_ascii=False))
+    if not ok:
+        raise RuntimeError(f"Register refused the metadata: {out['registrs'].get('kluda')}")
+    return {"output": out}
+
+
+# ─────────────────────────────────────────────────────────────
+# classification.lookup@1 — SIMULATED until the real scheme is connected
+# ─────────────────────────────────────────────────────────────
+
+async def handle_classification_lookup(ctx: dict) -> dict:
+    from opendms.uapf.classification_sim import lookup
+
+    inp = ctx.get("input") or {}
+    parts = [inp.get("title") or "", inp.get("redactedContent") or inp.get("content") or ""]
+    summary = inp.get("semanticSummary")
+    if isinstance(summary, dict):
+        parts.append(str(summary.get("summary") or ""))
+    return {"output": lookup("\n".join(parts))}
 
 
 # ─────────────────────────────────────────────────────────────
 # Registry — maps capability ref → handler
 # ─────────────────────────────────────────────────────────────
 
+def _learning(name: str):
+    async def handler(ctx: dict) -> dict:
+        from opendms.uapf import learning
+        return await getattr(learning, name)(ctx)
+    handler.__name__ = name
+    return handler
+
+
+def _semantics(name: str):
+    async def handler(ctx: dict) -> dict:
+        from opendms.semantics import service
+        return await getattr(service, name)(ctx)
+    handler.__name__ = name
+    return handler
+
+
+def _forwarding(name: str):
+    async def run(ctx: dict) -> dict:
+        from opendms.div import forwarding
+        return await getattr(forwarding, name)(ctx)
+    run.__name__ = name
+    return run
+
+
+# ─────────────────────────────────────────────────────────────
+# Outgoing document: document.outgoing / visa.record / document.sign / document.sent
+# (opendms.outgoing). The person is the step's reviewer from the decision.
+# ─────────────────────────────────────────────────────────────
+
+async def handle_document_outgoing(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    if not inp.get("documentId"):
+        raise ValueError("document.outgoing requires documentId (the incoming document)")
+    r = await outgoing.create_from_draft(int(inp["documentId"]), ctx.get("session_id"))
+    # From here on the process works on the outgoing document.
+    return {"output": {"documentId": r["documentId"], "ienakosaisDokuments": int(inp["documentId"]),
+                       "izejosaRegistracijasNr": r.get("registrationNumber"), "izejosaisJauns": r["jauns"]}}
+
+
+async def handle_visa_record(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    r = await outgoing.visa(int(inp["documentId"]), str(inp.get("decision") or ""), inp.get("comment"),
+                            inp.get("reviewer"))
+    return {"output": {"vizaIerakstita": True, "vizasId": r.get("id")}}
+
+
+async def handle_document_sign(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    r = await outgoing.sign(int(inp["documentId"]), inp.get("comment"), inp.get("reviewer"))
+    return {"output": {"parakstits": True, "parakstaId": r.get("id")}}
+
+
+async def handle_document_sent(ctx: dict) -> dict:
+    from opendms import outgoing
+    inp = ctx.get("input") or {}
+    await outgoing.mark_sent(int(inp["documentId"]), inp.get("reviewer"), inp.get("comment"))
+    return {"output": {"nosutits": True}}
+
+
 HANDLERS = {
-    "document/fetch": (handle_document_fetch, {"namespace": "document", "operation": "fetch", "version": 1}),
+    "forward/request":   (_forwarding("handle_forward_request"), {"namespace": "forward", "operation": "request", "version": 1,
+                                                     "summary": "Read a staff request to forward the document to another institution (e-adrese)."}),
+    "div/send":          (_forwarding("handle_div_send"), {"namespace": "div", "operation": "send", "version": 1,
+                                                     "summary": "Send the document in a DIV envelope to the recipient's e-adrese."}),
+    "forward/record":    (_forwarding("handle_forward_record"), {"namespace": "forward", "operation": "record", "version": 1,
+                                                     "summary": "Record the dispatch in the DVS and as DocumentSent in the central register."}),
+    "submitter/notify":  (_forwarding("handle_submitter_notify"), {"namespace": "submitter", "operation": "notify", "version": 1,
+                                                     "summary": "Tell the submitter by e-mail that the document was forwarded."}),
+    "document/list":  (handle_document_list,  {"namespace": "document", "operation": "list",  "version": 1,
+                                               "summary": "List this organisation's recent documents (number, title, status, date, sender). Use to answer what is new."}),
+    "document/fetch": (handle_document_fetch, {"namespace": "document", "operation": "fetch", "version": 1,
+                                               "summary": "Read one document's metadata and text by documentId."}),
     "ai/redact":      (handle_ai_redact,      {"namespace": "ai",       "operation": "redact", "version": 1}),
     "ai/extract":     (handle_ai_extract,     {"namespace": "ai",       "operation": "extract","version": 1}),
     "data/write":     (handle_data_write,     {"namespace": "data",     "operation": "write",  "version": 1}),
     "event/emit":     (handle_event_emit,     {"namespace": "event",    "operation": "emit",   "version": 1}),
+    "identifier/assign": (handle_identifier_assign, {"namespace": "identifier", "operation": "assign",  "version": 1}),
+    "storage/prepare":   (handle_storage_prepare,   {"namespace": "storage",    "operation": "prepare", "version": 1}),
+    "package/build":     (handle_package_build,     {"namespace": "package",    "operation": "build",   "version": 1}),
+    "vc/issue":          (handle_vc_issue,          {"namespace": "vc",         "operation": "issue",   "version": 1,
+                                                     "summary": "Make sure the document's registration is attested in the document register (DID/VC)."}),
+    "ai/draft":          (handle_ai_draft,          {"namespace": "ai",         "operation": "draft",   "version": 1,
+                                                     "summary": "Draft a response from a library template and the case facts."}),
+    "ai/verify":         (handle_ai_verify,         {"namespace": "ai",         "operation": "verify",  "version": 1,
+                                                     "summary": "Check a draft contains the required elements."}),
+    "register/submit":   (handle_register_submit,   {"namespace": "register",   "operation": "submit",  "version": 1,
+                                                     "summary": "Send the document's metadata, without personal data, to the central register."}),
+    "task/request":      (handle_task_request,      {"namespace": "task",       "operation": "request", "version": 1,
+                                                     "summary": "Hand a step to a person; the session waits for their decision."}),
+    "ai/classify":       (_learning("handle_ai_classify"), {"namespace": "ai", "operation": "classify", "version": 1,
+                                                     "summary": "Classify into the topic classifier named in schemaRef, using staff corrections (precedents)."}),
+    "semantics/generate": (_semantics("handle_semantics_generate"), {"namespace": "semantics", "operation": "generate", "version": 1,
+                                                     "summary": "Write the document's semantic description (vdvc/dokumentu-semantikas-formats) for the profile in schemaRef."}),
+    "semantics/project":  (_semantics("handle_semantics_project"), {"namespace": "semantics", "operation": "project", "version": 1,
+                                                     "summary": "Make the de-identified central layer and put the local layer in metadati.xml section 13."}),
+    "learning/record":   (_learning("handle_learning_record"), {"namespace": "learning", "operation": "record", "version": 1,
+                                                     "summary": "Store a reviewer's correction as a precedent and return the corrected values."}),
+    "document/outgoing": (handle_document_outgoing, {"namespace": "document", "operation": "outgoing", "version": 1,
+                                                     "summary": "Create the outgoing document from the reply draft; the process continues on it."}),
+    "visa/record":       (handle_visa_record,       {"namespace": "visa", "operation": "record", "version": 1,
+                                                     "summary": "Record the approver's vīza (saskanots, saskanots-ar-iebildumiem, nesaskanots)."}),
+    "document/sign":     (handle_document_sign,     {"namespace": "document", "operation": "sign", "version": 1,
+                                                     "summary": "DVS signature (MK 282 30. p.) by the person who decided the step."}),
+    "document/sent":     (handle_document_sent,     {"namespace": "document", "operation": "sent", "version": 1,
+                                                     "summary": "Mark the outgoing document as sent (no real dispatch)."}),
+    "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,
+                                                     "summary": "Find the classification scheme entry, unit and retention (SIMULATED scheme)."}),
 }
 
 
@@ -565,5 +1311,9 @@ def _register_connector_capabilities() -> None:
 
 
 _register_connector_capabilities()
+
+# Arhivēšana (kisc/dokumentu-arhivesana): case.*, files.*, archive.assign-id
+from opendms.archive.host import HANDLERS as _ARCHIVE_HANDLERS  # noqa: E402
+HANDLERS.update(_ARCHIVE_HANDLERS)
 
 ADVERTISED_CAPABILITIES = [ref for _, ref in HANDLERS.values()]

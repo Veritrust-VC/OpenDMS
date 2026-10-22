@@ -28,7 +28,7 @@ from typing import Any, Optional
 from opendms.agent import guardrails, memory
 from opendms.agent import tools as tool_broker
 
-PROMPT_VERSION = "planner/v1"
+PROMPT_VERSION = "planner/v2"
 
 _SYSTEM = """You plan document-handling work for a Latvian public-sector \
 document management system (lietvedība).
@@ -44,6 +44,13 @@ undone. A human must approve them. Prefer gathering information first.
 - Tools marked "not implemented" will refuse. Do not retry them; work around \
 them or report the gap.
 - If a tool fails twice for the same reason, stop and report rather than retry.
+- A result with "ok": false means the check FAILED, not that nothing was found. \
+Never report a failed check as "nothing new" or "no results". Your answer must \
+say what you could not check and why (for example: e-mail could not be checked \
+because no mailbox is connected), alongside what you did find.
+- "What is new" in a document system covers documents already in the system, \
+not only incoming e-mail: check the document list too when a tool for it exists.
+- Answer in the language of the goal.
 - Record durable facts you establish in "scratchpad" so later steps can use them.
 
 Answer with STRICT JSON only, no prose, no code fences:
@@ -74,17 +81,34 @@ def _parse_decision(raw: str) -> Optional[dict]:
 
 
 def _render_history(window: dict[str, Any]) -> str:
+    """Each action with the result it actually produced.
+
+    A tool's result is stored in the "observe" step that follows its "act"
+    step. Rendering only "act" steps showed the planner an empty result for
+    every call — a failed e-mail fetch read as "no new e-mail". Operator
+    messages and guardrail refusals are observe steps too and are shown.
+    """
     parts = []
     if window["earlier"]:
         parts.append("Earlier steps:\n" + "\n".join(window["earlier"]))
-    for s in window["recent"]:
-        if s["phase"] != "act":
-            continue
-        parts.append(
-            f"[{s['seq']}] thought: {s['thought']}\n"
-            f"     action: {s['action']} inputs={json.dumps(s['inputs'], default=str)[:300]}\n"
-            f"     result: {s['observation']}"
-        )
+    recent = window["recent"]
+    used = set()
+    for i, s in enumerate(recent):
+        if s["phase"] == "act":
+            result = s["observation"]
+            nxt = recent[i + 1] if i + 1 < len(recent) else None
+            if nxt and nxt["phase"] == "observe" and nxt.get("action") in (None, s["action"]):
+                result = nxt["observation"]
+                used.add(i + 1)
+            if result in ("", "{}"):
+                result = "(no result recorded)"
+            parts.append(
+                f"[{s['seq']}] thought: {s['thought']}\n"
+                f"     action: {s['action']} inputs={json.dumps(s['inputs'], default=str)[:300]}\n"
+                f"     result: {result}"
+            )
+        elif s["phase"] == "observe" and i not in used:
+            parts.append(f"[{s['seq']}] note: {s['observation']}")
     return "\n\n".join(parts) if parts else "(nothing done yet)"
 
 
@@ -100,7 +124,6 @@ async def run_agent(
     completed steps are already durable, so it resumes rather than restarts.
     """
     from opendms.ai import _complete
-    from opendms.connectors.runtime import run_capability
 
     run = await memory.get_run(run_id)
     if run is None:
@@ -231,12 +254,13 @@ async def run_agent(
                 break
             continue
 
-        result = await run_capability(capability, inputs,
-                                      {"trace_id": run["run_uuid"],
-                                       "source": "agent_planner"})
+        result = await tool_broker.execute(capability, inputs,
+                                           {"trace_id": run["run_uuid"],
+                                            "step_id": step.get("id"),
+                                            "source": "agent_planner"})
         await memory.record_step(run_id, "observe",
                                  action_capability=capability,
-                                 observation=result.as_dict())
+                                 observation=result)
 
     return await memory.get_run(run_id)
 
@@ -248,7 +272,6 @@ async def approve_step(run_id: int, step_id: int, user_id: int) -> dict[str, Any
     capability and inputs, not a re-planned version. Otherwise a human would be
     approving one thing and authorising another.
     """
-    from opendms.connectors.runtime import run_capability
     from opendms.database import get_pool
 
     pool = await get_pool()
@@ -275,12 +298,12 @@ async def approve_step(run_id: int, step_id: int, user_id: int) -> dict[str, Any
     if isinstance(inputs, str):
         inputs = json.loads(inputs)
 
-    result = await run_capability(step["action_capability"], inputs or {},
-                                  {"trace_id": run["run_uuid"],
-                                   "source": "agent_planner_approved"})
+    result = await tool_broker.execute(step["action_capability"], inputs or {},
+                                       {"trace_id": run["run_uuid"], "step_id": step_id,
+                                        "source": "agent_planner_approved"})
     await memory.record_step(run_id, "observe",
                              action_capability=step["action_capability"],
-                             observation=result.as_dict())
+                             observation=result)
     return await run_agent(run_id)
 
 

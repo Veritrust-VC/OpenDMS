@@ -4,8 +4,15 @@ import BpmnDiagram from "./components/BpmnDiagram.jsx";
 import LandingPage from "./LandingPage.jsx";
 import ConnectionsPage from "./ConnectionsPage.jsx";
 import AgentPage from "./AgentPage.jsx";
+import StoragePage from "./StoragePage.jsx";
 import BrandMark from "./BrandMark.jsx";
 import Icon from "./Icon.jsx";
+import ForwardingCard from "./ForwardingCard.jsx";
+import ArchiveCard, { CasePicker } from "./ArchiveCard.jsx";
+import { CasesPage } from "./ArchivePage.jsx";
+import MarksCard from "./MarksCard.jsx";
+import ActiveClassifiers from "./ClassifiersPage.jsx";
+import ArchivePage from "./ArchivePage.jsx";
 
 const API = "/api";
 let authToken = localStorage.getItem("opendms_token") || "";
@@ -40,7 +47,10 @@ async function api(path, opts = {}) {
   return res;
 }
 
-function Badge({ s }) { const c = { draft:"bg-gray-100 text-gray-600", registered:"bg-sky-100 text-sky-700", sent:"bg-amber-100 text-amber-700", received:"bg-violet-100 text-violet-700", assigned:"bg-teal-100 text-teal-700", decided:"bg-green-100 text-green-700", archived:"bg-gray-200 text-gray-600" }; return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c[s]||"bg-gray-100"}`}>{s}</span>; }
+// Status names come from the organisation's ProcessGit vocabulary (GET /api/vardnicas);
+// these are the fallback until it has loaded.
+let STATUS_LV = { draft:"Projekts", registered:"Reģistrēts", received:"Saņemts", assigned:"Nodots izpildei", decided:"Izlemts", sent:"Nosūtīts", archived:"Arhivēts" };
+function Badge({ s }) { const c = { draft:"bg-gray-100 text-gray-600", registered:"bg-sky-100 text-sky-700", sent:"bg-amber-100 text-amber-700", received:"bg-violet-100 text-violet-700", assigned:"bg-teal-100 text-teal-700", decided:"bg-green-100 text-green-700", archived:"bg-gray-200 text-gray-600" }; return <span title={s} className={`text-xs px-2 py-0.5 rounded-full font-medium ${c[s]||"bg-gray-100"}`}>{STATUS_LV[s] || s}</span>; }
 const EI = { DocumentCreated:"\u{1F4C4}", DocumentSent:"\u{1F4E4}", DocumentReceived:"\u{1F4E5}", DocumentAssigned:"\u{1F464}", DocumentDecided:"\u{2705}", DocumentArchived:"\u{1F5C4}\uFE0F" };
 
 // ── Document lifecycle log: compact per-event detail rendering ──
@@ -111,6 +121,11 @@ const BOOL_DISPLAY = (v) => v === true || v === "true" ? "Yes" : v === false || 
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [, setVocabTick] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    api("/vardnicas").then((v) => { if (v?.statusi) { STATUS_LV = { ...STATUS_LV, ...v.statusi }; setVocabTick((t) => t + 1); } }).catch(() => {});
+  }, [user]);
   const [route, setRoute] = useState(() => window.location.pathname.split("/").filter(Boolean));
   const navigate = useCallback((path, opts = {}) => {
     let p = (path.startsWith("/") ? path : "/" + path).replace(/\/+$/, "") || "/";
@@ -125,7 +140,12 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [auditFilters, setAuditFilters] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const notify = (m, t="success") => { setToast({m,t}); setTimeout(()=>setToast(null),4000); };
+  // Accepts notify("text", "error") and notify({ t: "error", m: "text" }) — the
+  // UAPF pages use the object form; rendering that object blanked the page.
+  const notify = (m, t="success") => {
+    if (m && typeof m === "object") { t = m.t === "ok" ? "success" : (m.t || t); m = m.m; }
+    setToast({ m: String(m ?? ""), t }); setTimeout(()=>setToast(null),4000);
+  };
 
   useEffect(() => {
     const onPop = () => setRoute(window.location.pathname.split("/").filter(Boolean));
@@ -162,6 +182,8 @@ export default function App() {
       { id:"agent",         label:"Aģents",           icon:"agent", roles:["superadmin","admin"] },
       { id:"dashboard",     label:"Pārskats",         icon:"dashboard" },
       { id:"documents",     label:"Dokumenti",        icon:"document" },
+      { id:"cases",         label:"Lietas",           icon:"folder" },
+      { id:"storage",       label:"Glabātuve",        icon:"folder" },
       { id:"intelligence",  label:"Analīze",          icon:"insight" },
     ]},
     { title: "Procesi", items: [
@@ -257,8 +279,11 @@ export default function App() {
         {page==="users" && <UsersPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="organizations" && <OrgsPage notify={notify} onViewLogs={(filters)=>{ setAuditFilters(filters); setPage("audit"); }} />}
         {page==="registers" && <StructurePage type="registers" notify={notify} />}
-        {page==="classifications" && <StructurePage type="classifications" notify={notify} />}
-        {page==="archive" && <ArchivePage notify={notify} />}
+        {page==="classifications" && <><ActiveClassifiers notify={notify} />
+          <StructurePage type="classifications" notify={notify} /></>}
+        {page==="archive" && <ArchivePage api={api} notify={notify} />}
+        {page==="cases" && <CasesPage api={api} notify={notify} onOpenDoc={(d)=>navigate("/documents/"+encodeURIComponent(d.registration_number||d.id))} />}
+        {page==="storage" && <StoragePage notify={notify} route={route} navigate={navigate} />}
         {page==="ai-instructions" && <AIInstructionsPage notify={notify} />}
         {page==="uapf" && <UapfPage notify={notify} user={user} route={route} navigate={navigate} />}
         {page==="connections" && <ConnectionsPage notify={notify} />}
@@ -342,8 +367,14 @@ function DocumentsPage({ notify, user, route, navigate }) {
   const [docs, setDocs] = useState([]); const [total, setTotal] = useState(0); const [sel, setSel] = useState(null);
   const [statusF, setStatusF] = useState(""); const [search, setSearch] = useState(""); const [showCreate, setShowCreate] = useState(false);
   const [sdkStatus, setSdkStatus] = useState(null);
-  const load = useCallback(async () => { try { const p = new URLSearchParams({page:"1",page_size:"100"}); if(statusF) p.set("status",statusF); if(search) p.set("search",search); const d = await api(`/documents?${p}`); setDocs(d.items); setTotal(d.total); } catch(e){notify(e.message,"error");} }, [statusF,search]);
+  const load = useCallback(async () => { try { const p = new URLSearchParams({page:"1",page_size:"200"}); if(statusF) p.set("status",statusF); if(search) p.set("search",search); const d = await api(`/documents?${p}`); setDocs(d.items); setTotal(d.total); } catch(e){notify(e.message,"error");} }, [statusF,search]);
   useEffect(()=>{load();},[load]);
+  const anyBusy = docs.some(docBusy);
+  useEffect(() => {
+    if (!anyBusy) return;
+    const t = setInterval(() => load(), 4000);
+    return () => clearInterval(t);
+  }, [anyBusy, load]);
   useEffect(()=>{ api("/sdk/setup-status").then(setSdkStatus).catch(()=>{}); },[]);
   const loadDetail = async(id) => { try { setSel(await api(`/documents/${id}`)); } catch(e){notify(e.message,"error");} };
   useEffect(() => {
@@ -358,9 +389,9 @@ function DocumentsPage({ notify, user, route, navigate }) {
     <div className="flex items-center justify-between mb-4">
       <h2 className="text-xl font-bold">Documents <span className="text-sm font-normal text-gray-400">({total})</span></h2>
       <div className="flex gap-2">
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." className="text-sm px-3 py-1.5 border rounded-md w-40" />
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Meklēt nosaukumā vai numurā…" className="text-sm px-3 py-1.5 border rounded-md w-64" />
         <select value={statusF} onChange={e=>setStatusF(e.target.value)} className="text-sm px-2 py-1.5 border rounded-md">
-          {["","draft","registered","sent","received","assigned","decided","archived"].map(s=><option key={s} value={s}>{s||"All"}</option>)}
+          {["","draft","registered","sent","received","assigned","decided","archived"].map(s=><option key={s} value={s}>{s ? (STATUS_LV[s] || s) : "Visi statusi"}</option>)}
         </select>
         <button onClick={()=>setShowCreate(!showCreate)} className="text-sm px-3 py-1.5 bg-emerald-600 text-white rounded-md">+ New</button>
       </div>
@@ -370,24 +401,117 @@ function DocumentsPage({ notify, user, route, navigate }) {
     <div className="text-xs text-gray-500 mb-3">
       Workspace: <strong>{sdkStatus?.default_organization?.name || "No default organization selected"}</strong>
     </div>
-    <div className="grid grid-cols-5 gap-4">
-      <div className="col-span-2 bg-white rounded-lg border">
-        <div className="divide-y max-h-[550px] overflow-y-auto">
-          {docs.map(d=>(
-            <div key={d.id} onClick={()=>navigate("/documents/"+encodeURIComponent(d.registration_number||d.id))} className={`px-4 py-3 cursor-pointer hover:bg-gray-50 ${sel?.id===d.id?"bg-emerald-50":""}`}>
-              <div className="flex items-center justify-between"><span className={`text-sm font-medium truncate max-w-[200px] ${!d.title ? "text-gray-400 italic" : ""}`}>{d.title || "Untitled Document"}</span><Badge s={d.status}/></div>
-              <div className="text-xs text-gray-400 mt-0.5">{d.registration_number} {d.org_name && `\u00b7 ${d.org_name}`}</div>
-            </div>
-          ))}
-          {!docs.length && <div className="p-6 text-center text-gray-400 text-sm">No documents</div>}
-        </div>
-      </div>
-      <div className="col-span-3 bg-white rounded-lg border">
-        {sel ? <DocumentDetail doc={sel} onAction={()=>{loadDetail(sel.id);load();}} notify={notify} /> : <div className="p-8 text-center text-gray-400 text-sm">Select a document</div>}
-      </div>
+    <DocumentTable docs={docs} sel={sel} onOpen={(d)=>navigate("/documents/"+encodeURIComponent(d.registration_number||d.id))} />
+    <div className="mt-4 bg-white rounded-lg border">
+      {sel ? <DocumentDetail doc={sel} user={user} onAction={()=>{loadDetail(sel.id);load();}} notify={notify} /> : <div className="p-8 text-center text-gray-400 text-sm">Izvēlieties dokumentu sarakstā</div>}
     </div>
     </>}
   </div>);
+}
+
+// Document browser: one row per document with what the processes found out about it.
+const fmtDT = (v) => v ? new Date(v).toLocaleString("lv-LV", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+const REVIEW_PILL = {
+  gaida: ["Gaida lēmumu", "bg-amber-100 text-amber-800"], apstiprinats: ["Apstiprināts", "bg-green-100 text-green-800"],
+  labots: ["Labots", "bg-sky-100 text-sky-800"], noraidits: ["Manuāla virzība", "bg-gray-200 text-gray-700"],
+  parsutits: ["Pārsūtīts", "bg-violet-100 text-violet-800"],
+};
+const MIME_LV = { "application/pdf": "PDF", "text/plain": "Teksts", "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX" };
+
+// A document is "being processed" while the background processes started by the
+// upload (identifier, register, redaction, classification, description) have not
+// reached a decision yet. Bounded in time so a stuck process never spins forever.
+function docBusy(d) {
+  if (!d || !d.created_at) return false;
+  const age = Date.now() - new Date(d.created_at).getTime();
+  const reviewed = !!(d.metadata && d.metadata.uapf_review && d.metadata.uapf_review.status);
+  if (age < 2 * 60 * 1000 && !reviewed) return true;
+  return age < 15 * 60 * 1000 && Number(d.file_count || 0) > 0 && !reviewed;
+}
+
+function BusyNote({ label = "Apstrāde notiek…" }) {
+  return (<span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+    <span className="inline-block w-3 h-3 rounded-full border-2 border-emerald-600 border-t-transparent animate-spin" aria-hidden="true" />
+    {label}</span>);
+}
+
+function DocumentTable({ docs, sel, onOpen }) {
+  const [sort, setSort] = useState({ key: "created_at", dir: -1 });
+  const [unit, setUnit] = useState(""); const [review, setReview] = useState("");
+  const row = (d) => {
+    const m = d.metadata || {}; const r = m.uapf_result || {}; const rv = m.uapf_review || {};
+    const sem = m.semantika || {}; const reg = m.registraNodosana || {};
+    return {
+      d, id: d.id, title: d.title || "", number: d.registration_number || "", uid: d.doc_uid || "",
+      created_at: d.created_at || "", sender: m.sender?.name || d.creator_name || "",
+      channel: m.channel || "", topic: r.kodaNosaukums || r.kategorijasNosaukums || "", code: r.kods || r.kategorija || "",
+      joma: r.joma || "", unit: r.vieniba || "", dept: r.department || "", priority: r.priority || "",
+      review: rv.status || "", files: Number(d.file_count || 0), mime: d.primary_mime || d.mime_type || "",
+      sem: sem.lokals ? (sem.kludas?.length ? "kļūdas" : "ir") : (sem.kludas?.length ? "nav" : ""),
+      reg: reg.nodots ? (reg.semantika ? "ar aprakstu" : "metadati") : "", events: Number(d.event_count || 0),
+      status: d.status || "",
+      lieta: d.case_index ? `${d.case_index}/${d.case_year}` : "",
+      busy: docBusy(d),
+    };
+  };
+  const rows = docs.map(row).filter(x => (!unit || x.unit === unit) && (!review || x.review === review));
+  const sorted = [...rows].sort((a, b) => (a[sort.key] > b[sort.key] ? 1 : a[sort.key] < b[sort.key] ? -1 : 0) * sort.dir);
+  const units = [...new Map(docs.map(row).filter(x => x.unit).map(x => [x.unit, x.dept])).entries()];
+  const Th = ({ k, children, className = "" }) => (
+    <th onClick={() => setSort(s => ({ key: k, dir: s.key === k ? -s.dir : -1 }))}
+      className={`px-3 py-2 text-left font-medium text-gray-500 cursor-pointer select-none whitespace-nowrap ${className}`}>
+      {children}{sort.key === k ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+    </th>
+  );
+  return (
+    <div>
+      <div className="flex gap-2 mb-2 text-sm">
+        <select value={unit} onChange={e => setUnit(e.target.value)} className="px-2 py-1.5 border rounded-md">
+          <option value="">Visas struktūrvienības</option>
+          {units.map(([u, n]) => <option key={u} value={u}>{u} — {n}</option>)}
+        </select>
+        <select value={review} onChange={e => setReview(e.target.value)} className="px-2 py-1.5 border rounded-md">
+          <option value="">Visi lēmumi</option>
+          {Object.entries(REVIEW_PILL).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <span className="text-xs text-gray-500 self-center">{sorted.length} dokumenti · {rows.filter(x => x.review === "gaida").length} gaida lēmumu</span>
+      </div>
+      <div className="rounded-lg border border-gray-200 bg-white overflow-auto max-h-[46vh]">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 sticky top-0 z-10 text-xs"><tr>
+            <Th k="title">Dokuments</Th><Th k="number">Nr.</Th><Th k="lieta">Lieta</Th><Th k="created_at">Saņemts</Th><Th k="sender">Iesniedzējs / avots</Th>
+            <Th k="topic">Tēma</Th><Th k="unit">Struktūrvienība</Th><Th k="review">Lēmums</Th>
+            <Th k="sem">Apraksts</Th><Th k="reg">Reģistrs</Th><Th k="files" className="text-right">Datnes</Th>
+          </tr></thead>
+          <tbody className="divide-y divide-gray-100">
+            {sorted.map(x => (
+              <tr key={x.id} onClick={() => onOpen(x.d)} className={`cursor-pointer hover:bg-gray-50 ${sel?.id === x.id ? "bg-emerald-50" : ""}`}>
+                <td className="px-3 py-2 max-w-[280px]">
+                  <div className={`truncate font-medium ${x.title ? "text-gray-900" : "text-gray-400 italic"}`} title={x.title}>
+                    <Icon name="document" size={15} className="inline -mt-0.5 mr-1.5 text-gray-400" />{x.title || "Bez nosaukuma"}</div>
+                  <div className="text-[11px] text-gray-400 truncate" title={x.uid}>{x.uid || (x.busy ? <BusyNote /> : "identifikators vēl nav piešķirts")}</div>
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap">{x.number || "—"}<div className="mt-0.5"><Badge s={x.status} /></div></td>
+                <td className="px-3 py-2 whitespace-nowrap text-xs" title={x.d.case_name || ""}>{x.lieta ? <span className="font-mono text-gray-700">{x.lieta}</span> : <span className="text-amber-700">bez lietas</span>}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-600">{fmtDT(x.created_at)}</td>
+                <td className="px-3 py-2 max-w-[170px]"><div className="truncate" title={x.sender}>{x.sender || "—"}</div>
+                  {x.channel && <div className="text-[11px] text-gray-400">{x.channel}</div>}</td>
+                <td className="px-3 py-2 max-w-[220px]"><div className="truncate" title={x.topic}>{x.code && <span className="text-gray-500 mr-1">{x.code}</span>}{x.topic || "—"}</div>
+                  {x.priority && <div className={`text-[11px] ${x.priority === "steidzams" ? "text-red-600" : "text-gray-400"}`}>{x.priority}</div>}</td>
+                <td className="px-3 py-2 max-w-[200px]"><div className="truncate" title={x.dept}>{x.dept || "—"}</div>
+                  {x.unit && <div className="text-[11px] text-gray-400 font-mono">{x.unit}</div>}</td>
+                <td className="px-3 py-2 whitespace-nowrap">{!x.review && x.busy ? <BusyNote label="apstrādā" /> : x.review ? <span className={`text-[11px] px-1.5 py-0.5 rounded font-medium ${REVIEW_PILL[x.review]?.[1] || "bg-gray-100"}`}>{REVIEW_PILL[x.review]?.[0] || x.review}</span> : <span className="text-gray-300">—</span>}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-xs">{x.sem === "ir" ? <span className="text-green-700">✓ ir</span> : x.sem ? <span className="text-red-600">{x.sem}</span> : <span className="text-gray-300">—</span>}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-xs">{x.reg ? <span className="text-gray-700">{x.reg}</span> : <span className="text-gray-300">—</span>}</td>
+                <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{x.files || "—"}{x.mime && <div className="text-[11px] text-gray-400">{MIME_LV[x.mime] || x.mime.split("/").pop()}</div>}</td>
+              </tr>
+            ))}
+            {!sorted.length && <tr><td colSpan={11} className="px-5 py-8 text-center text-gray-400">Nav dokumentu</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function CreateDocForm({ onDone, notify }) {
@@ -406,6 +530,7 @@ function CreateDocForm({ onDone, notify }) {
   };
 
   const [vizCid, setVizCid] = useState(null);
+  const [caseId, setCaseId] = useState(null);
   const generateMetadata = async () => {
     if (!file) return notify("Please select a file first", "error");
     const cid = (window.crypto?.randomUUID?.() || `run-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -438,7 +563,7 @@ function CreateDocForm({ onDone, notify }) {
       const semanticSummary = aiData.semanticSummary;
       const hasAi = semanticSummary || aiData.sensitivityControl;
       const aiStatus = hasAi ? (["HUMAN", "HYBRID"].includes(semanticSummary?.summarySource) ? "VALIDATED" : "GENERATED") : "SKIPPED";
-      const doc = await api("/documents", { method: "POST", body: JSON.stringify({ title, content_summary: summary, metadata: {}, semantic_summary: semanticSummary, sensitivity_control: aiData.sensitivityControl, ai_summary_status: aiStatus }) });
+      const doc = await api("/documents", { method: "POST", body: JSON.stringify({ title, content_summary: summary, metadata: {}, semantic_summary: semanticSummary, sensitivity_control: aiData.sensitivityControl, ai_summary_status: aiStatus, case_id: caseId }) });
       if (file && doc?.id) {
         try {
           const fd = new FormData();
@@ -502,6 +627,7 @@ function CreateDocForm({ onDone, notify }) {
   return (
     <div className="bg-white border rounded-lg p-4 mb-4 space-y-3">
       <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Document title" className="w-full text-sm px-3 py-2 border rounded" />
+      <CasePicker value={caseId} onChange={setCaseId} />
       <input type="file" onChange={handleFileChange} className="text-xs" />
       <div className="flex items-center gap-2">
         <button onClick={generateMetadata} disabled={extracting || !file} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded disabled:opacity-50">
@@ -969,7 +1095,130 @@ function DocumentProcessPanel({ doc, notify }) {
   );
 }
 
-function DocumentDetail({ doc, onAction, notify }) {
+// Document package of the Dokumentu metadatu standarts v2.0, shown as a small file browser.
+function StandardPackagePanel({ doc, notify }) {
+  const info = doc?.metadata?.standartaPakotne;
+  const [listing, setListing] = useState(null);
+  const [open, setOpen] = useState(null);      // { path, text }
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setListing(null); setOpen(null);
+    if (!info?.datnes?.length) return;
+    api(`/documents/${doc.id}/package/files`).then(setListing).catch(() => setListing(null));
+  }, [doc.id, info?.izveidots]);
+
+  const fetchFile = async (path, download = false) => {
+    const res = await fetch(`${API}/documents/${doc.id}/package/files/${path.split("/").map(encodeURIComponent).join("/")}${download ? "?download=true" : ""}`,
+      { headers: { Authorization: `Bearer ${authToken}` } });
+    if (!res.ok) throw new Error(`Neizdevās nolasīt ${path}`);
+    return res;
+  };
+
+  const view = async (f) => {
+    if (open?.path === f.path) { setOpen(null); return; }
+    if (!(f.mediaType.startsWith("text/") || f.mediaType.endsWith("xml"))) { download(f.path); return; }
+    try { setLoading(true); const r = await fetchFile(f.path); setOpen({ path: f.path, text: await r.text() }); }
+    catch (e) { notify(e.message, "error"); } finally { setLoading(false); }
+  };
+
+  const saveBlob = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); };
+
+  const download = async (path) => {
+    try { const r = await fetchFile(path, true); saveBlob(await r.blob(), path.split("/").pop()); }
+    catch (e) { notify(e.message, "error"); }
+  };
+
+  const downloadZip = async () => {
+    try {
+      const res = await fetch(`${API}/documents/${doc.id}/package`, { headers: { Authorization: `Bearer ${authToken}` } });
+      if (!res.ok) throw new Error("Pakotnes lejupielāde neizdevās");
+      saveBlob(await res.blob(), `${listing?.folder || doc.doc_uid}.zip`);
+    } catch (e) { notify(e.message, "error"); }
+  };
+
+  const kb = (n) => n == null ? "—" : n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+
+  return (
+    <div className="border rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium text-gray-500">Standarta pakotne · Dokumentu metadatu standarts v2.0</div>
+        {info && (
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${info.derigs ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+            {info.derigs ? "✓ atbilst standartam" : "✗ neatbilst standartam"}
+          </span>
+        )}
+      </div>
+
+      {doc.doc_uid ? (
+        <div className="text-xs">
+          <span className="text-gray-400">Dokumenta ID:</span>{" "}
+          <code className="bg-gray-50 px-1 rounded break-all">{doc.doc_uid}</code>
+          <button onClick={() => { navigator.clipboard?.writeText(doc.doc_uid); notify("ID nokopēts"); }} className="ml-2 text-[10px] text-sky-600 hover:underline">kopēt</button>
+        </div>
+      ) : (
+        <div className="text-xs text-gray-400">Vienotais identifikators vēl nav piešķirts. To piešķir process „Ienākošā dokumenta reģistrēšana”, kad dokumentam pievieno pirmo datni.</div>
+      )}
+
+      {info?.problemas?.length > 0 && (
+        <ul className="text-[11px] text-red-700 bg-red-50 rounded px-3 py-2 list-disc list-inside">
+          {info.problemas.map((p, i) => <li key={i}>{p}</li>)}
+        </ul>
+      )}
+
+      {listing && (
+        <>
+          <div className="font-mono text-xs bg-gray-50 rounded border">
+            <div className="px-2 py-1.5 border-b text-gray-600 break-all flex items-center justify-between gap-2">
+              <span>📁 {listing.folder}/</span>
+              <button onClick={() => { window.history.pushState({}, "", "/storage/" + encodeURIComponent(listing.folder)); window.dispatchEvent(new PopStateEvent("popstate")); }}
+                className="font-sans text-[11px] text-sky-600 hover:underline shrink-0">atvērt glabātuvē →</button>
+            </div>
+            {listing.files.map((f) => {
+              const depth = f.path.includes("/") ? 2 : 1;
+              const name = f.path.split("/").pop();
+              return (
+                <div key={f.path}>
+                  {f.path.startsWith("datnes/") && f === listing.files.find((x) => x.path.startsWith("datnes/")) && (
+                    <div className="px-2 py-1 text-gray-600" style={{ paddingLeft: 20 }}>📁 datnes/</div>
+                  )}
+                  <div className={`flex items-center justify-between px-2 py-1 hover:bg-white cursor-pointer ${open?.path === f.path ? "bg-white" : ""}`}
+                       style={{ paddingLeft: depth * 20 }} onClick={() => view(f)}>
+                    <span className={f.missing ? "text-red-600" : "text-gray-800"}>{name.endsWith(".xml") ? "🗎" : "📄"} {name}</span>
+                    <span className="flex items-center gap-3 text-gray-400">
+                      <span>{kb(f.size)}</span>
+                      <button onClick={(e) => { e.stopPropagation(); download(f.path); }} className="text-sky-600 hover:underline">lejupielādēt</button>
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {loading && <div className="text-xs text-gray-400">Ielādē…</div>}
+          {open && (
+            <div className="border rounded">
+              <div className="flex items-center justify-between px-2 py-1 bg-gray-50 border-b text-xs">
+                <span className="font-mono">{open.path}</span>
+                <button onClick={() => setOpen(null)} className="text-gray-400 hover:text-gray-700">aizvērt ✕</button>
+              </div>
+              <pre className="text-[11px] leading-snug p-2 overflow-auto max-h-96 whitespace-pre">{open.text}</pre>
+            </div>
+          )}
+          <div className="flex items-center justify-between text-[11px] text-gray-400">
+            <span>Izveidota: {info?.izveidots ? new Date(info.izveidots).toLocaleString("lv-LV") : "—"}</span>
+            <button onClick={downloadZip} className="text-xs px-2 py-1 bg-sky-600 text-white rounded">⬇ Lejupielādēt pakotni (ZIP)</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Everyday work happens in the Agent; the System shows where (concept "Sistēma un Aģents").
+const AGENT_URL = window.OPENDMS_AGENT_URL || "/agents/lietvediba/";
+
+function DocumentDetail({ doc, user, onAction, notify }) {
+  const isAdmin = ["superadmin", "admin"].includes(user?.role);
   const [sendDid, setSendDid] = useState("");
   const [assignId, setAssignId] = useState("");
   const [decision, setDecision] = useState("");
@@ -1048,13 +1297,35 @@ function DocumentDetail({ doc, onAction, notify }) {
       .catch(() => setSimilar([]));
   }, [doc.id, doc.doc_did, doc.sensitivity_control?.allowCentralization]);
 
+  // Processes run after the upload in the background (redaction, classification,
+  // description take a minute): refresh until a step waits for a person.
+  const recent = doc.created_at && (Date.now() - new Date(doc.created_at).getTime()) < 15 * 60 * 1000;
+  const processing = recent && (doc.files?.length || doc.file_name) && !doc.metadata?.uapf_review;
+  useEffect(() => {
+    if (!processing) return;
+    const t = setInterval(() => onAction(), 5000);
+    return () => clearInterval(t);
+  }, [processing, doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const source = doc.semantic_summary?.summarySource || "HUMAN";
   const hasFiles = files.length > 0 || doc.file_name;
   const hasMeta = !!doc.semantic_summary;
 
   return (
     <div className="p-4 space-y-3 overflow-auto max-h-[80vh]">
-        {doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
+        {processing && (
+          <div className="text-sm bg-sky-50 border border-sky-200 text-sky-900 rounded p-3 flex items-center gap-2">
+            <span className="inline-block w-3 h-3 rounded-full border-2 border-sky-600 border-t-transparent animate-spin" />
+            Process darbojas: personas datu aizklāšana, klasifikācija, semantiskais apraksts. Lapa atjaunojas pati (~1 min).
+          </div>
+        )}
+        {doc?.metadata?.uapf_result
+          ? <ProcessResultCard doc={doc} notify={notify} isAdmin={isAdmin} />
+          : doc?.metadata?.uapf_classification && <UapfClassificationCard classification={doc.metadata.uapf_classification} />}
+        {doc?.metadata?.semantika && <SemanticDescriptionCard sem={doc.metadata.semantika} docId={doc.id} notify={notify} />}
+        <ForwardingCard doc={doc} files={files} notify={notify} onAction={onAction} />
+        <MarksCard doc={doc} notify={notify} />
+        <ArchiveCard doc={doc} notify={notify} />
 
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">{doc.title}</h3>
@@ -1092,6 +1363,8 @@ function DocumentDetail({ doc, onAction, notify }) {
           )}
         </div>
       )}
+
+      <StandardPackagePanel doc={doc} notify={notify} />
 
       <div className="border rounded-lg p-3">
         <div className="flex items-center justify-between mb-2">
@@ -1167,8 +1440,13 @@ function DocumentDetail({ doc, onAction, notify }) {
         </div>
       )}
 
-      <div className="border-t pt-3 space-y-2">
-        <div className="text-xs font-medium text-gray-500">Actions</div>
+      {!isAdmin && (
+        <div className="border-t pt-3 text-xs text-gray-600">
+          Darbs ar šo dokumentu notiek <a className="text-sky-700 underline" href={AGENT_URL}>Lietvedības aģentā</a> (panelis „Mans darbs”).
+        </div>
+      )}
+      {isAdmin && <div className="border-t pt-3 space-y-2">
+        <div className="text-xs font-medium text-gray-500">Administratora darbības (ārpus procesa)</div>
         {doc.status === "registered" && (
           <div className="flex gap-2">
             <input value={sendDid} onChange={(e) => setSendDid(e.target.value)} placeholder="Recipient org DID" className="flex-1 text-xs px-2 py-1 border rounded" />
@@ -1190,7 +1468,7 @@ function DocumentDetail({ doc, onAction, notify }) {
         {["registered", "decided"].includes(doc.status) && (
           <button onClick={() => act("/archive", {})} className="text-xs px-3 py-1 bg-gray-500 text-white rounded">Archive</button>
         )}
-      </div>
+      </div>}
 
       <DocumentProcessPanel doc={doc} notify={notify} />
 
@@ -2148,31 +2426,6 @@ function StructurePage({ type, notify }) {
   </div>);
 }
 
-function ArchivePage({ notify }) {
-  const [batches, setBatches] = useState([]); const [docIds, setDocIds] = useState(""); const [name, setName] = useState("");
-  const load = async () => { try { setBatches(await api("/archive/batches")); } catch(e){notify(e.message,"error");} };
-  useEffect(()=>{load();},[]);
-  const create = async () => { try { const ids = docIds.split(",").map(s=>parseInt(s.trim())).filter(n=>!isNaN(n)); await api("/archive/batches",{method:"POST",body:JSON.stringify({name,document_ids:ids})}); notify("Batch created"); load(); } catch(e){notify(e.message,"error");} };
-  const exp = async (id) => { try { const r = await api(`/archive/batches/${id}/export`,{method:"POST"}); const blob = await r.blob(); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`archive-${id}.zip`; a.click(); notify("Export complete"); } catch(e){notify(e.message,"error");} };
-
-  return (<div>
-    <h2 className="text-xl font-bold mb-4">Archive</h2>
-    <div className="bg-white border rounded-lg p-4 mb-4 space-y-2">
-      <input value={name} onChange={e=>setName(e.target.value)} placeholder="Batch name" className="w-full text-sm px-3 py-2 border rounded" />
-      <input value={docIds} onChange={e=>setDocIds(e.target.value)} placeholder="Document IDs (comma-separated)" className="w-full text-sm px-3 py-2 border rounded" />
-      <button onClick={create} className="text-sm px-4 py-2 bg-emerald-600 text-white rounded">Create Batch</button>
-    </div>
-    <div className="bg-white rounded-lg border divide-y">
-      {batches.map(b=>(<div key={b.id} className="px-4 py-3 flex items-center justify-between">
-        <div><div className="text-sm font-medium">{b.name}</div><div className="text-xs text-gray-400">{b.document_count} docs \u00b7 {b.status}</div></div>
-        <button onClick={()=>exp(b.id)} className="text-xs px-3 py-1 bg-blue-600 text-white rounded">Export ZIP</button>
-      </div>))}
-      {!batches.length && <div className="p-6 text-center text-gray-400 text-sm">No archive batches</div>}
-    </div>
-  </div>);
-}
-
-
 function AIInstructionsPage({ notify }) {
   const [instructions, setInstructions] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -2343,6 +2596,268 @@ function SettingsPage({ notify, brand, setBrand }) {
       </div>
     </div>
   </div>);
+}
+
+// Result of a ProcessGit process run on this document (whatever its DMN
+// tables decided) and — when a step waits for a person — the decision buttons.
+const RESULT_LABELS = {
+  joma: "Joma", kategorija: "Kategorija", kategorijasNosaukums: "Kategorijas nosaukums",
+  kods: "Klasifikatora kods", kodaNosaukums: "Tēma", klasifikacijasAvots: "Klasificēja",
+  klasifikacijasPamatojums: "Klasifikācijas pamatojums",
+  topic: "Joma", confidence: "Pārliecība", jurisdiction: "Piekritība", reason: "Pamatojums",
+  priority: "Prioritāte", responseDays: "Atbildes termiņš (dienās)", outcome: "Virzības priekšlikums",
+  department: "Nodaļa", vieniba: "Struktūrvienības ID", role: "Loma", klasifikacijasIndekss: "Klasifikācijas indekss",
+  klasifikacijasNosaukums: "Lieta", strukturvieniba: "Struktūrvienība", loma: "Loma",
+  plusma: "Plūsma", termins: "Termiņš (dienās)", glabasanasTermins: "Glabāšanas termiņš",
+  templateId: "Atbildes veidne",
+};
+const VALUE_LABELS = {
+  BT: "Bērnu tiesības", PPT: "Pilsoniskās un politiskās tiesības",
+  SEK: "Sociālās, ekonomiskās un kultūras tiesības", TV: "Tiesiskā vienlīdzība un diskriminācijas novēršana",
+  "bernu-tiesibas": "Bērnu tiesības", "diskriminacijas-noversana": "Diskriminācijas novēršana",
+  "laba-parvaldiba": "Laba pārvaldība", "socialas-tiesibas": "Sociālās tiesības",
+  "civilas-tiesibas": "Civilās un politiskās tiesības", "neskaidrs": "Neskaidrs",
+  "piekritigs": "Piekritīgs", "nav-piekritigs": "Nav piekritīgs",
+  "steidzams": "Steidzams", "augsts": "Augsta", "parasts": "Parasta",
+  "virzit-izskatisanai": "Virzīt izskatīšanai", "uzsakt-parbaudi": "Uzsākt pārbaudi",
+  "parsutit-citai-iestadei": "Pārsūtīt citai iestādei", "atteikt": "Atteikt",
+  "manuala-izvertesana": "Manuāla izvērtēšana",
+  modelis: "Valodas modelis (ar precedentiem)", precedents: "Darbinieka labojums (precedents)", noteikumi: "Noteikumi (DMN)", "izpilde": "Izpildei", "iepazisanas": "Iepazīšanai",
+};
+const REVIEW_STATUS = {
+  gaida: { label: "Gaida darbinieka lēmumu", cls: "bg-amber-100 text-amber-800" },
+  apstiprinats: { label: "Apstiprināts", cls: "bg-green-100 text-green-800" },
+  labots: { label: "Labots un apstiprināts", cls: "bg-sky-100 text-sky-800" },
+  parsutits: { label: "Pārsūtīts citai iestādei", cls: "bg-violet-100 text-violet-800" },
+  noraidits: { label: "Noraidīts — manuāla virzība", cls: "bg-gray-200 text-gray-700" },
+};
+
+function ProcessResultCard({ doc, notify, isAdmin }) {
+  const result = doc.metadata.uapf_result || {};
+  const [review, setReview] = useState(doc.metadata.uapf_review || null);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fix, setFix] = useState(null);     // {opts, kods, vieniba, iemesls} while correcting
+  const openFix = async () => {
+    try {
+      const o = await api(`/uapf/review/${doc.id}/options`);
+      setFix({ opts: o, kods: result.kods || "", vieniba: result.vieniba || "", iemesls: "" });
+    } catch (e) { notify?.(e.message, "error"); }
+  };
+  const sendFix = async () => {
+    const changes = { labojumaIemesls: fix.iemesls };
+    if (fix.kods && fix.kods !== (result.kods || "")) changes.labotsKods = fix.kods;
+    if (fix.vieniba && fix.vieniba !== (result.vieniba || "")) changes.labotaVieniba = fix.vieniba;
+    if (!changes.labotsKods && !changes.labotaVieniba) { notify?.("Nekas nav mainīts", "error"); return; }
+    if (!fix.iemesls.trim()) { notify?.("Ierakstiet, kāpēc — no tā sistēma mācās", "error"); return; }
+    setBusy(true);
+    try {
+      const r = await api(`/uapf/review/${doc.id}`, { method: "POST", body: JSON.stringify({ decision: "labots", comment: fix.iemesls, changes }) });
+      setReview(r.review); setFix(null);
+      notify?.(`Labojums saglabāts kā precedents; process: ${r.state}`);
+    } catch (e) { notify?.(e.message, "error"); }
+    setBusy(false);
+  };
+  const rows = Object.keys(RESULT_LABELS).filter((k) => result[k] !== undefined && result[k] !== null && result[k] !== "");
+  const show = (k) => {
+    const v = result[k];
+    if (k === "confidence" && typeof v === "number") return `${Math.round(v * 100)}%`;
+    return VALUE_LABELS[v] || String(v);
+  };
+  const decide = async (decision) => {
+    setBusy(true);
+    try {
+      const r = await api(`/uapf/review/${doc.id}`, { method: "POST", body: JSON.stringify({ decision, comment: comment || null }) });
+      setReview(r.review);
+      notify?.(`Lēmums saglabāts; process: ${r.state}`);
+    } catch (e) { notify?.(e.message, "error"); }
+    setBusy(false);
+  };
+  const st = review ? (REVIEW_STATUS[review.status] || { label: review.status, cls: "bg-gray-100" }) : null;
+  const draft = doc.metadata.uapf_draft;
+  return (
+    <div className="mt-3 bg-gradient-to-br from-emerald-50 to-white border-2 border-emerald-300 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-emerald-900">⚙️ Procesa rezultāts</h4>
+        {result.sessionId && <span className="text-xs text-gray-500 font-mono">{result.sessionId}</span>}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {rows.map((k) => (
+          <div key={k} className={["reason", "klasifikacijasNosaukums", "klasifikacijasPamatojums", "kodaNosaukums"].includes(k) ? "col-span-2" : ""}>
+            <dt className="text-xs uppercase tracking-wide text-gray-500">{RESULT_LABELS[k]}</dt>
+            <dd className="font-medium text-gray-900">{show(k)}</dd>
+          </div>
+        ))}
+      </dl>
+      {draft && (
+        <div className="mt-3 pt-3 border-t border-emerald-200">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs uppercase tracking-wide text-gray-500">
+              Atbildes projekts · {draft.templateId} v{draft.templateVersion}{draft.templateSynthetic ? " (sintētiska veidne)" : ""}
+            </span>
+            {Array.isArray(draft.missingElements) && (
+              <span className={`text-xs px-2 py-0.5 rounded ${draft.missingElements.length ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                {draft.missingElements.length ? `Trūkst: ${draft.missingElements.join(", ")}` : "Obligātie elementi ir"}
+              </span>
+            )}
+          </div>
+          <pre className="whitespace-pre-wrap text-sm bg-white border rounded p-3 font-sans">{draft.text}</pre>
+        </div>
+      )}
+      {review && (
+        <div className="mt-3 pt-3 border-t border-emerald-200 space-y-2">
+          <span className={`text-xs px-2 py-0.5 rounded font-semibold ${st.cls}`}>{st.label}</span>
+          {review.status === "gaida" && fix ? (
+            <div className="space-y-2 bg-sky-50 border border-sky-200 rounded p-3">
+              <div className="text-xs text-sky-900">Labojums tiks saglabāts kā precedents: nākamajiem līdzīgajiem dokumentiem sistēma to ņems vērā.</div>
+              <label className="block text-xs text-gray-600">Pareizā tēma (klasifikators {fix.opts.versija})
+                <select className="mt-1 w-full border rounded p-1.5 text-sm" value={fix.kods} onChange={(e) => setFix({ ...fix, kods: e.target.value })}>
+                  <option value="">— nemainīt —</option>
+                  {["BT", "PPT", "SEK", "TV"].map((j) => (
+                    <optgroup key={j} label={VALUE_LABELS[j] || j}>
+                      {fix.opts.kodi.filter((c) => c.joma === j).map((c) => (
+                        <option key={c.kods} value={c.kods}>{c.kods} — {c.cels}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-gray-600">Pareizā struktūrvienība (atstājiet, ja to nosaka tēma)
+                <select className="mt-1 w-full border rounded p-1.5 text-sm" value={fix.vieniba} onChange={(e) => setFix({ ...fix, vieniba: e.target.value })}>
+                  <option value="">— pēc tēmas —</option>
+                  {fix.opts.vienibas.map((u) => <option key={u.id} value={u.id}>{u.id} — {u.nosaukums}</option>)}
+                </select>
+              </label>
+              <textarea className="w-full border rounded p-2 text-sm" rows={2} placeholder="Kāpēc sistēmas priekšlikums bija nepareizs? (obligāti)"
+                value={fix.iemesls} onChange={(e) => setFix({ ...fix, iemesls: e.target.value })} />
+              <div className="flex gap-2">
+                <button disabled={busy} onClick={sendFix} className="px-3 py-1.5 rounded bg-sky-600 text-white text-sm disabled:opacity-50">Saglabāt labojumu</button>
+                <button disabled={busy} onClick={() => setFix(null)} className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm">Atcelt</button>
+              </div>
+            </div>
+          ) : review.status === "gaida" && (!isAdmin || (review.decisions || []).length) ? (
+            <div className="text-sm text-gray-700">
+              Gaida soli <b>{review.stepId}</b>{review.role ? <> ({review.role})</> : null}. To pabeidz{" "}
+              <a className="text-sky-700 underline" href={AGENT_URL}>Lietvedības aģentā</a> — panelī „Mans darbs”.
+            </div>
+          ) : review.status === "gaida" ? (
+            <div className="space-y-2">
+              <textarea className="w-full border rounded p-2 text-sm" rows={2} placeholder="Komentārs (nav obligāts)"
+                value={comment} onChange={(e) => setComment(e.target.value)} />
+              <div className="flex gap-2">
+                <button disabled={busy} onClick={() => decide("apstiprinats")} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm disabled:opacity-50">Apstiprināt</button>
+                <button disabled={busy} onClick={openFix} className="px-3 py-1.5 rounded bg-sky-600 text-white text-sm disabled:opacity-50">Labot klasifikāciju / nodaļu</button>
+                <button disabled={busy} onClick={() => decide("noraidits")} className="px-3 py-1.5 rounded bg-gray-200 text-gray-800 text-sm disabled:opacity-50">Noraidīt — manuāla virzība</button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600">
+              {review.decidedBy && <>Lēma: {review.decidedBy}</>}
+              {result.labots && result.ieprieksejais && <> · sistēma bija ieteikusi {result.ieprieksejais.kods || result.ieprieksejais.kategorija || "—"} / {result.ieprieksejais.vieniba || "—"}; labojums saglabāts kā precedents Nr. {result.precedents}</>}
+              {review.comment && <> · „{review.comment}”</>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Semantic description (vdvc/dokumentu-semantikas-formats): what the reviewer sees
+// before approving, and whether the de-identified central layer was made.
+const CLAIM_STATUS = {
+  apgalvots: "apgalvo", pieprasits: "lūdz", apliecinats: "apliecina", noliegts: "noliedz", secinats: "secināts",
+};
+const PREDICATE_LV = {
+  "iesnieguma-prieksmets": "Priekšmets", "iespejamais-parkapums": "Iespējamais pārkāpums", "lugums": "Lūgums",
+  "notikuma-laiks": "Laiks", "tiesvediba": "Tiesvedība", "kaitejums-turpinas": "Kaitējums turpinās",
+  "ieprieksejas-versanas": "Iepriekšējās vēršanās", "normativa-atsauce": "Normatīvā atsauce",
+  "dokumenta-merkis": "Mērķis", "termins": "Termiņš", "pielikums": "Pielikums",
+};
+function SemanticDescriptionCard({ sem: initial, docId, notify }) {
+  const [view, setView] = useState("lokals");
+  const [sem, setSem] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const regenerate = async () => {
+    setBusy(true);
+    try {
+      await api(`/uapf/semantics/${docId}/regenerate`, { method: "POST" });
+      const d = await api(`/documents/${docId}`);
+      setSem(d.metadata?.semantika || {});
+      notify?.("Semantiskais apraksts izveidots no jauna");
+    } catch (e) { notify?.(e.message, "error"); }
+    setBusy(false);
+  };
+  const again = (
+    <button disabled={busy} onClick={regenerate} className="text-xs px-2 py-0.5 rounded border bg-white text-gray-700 disabled:opacity-50">
+      {busy ? "Ģenerē…" : "Ģenerēt vēlreiz"}
+    </button>
+  );
+  const local = sem.lokals;
+  const central = sem.centrals || sem.centralaPrieksskatijums;
+  const d = view === "centrals" && central ? central : local;
+  if (!local) {
+    return (
+      <div className="mt-3 border rounded-lg p-3 text-sm text-red-700 bg-red-50 flex items-start justify-between gap-3">
+        <span>Semantiskais apraksts nav izveidots: {(sem.kludas || []).join("; ")}</span>{again}
+      </div>);
+  }
+  const who = Object.fromEntries((d.dalibnieki || []).map((p) => [p.id, p.nosaukums || p.loma]));
+  const proj = sem.projekcija;
+  const rev = d.izcelsme?.parskatisana?.statuss;
+  return (
+    <div className="mt-3 border-2 border-indigo-200 rounded-lg p-4 bg-white">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="font-semibold text-indigo-900">Semantiskais apraksts</h4>
+        <div className="flex gap-1 text-xs">
+          {again}
+          {["lokals", "centrals"].map((v) => (
+            <button key={v} disabled={v === "centrals" && !central} onClick={() => setView(v)}
+              className={`px-2 py-0.5 rounded border ${view === v ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-600"} disabled:opacity-40`}>
+              {v === "lokals" ? "Iestādē (lokālais)" : "Reģistram (centrālais)"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 mb-2">
+        MI ģenerēts · {rev === "neparskatits" ? "nav pārskatīts" : rev === "labots" ? "pārskatīts un labots" : "pārskatīts"} ·
+        profils {d.profils} · formāts {d.formataVersija} · {d.izcelsme?.noteikumuVersija}
+      </div>
+      <p className="text-sm text-gray-900 leading-relaxed">{d.kopsavilkums?.teksts}</p>
+      <div className="flex flex-wrap gap-1 mt-2">
+        {(d.temas || []).map((t, i) => (
+          <span key={i} title={t.shema} className={`text-xs px-2 py-0.5 rounded ${t.shema?.includes("eurovoc") ? "bg-indigo-50 text-indigo-800" : "bg-emerald-50 text-emerald-800"}`}>
+            {t.shema?.includes("eurovoc") ? "EuroVoc" : "Klasifikators"} {t.kods} {t.nosaukums}
+          </span>
+        ))}
+        {(d.pazimes || []).map((p, i) => <span key={"p" + i} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">{p.kods}: {p.vertiba}</span>)}
+      </div>
+      <table className="w-full text-xs mt-3">
+        <tbody>
+          {(d.apgalvojumi || []).map((a) => (
+            <tr key={a.id} className="border-t align-top">
+              <td className="py-1 pr-2 text-gray-500 whitespace-nowrap">{PREDICATE_LV[a.predikats] || a.predikats}</td>
+              <td className="py-1 pr-2"><span className="text-gray-500">{who[a.apgalvo] || a.apgalvo} {CLAIM_STATUS[a.statuss] || a.statuss}:</span> {a.vertiba}
+                {a.laiks?.datums && <span className="text-gray-400"> ({a.laiks.datums})</span>}</td>
+              <td className="py-1 text-gray-400 whitespace-nowrap">{(a.pieradijumi || []).map((e) => e.lapa ? `${e.lapa}. lpp.` : "").filter(Boolean).join(", ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(d.nenoteiktibas || []).length > 0 && (
+        <div className="text-xs text-amber-700 mt-2">Nav noteikts: {d.nenoteiktibas.map((u) => `${u.lauks} (${u.iemesls})`).join("; ")}</div>
+      )}
+      {(sem.kludas || []).length > 0 && <div className="text-xs text-red-700 mt-2">Formāta pārbaude: {sem.kludas.slice(0, 4).join("; ")}</div>}
+      {proj && (
+        <div className={`text-xs mt-2 px-2 py-1 rounded ${proj.derigs ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+          Centrālais slānis: {proj.derigs ? "atbilst — var nodot reģistram" : "neatbilst — netiek nodots"} ·
+          noņemti {proj.nonemti?.length || 0} lauki, vispārināti {proj.visparinati || 0}, aizstāti {proj.aizstati || 0}
+          {(proj.atradumi || []).length > 0 && <> · atrasts: {proj.atradumi.map((f) => f.iemesls).join(", ")}</>}
+          {(proj.modelaAtradumi || []).length > 0 && <> · modeļa pārbaude: {proj.modelaAtradumi.map((f) => f.iemesls).join("; ")}</>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UapfClassificationCard({ classification }) {
