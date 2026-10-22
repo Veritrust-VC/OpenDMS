@@ -58,6 +58,11 @@ CONFIG_FIELDS = (
     Field("scope", "Scope", required=False, placeholder="namejs.api"),
     Field("verify_tls", "Verify TLS certificate", required=False, kind="bool",
           help="On by default. Turn off only for a lab host with a self-signed certificate."),
+    Field("intake_poll_seconds", "Intake poll interval (s)", required=False, kind="number",
+          placeholder="30",
+          help="Import new Namejs documents into OpenDMS this often. Blank or 0 = intake off."),
+    Field("intake_folder_ids", "Intake folders", required=False, placeholder="1,4",
+          help="Namejs folder IDs to import from, comma separated. Blank = all folders."),
 )
 
 SECRET_FIELDS = (

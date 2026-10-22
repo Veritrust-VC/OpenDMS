@@ -1,5 +1,7 @@
 """OpenDMS — Open Document Management System with VeriDocs DID/VC integration."""
 
+import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -23,6 +25,8 @@ from opendms.routers.agent import router as agent_router
 from opendms.mcp import router as mcp_router
 from opendms.uapf import uapf_host_router
 from opendms.routers.uapf_admin import router as uapf_admin_router
+from opendms.routers.namejs_intake import router as namejs_intake_router
+from opendms.namejs_intake import poll_forever as namejs_poll_forever
 
 
 def create_app() -> FastAPI:
@@ -33,7 +37,12 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await init_db()
+        # Namejs intake: idle unless a Namejs connection sets an intake poll interval.
+        namejs_task = asyncio.create_task(namejs_poll_forever())
         yield
+        namejs_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await namejs_task
         await close_sdk()
         await close_db()
 
@@ -46,7 +55,7 @@ def create_app() -> FastAPI:
     for r in [auth_router, oidc_router, users_router, documents_router, org_router, reg_router,
               cls_router, archive_router, settings_router, health_router, ai_router, audit_router, intelligence_router,
               ai_instructions_router, org_tools_router, connections_router, agent_router,
-              uapf_host_router, uapf_admin_router, mcp_router]:
+              uapf_host_router, uapf_admin_router, mcp_router, namejs_intake_router]:
         app.include_router(r)
 
     return app
