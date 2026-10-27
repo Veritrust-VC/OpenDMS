@@ -105,3 +105,11 @@ def test_structure_from_email_end_to_end():
     assert t("es:attachments/es:attachment/es:fileName") == "lemums.pdf"              # the original is the source, not an attachment
     assert {"W-110", "W-111", "W-103"} <= set(out["strukturasBridinajumi"])
     assert recorded["status"] == "structured" and recorded["datne"] == 99
+
+
+def test_self_representation_is_dropped():
+    raw = {"parties": [{"id": "p1", "role": ["submitter", "affectedPerson"], "partyType": "naturalPerson",
+                        "givenName": "Rihards", "familyName": "Paraugs"}],
+           "representation": {"represents": "p1", "basis": "none"}}
+    p1 = S.sanitise(raw)["parties"][0]
+    assert "representation" not in p1 and "affectedPerson" in p1["role"] and "representative" not in p1["role"]

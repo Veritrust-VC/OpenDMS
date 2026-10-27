@@ -194,7 +194,9 @@ def sanitise(raw: dict, *, sender: Optional[dict] = None) -> dict:
             if len(parts) >= 2:
                 sub.update(partyType="naturalPerson", givenName=" ".join(parts[:-1])[:200], familyName=parts[-1][:200])
     rep = raw.get("representation") if isinstance(raw.get("representation"), dict) else None
-    if rep and rep.get("represents") in seen and rep.get("basis") in ENUMS["basis"]:
+    # A person writing for themselves is not a representative: the model sometimes returns
+    # representation {represents: p1, basis: none} for its own submitter.
+    if rep and rep.get("represents") in seen and rep.get("represents") != sub["id"] and rep.get("basis") in ENUMS["basis"]:
         r = {"represents": rep["represents"], "basis": rep["basis"]}
         if _s(rep.get("description")):
             r["description"] = _s(rep["description"], 500)
