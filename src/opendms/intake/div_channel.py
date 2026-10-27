@@ -36,6 +36,12 @@ def _structured_submitter(files: list[dict]):
             root = etree.fromstring(f["data"], parser=etree.XMLParser(resolve_entities=False, no_network=True))
         except Exception:
             continue
+        if root.tag == "{urn:uas:esubmission:0.1}eSubmission":   # tiesibsargs/iesnieguma-shema
+            from opendms.intake.esubmission import submitter_of
+            sub = submitter_of(f["data"])
+            if sub:
+                return {k: v for k, v in sub.items() if v}
+            continue
         if root.tag != f"{{{NS}}}Iesniegums":
             continue
         t = lambda p: root.findtext(p, namespaces={"i": NS})  # noqa: E731

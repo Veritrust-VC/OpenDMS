@@ -4,6 +4,7 @@
 // nekāda teksta atpazīšana vai MI pārveide.
 
 import { useEffect, useMemo, useState } from "react";
+import SubmissionForm from "./SubmissionForm.jsx";
 
 const STEPS = ["Iesniedzējs", "Jautājums", "Iepriekšējie soļi", "Pielikumi", "Pārskats"];
 const inputCls = "w-full px-3 py-2 border rounded-md text-sm";
@@ -211,7 +212,9 @@ export default function PublicForm({ channel }) {
         <h1 className="text-xl font-bold text-gray-900 mb-1">{info?.nosaukums || "Iesniegums"}</h1>
         <p className="text-xs text-gray-500 mb-4">Strukturēta veidlapa. Iesniegums tiek saglabāts tieši tādā formā, kādā to aizpildāt.</p>
 
-        {done ? (
+        {info?.formasVersija === "e-submission-0.1" ? (
+          <SubmissionForm channel={channel} info={info} />
+        ) : done ? (
           <div>
             <p className="text-sm text-gray-800 mb-4">Iesniegums saņemts un reģistrēts. Saglabājiet šo lapu vai reģistrācijas numuru.</p>
             <Status token={done.statusaKods} />
@@ -373,13 +376,13 @@ export default function PublicForm({ channel }) {
           </>
         )}
 
-        {err.length > 0 && (
+        {err.length > 0 && info?.formasVersija !== "e-submission-0.1" && (
           <ul className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3 my-3 list-disc pl-6">
             {err.map((e, n) => <li key={n}>{e}</li>)}
           </ul>
         )}
 
-        {info && !done && (
+        {info && !done && info.formasVersija !== "e-submission-0.1" && (
           <div className="flex justify-between mt-4">
             <button type="button" disabled={step === 0} onClick={() => { setErr([]); setStep(step - 1); }} className="px-3 py-2 text-sm border rounded-md disabled:opacity-40">Atpakaļ</button>
             {step < 4

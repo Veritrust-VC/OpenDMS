@@ -123,15 +123,19 @@ async def form_info(cid: str):
             if c["izvelams"]:
                 kodi.append({"kods": c["kods"], "joma": c["joma"], "nosaukums": c["nosaukums"], "cels": c["cels"]})
         jomas = [{"kods": k, "nosaukums": n} for k, n in seen.items()]
+    from opendms.intake import esubmission
     return {"id": ch["id"], "nosaukums": ch.get("nosaukums") or "Iesniegums", "iestade": org.get("name"),
             "maxMb": ch.get("max_mb", 20), "apraksts": ch.get("apraksts"),
             "shema": sh.get("xsd"), "noteikumi": sh.get("noteikumi"),
+            # which form the browser renders: "e-submission-0.1" (itemised facts and claims) or "1.0"
+            "formasVersija": "e-submission-0.1" if esubmission.is_esubmission(sh) else "1.0",
             "klasifikatorsVersija": (klas or {}).get("versija"), "jomas": jomas, "kodi": kodi}
 
 
 @router.post("/forma/{cid}")
 async def form_submit(cid: str, request: Request, iesniegums: str = Form(...), web: str = Form(""),
-                      apraksti: str = Form("[]"), datnes: Optional[list[UploadFile]] = File(None)):
+                      apraksti: str = Form("[]"), veidi: str = Form("[]"),
+                      datnes: Optional[list[UploadFile]] = File(None)):
     """Field values (JSON, schema names) + evidence files -> schema-valid XML -> DVS document.
 
     Nothing is interpreted: the XML is written from the fields, validated with the
@@ -147,7 +151,8 @@ async def form_submit(cid: str, request: Request, iesniegums: str = Form(...), w
     try:
         fields = json.loads(iesniegums)
         notes = json.loads(apraksti or "[]")
-        assert isinstance(fields, dict) and isinstance(notes, list)
+        kinds = json.loads(veidi or "[]")
+        assert isinstance(fields, dict) and isinstance(notes, list) and isinstance(kinds, list)
     except Exception:
         raise HTTPException(422, {"kludas": ["Nederīgi veidlapas dati."]})
     limit = int(float(ch.get("max_mb", 20)) * 1024 * 1024)
@@ -160,18 +165,31 @@ async def form_submit(cid: str, request: Request, iesniegums: str = Form(...), w
         if total > limit:
             raise HTTPException(413, {"kludas": [f"Datnes kopā pārsniedz {ch.get('max_mb', 20)} MB."]})
         atts.append({"file_name": f.filename, "mime_type": f.content_type or "application/octet-stream", "data": data,
-                     "apraksts": str(notes[idx])[:200] if idx < len(notes) and notes[idx] else None})
+                     "apraksts": str(notes[idx])[:200] if idx < len(notes) and notes[idx] else None,
+                     "kind": str(kinds[idx]) if idx < len(kinds) and kinds[idx] else None})
     if len(atts) > 10:
         raise HTTPException(422, {"kludas": ["Ne vairāk kā 10 pielikumi."]})
 
-    xml = structured.build(fields, kanals="Portals", attachments=atts)
-    try:
-        info = await structured.validate(xml, sh, await structured.classifier(sh))
-    except structured.InvalidSubmission as exc:
-        raise HTTPException(422, {"kludas": exc.errors})
+    from opendms.intake import esubmission
+    if esubmission.is_esubmission(sh):
+        # UAS e-submission 0.1: the payload is the schema's shape; identity, provenance and the
+        # attachment list are set here. Errors block; warnings travel with the document to screening.
+        decl = fields.pop("declarations", None) or {}
+        xml = esubmission.build(fields, channel="portal", attachments=atts, signature="none", status="received",
+                                structuring={"method": "form"}, declarations=decl)
+        res = await esubmission.validate(xml, sh, await esubmission.classifier(sh))
+        if res["errors"]:
+            raise HTTPException(422, {"kludas": res["errors"]})
+        info = {**res["info"], "bridinajumi": res["warnings"]}
+    else:
+        xml = structured.build(fields, kanals="Portals", attachments=atts)
+        try:
+            info = await structured.validate(xml, sh, await structured.classifier(sh))
+        except structured.InvalidSubmission as exc:
+            raise HTTPException(422, {"kludas": exc.errors})
 
     token = secrets.token_urlsafe(16)
-    label = info["joma"] + (f" {info['kods']}" if info.get("kods") else "")
+    label = (info.get("joma") or "nav jomas") + (f" {info['kods']}" if info.get("kods") else "")
     r = await service.ingest(
         ch, external_ref=token, sender={k: v for k, v in info["sender"].items() if v},
         subject=f"Iesniegums ({label})", body="",
