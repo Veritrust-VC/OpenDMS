@@ -34,6 +34,8 @@ CAPABILITY_DESCRIPTIONS = {
     "ai.redact@1": "Aizklāj personu identificējošu informāciju (vārdi, personas kodi, adreses) pirms turpmākās AI apstrādes.",
     "ai.extract@1": "Strukturēti izvelk faktus un pazīmes no maskētā teksta — vai pieminēti bērni, vai notiek pārkāpums, kāda valoda, u.c.",
     "data.write@1": "Saglabā lēmuma rezultātu OpenDMS datu bāzē kā audit-trail ierakstu.",
+    "submission.structure@1": "Strukturē iesniegumu pēc UAS e-submission 0.1: izklāsts, fakti, prasījumi, iepriekšējie soļi; identifikatori modelim maskēti; noteikumu brīdinājumi izvērtēšanai.",
+    "submission.confirm@1": "Pēc darbinieka pārskatīšanas atzīmē strukturēto iesniegumu kā pārskatītu, ar pārskatītāja vārdu.",
     "event.emit@1": "Publicē CloudEvents notikumu, ko var saņemt citas sistēmas (lietu vadība, statistika, u.c.).",
 }
 

@@ -564,6 +564,8 @@ PROCESS_RESULT_KEYS = (
     "saskanotajs", "parakstitajs", "statuss", "dokumentaVeids",
     # manager's resolution (rezolūcija)
     "izpilditajs", "izpilditajaId", "rezolucija",
+    # structured iesniegums (UAS e-submission 0.1): what the reviewer checks alongside the classification
+    "strukturaStatuss", "strukturasBridinajumi", "strukturasFakti", "strukturasPrasijumi", "strukturasDatne",
     # human step
     "decision", "comment",
 )
@@ -1222,6 +1224,14 @@ async def handle_document_sent(ctx: dict) -> dict:
     return {"output": {"nosutits": True}}
 
 
+def _structuring(name: str):
+    async def handler(ctx: dict) -> dict:
+        from opendms.intake import structuring
+        return await getattr(structuring, name)(ctx)
+    handler.__name__ = name
+    return handler
+
+
 HANDLERS = {
     "forward/request":   (_forwarding("handle_forward_request"), {"namespace": "forward", "operation": "request", "version": 1,
                                                      "summary": "Read a staff request to forward the document to another institution (e-adrese)."}),
@@ -1258,6 +1268,10 @@ HANDLERS = {
                                                      "summary": "Write the document's semantic description (vdvc/dokumentu-semantikas-formats) for the profile in schemaRef."}),
     "semantics/project":  (_semantics("handle_semantics_project"), {"namespace": "semantics", "operation": "project", "version": 1,
                                                      "summary": "Make the de-identified central layer and put the local layer in metadati.xml section 13."}),
+    "submission/structure": (_structuring("handle_submission_structure"), {"namespace": "submission", "operation": "structure", "version": 1,
+                                                     "summary": "Structure the iesniegums as UAS e-submission 0.1 (schemaRef: tiesibsargs/iesnieguma-shema): text masked, model proposes, rules check; stored next to the original."}),
+    "submission/confirm":   (_structuring("handle_submission_confirm"), {"namespace": "submission", "operation": "confirm", "version": 1,
+                                                     "summary": "After review: mark the structured iesniegums as reviewed, with the reviewer."}),
     "learning/record":   (_learning("handle_learning_record"), {"namespace": "learning", "operation": "record", "version": 1,
                                                      "summary": "Store a reviewer's correction as a precedent and return the corrected values."}),
     "document/outgoing": (handle_document_outgoing, {"namespace": "document", "operation": "outgoing", "version": 1,
