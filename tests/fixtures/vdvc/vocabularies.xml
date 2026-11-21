@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  VDVC Controlled Vocabularies
+  Used by classification-v2-proposed.xml for metadata tags
+  Cross-references VARAM Organizations Register on ProcessGit
+-->
+<vdvc:vocabularies xmlns:vdvc="urn:vdvc:classification:2026">
+  <vdvc:departments>
+    <vdvc:department id="AD">
+      <vdvc:name>Audita departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="AID">
+      <vdvc:name>Attīstības instrumentu departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="BFD">
+      <vdvc:name>Budžeta un finanšu departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="DAD">
+      <vdvc:name>Dabas aizsardzības departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="IPD">
+      <vdvc:name>Investīciju programmu departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="IUD">
+      <vdvc:name>Iepirkumu uzraudzības departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="JD">
+      <vdvc:name>Juridiskais departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="KD">
+      <vdvc:name>Komunikācijas departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="LN">
+      <vdvc:name>Lietvedības nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="ND">
+      <vdvc:name>Nozaru departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="ND NDPN">
+      <vdvc:name>Nozaru departamenta Dabas politikas nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="ND NN">
+      <vdvc:name>Nozaru departamenta Nozaru nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="PN">
+      <vdvc:name>Personāla nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="PPD">
+      <vdvc:name>Projektu pārvaldības departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="RAIN">
+      <vdvc:name>Reģionālās attīstības instrumentu nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="RAPN">
+      <vdvc:name>Reģionālās attīstības politikas nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="SAN">
+      <vdvc:name>Saimnieciskā apkalpošanas nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="TAIN">
+      <vdvc:name>Telpiskās attīstības instrumentu nodaļa</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="TPZPD">
+      <vdvc:name>Telpiskās plānošanas un zemes pārvaldības departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="VARAM">
+      <vdvc:name>Ministrijas vadība</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="VIAPD">
+      <vdvc:name>Valsts IKT arhitektūras pārvaldības departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+    <vdvc:department id="VIKTAD">
+      <vdvc:name>Valsts IKT attīstības departaments</vdvc:name>
+      <vdvc:nmrCode><!-- TODO: cross-ref VARAM Org Register --></vdvc:nmrCode>
+    </vdvc:department>
+  </vdvc:departments>
+  <vdvc:programmes>
+    <vdvc:programme id="PRG-001">
+      <vdvc:name>ES fondu 2014.-2020.gada plānošanas periods</vdvc:name>
+      <vdvc:v1Code>I1-1</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-002">
+      <vdvc:name>ES fondu 2021.-2027. gada plānošanas periods</vdvc:name>
+      <vdvc:v1Code>I1-2</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-003">
+      <vdvc:name>ES Atveseļošanas un noturības mehānisma plāns</vdvc:name>
+      <vdvc:v1Code>I1-3</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-004">
+      <vdvc:name>Sociālā klimata fonds</vdvc:name>
+      <vdvc:v1Code>I1-4</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-005">
+      <vdvc:name>ES fondu 2028.-2034. gada plānošanas periods</vdvc:name>
+      <vdvc:v1Code>I1-5</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-006">
+      <vdvc:name>LIFE nacionālā līdzfinansējuma administrēšana projektiem, kas izturējuši EK LIFE programmas konkursu (sākot ar 2024.gada uzsaukumu) un noslēguši līgumus ar EK par projekta īstenošanu</vdvc:name>
+      <vdvc:v1Code>I1-6</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-007">
+      <vdvc:name>LIFE nacionālā līdzfinansējuma administrēšana projektiem, kas piedalās EK LIFE uzsaukumos līdz 2024.gadam</vdvc:name>
+      <vdvc:v1Code>I1-7</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-008">
+      <vdvc:name>LIFE Nacionālais kontaktpunkts</vdvc:name>
+      <vdvc:v1Code>I1-8</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-009">
+      <vdvc:name>Latvijas vides aizsardzības fonds</vdvc:name>
+      <vdvc:v1Code>I1-10</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-010">
+      <vdvc:name>Latvijas – Krievijas pārrobežu sadarbības programmas 2014.-2020. gadam vadošā iestāde</vdvc:name>
+      <vdvc:v1Code>I1-12</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-011">
+      <vdvc:name>Interreg finanšu kontroles institūcija</vdvc:name>
+      <vdvc:v1Code>I1-14</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-012">
+      <vdvc:name>Interreg vadošā iestāde (Interreg VI-A Latvijas - Lietuvas programma 2021.-2027.gadam, Latvijas - Lietuvas programma 2028.-2034.gadam)</vdvc:name>
+      <vdvc:v1Code>I1-15</vdvc:v1Code>
+    </vdvc:programme>
+    <vdvc:programme id="PRG-013">
+      <vdvc:name>Interreg nacionālā atbildīgā iestāde + Interreg nacionālais līdzfinansējums + Starpvaldību komisijas pārrobežu jautājumos</vdvc:name>
+      <vdvc:v1Code>I1-16</vdvc:v1Code>
+    </vdvc:programme>
+  </vdvc:programmes>
+  <vdvc:projects>
+    <vdvc:project id="PRJ-001">
+      <vdvc:name>INTERREG Interreg Baltijas jūras reģiona programmas 2021.-2027.gadam projekta #C018   “Integrētas pārvaldības veicināšana piekrastē ilgtspējīgi izmantojot dabas un sociālo kapitālu” (Baltic Sea2Land) </vdvc:name>
+      <vdvc:v1Code>I2-1</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-002">
+      <vdvc:name>INTERREG EUROPE  projekta  “Zemes izmantošanas politikas zaļināšana, pilnveidojot zemes pārvaldības pasākumus dabas un bioloģiskās daudzveidības aizsardzībai, atjaunošanai un saglabāšana”(Green LUPO) </vdvc:name>
+      <vdvc:v1Code>I2-2</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-003">
+      <vdvc:name>EASME/EMFF/2016/1.2.1.6 - Jūras telpiskā plānošana (Pan BalticSCOPE projekts)</vdvc:name>
+      <vdvc:v1Code>I2-3</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-004">
+      <vdvc:name>ES INTERREG Baltijas jūras reģiona programmas finansējuma projekts Nr.R020 &quot;Saskaņota lineārā infrastruktūra Baltijas jūras telpiskajos plānojumos - Baltic LINES&quot;</vdvc:name>
+      <vdvc:officialNumber>.</vdvc:officialNumber>
+      <vdvc:v1Code>I2-4</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-005">
+      <vdvc:name>Atveseļošanas un noturības mehānisma plāna projekta Nr. 2.1.2.1.i.0/1/23/I/VARAM/012 “Līdzdalības budžeta pārvaldību nodrošinošas koplietošanas platformas attīstība un ieviešana” dokumentācija</vdvc:name>
+      <vdvc:officialNumber>2.1.2.1.</vdvc:officialNumber>
+      <vdvc:v1Code>I2-5</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-006">
+      <vdvc:name>INTERREG Centrālā Baltijas jūras reģiona programmas 2014. – 2020. gadam projekta „Coast4us (Piekraste mums)” dokumentācija</vdvc:name>
+      <vdvc:v1Code>I2-6</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-007">
+      <vdvc:name>Projekta Nr. 5.1.1.2/1/23/I/001 “Pašvaldību un plānošanas reģionu kapacitātes uzlabošana” dokumentācija</vdvc:name>
+      <vdvc:officialNumber>5.1.1.2/1/23/</vdvc:officialNumber>
+      <vdvc:v1Code>I2-7</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-008">
+      <vdvc:name>Projekta Nr. 6.1.1.8/1/24/I/001 “Pašvaldību un plānošanas reģionu speciālistu prasmju paaugstināšana klimatneitrālas ekonomikas un sociālekonomisko seku saistībā ar klimata pārmaiņām mazināšanas jautā</vdvc:name>
+      <vdvc:officialNumber>6.1.1.8/1/24/</vdvc:officialNumber>
+      <vdvc:v1Code>I2-8</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-009">
+      <vdvc:name>Interreg Baltijas jūras reģiona transnacionālās sadarbības programmas projekta “GreenIndustrialAreas” dokumentācija</vdvc:name>
+      <vdvc:v1Code>I2-9</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-010">
+      <vdvc:name>Programmas Interreg Europe 2021.-2027.gadam projekta “RuralProof” dokumentācija</vdvc:name>
+      <vdvc:v1Code>I2-10</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-011">
+      <vdvc:name>Projekta Nr.2.1.2.1.i.0/2/24/I/CFLA/006 “Izglītības jomas informācijas sistēmu vienotā arhitektūra un pieteikumu izglītības iestādēs vadības risinājums” dokumentācija</vdvc:name>
+      <vdvc:officialNumber>2.1.2.1.</vdvc:officialNumber>
+      <vdvc:v1Code>I2-11</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-012">
+      <vdvc:name>INTERREG Baltijas jūras reģiona transnacionālās sadarbības programmas 2014.-2020.gadam projekta &quot;Viedās specializācijas mācīšanās starp reģioniem&quot; (LARS) dokumentācija</vdvc:name>
+      <vdvc:v1Code>I2-12</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-013">
+      <vdvc:name>INTERREG Baltijas jūras reģiona transnacionālās sadarbības programmas 2014.-2020.gadam projekta &quot;Zaļā transformācija! Rīcībpolitikas rīks reģionālai plānošanai Baltijas jūras reģionā&quot; (GRETA) dokument</vdvc:name>
+      <vdvc:v1Code>I2-13</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-014">
+      <vdvc:name>Atveseļošanas un noturības mehānisma plāna projekta Nr. 3.1.1.2.i.0/1/22/I/VARAM/001 “Pašvaldību kapacitātes stiprināšana to darbības efektivitātes un kvalitātes uzlabošanai&quot; dokumentācija</vdvc:name>
+      <vdvc:officialNumber>3.1.1.2.</vdvc:officialNumber>
+      <vdvc:v1Code>I2-14</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-015">
+      <vdvc:name>Eiropas Ekonomikas zonas 2014.-2021. gada perioda projekta &quot;Uzņēmējdarbības atbalsta pasākumi Latgales plānošanas reģionā&quot; dokumentācija</vdvc:name>
+      <vdvc:v1Code>I2-15</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-016">
+      <vdvc:name>Dokumenti projekta SKILLS + ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-16</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-017">
+      <vdvc:name>Dokumenti projekta “Biznesa vides digitālā transformācija” (DigiBEST) ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-17</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-018">
+      <vdvc:name>Dokumenti par projekta Nr.3.4.2.3/18/I/001 “Publisko pakalpojumu pārveides metodoloģijas izstrāde un aprobācija” īstenošanu</vdvc:name>
+      <vdvc:officialNumber>3.4.2.3/18/</vdvc:officialNumber>
+      <vdvc:v1Code>I2-18</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-019">
+      <vdvc:name>Dokumenti ACROSS projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-19</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-020">
+      <vdvc:name>Dokumenti INTERLINK projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-20</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-021">
+      <vdvc:name>Dokumenti Atvieglojumu vienotās informācijas sistēmas un latvija.lv atvēršana komersantiem un valsts un pašvaldības vienoto klientu apkalpošanas centru attīstība (AVIS) projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-21</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-022">
+      <vdvc:name>Dokumenti Datu izplatīšanas un pārvaldības platforma (DAGR) projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-22</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-023">
+      <vdvc:name>Dokumenti Eiropas Strukturālo un investīciju fondu mērķa „Eiropas teritoriālā sadarbība” 2014.-2020.gadam INTERREG EUROPE starpreģionu sadarbības programmas projekta “Biznesa vides digitālā transformā</vdvc:name>
+      <vdvc:v1Code>I2-23</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-024">
+      <vdvc:name>Dokumenti Publiskās pārvaldes informācijas un komunikāciju tehnoloģijas arhitektūras pārvaldības sistēmas projekta ietvaros - PIKTAPS 1.kārta</vdvc:name>
+      <vdvc:v1Code>I2-24</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-025">
+      <vdvc:name>Dokumenti Publiskās pārvaldes informācijas un komunikāciju tehnoloģijas arhitektūras pārvaldības sistēmas projekta ietvaros - PIKTAPS 2. kārta</vdvc:name>
+      <vdvc:v1Code>I2-25</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-026">
+      <vdvc:name>Korespondence projektam &quot;Sabiedrības digitālo prasmju attīstība&quot;</vdvc:name>
+      <vdvc:v1Code>I2-26</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-027">
+      <vdvc:name>Dokumenti &quot;Pakalpojumu sniegšanas reformas atbalsts&quot; projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-27</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-028">
+      <vdvc:name>Dokumenti &quot;Valsts pārvaldes informācijas un komunikācijas tehnoloģiju attīstības projektu programmu un arhitektūras pārvaldība&quot; projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-28</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-029">
+      <vdvc:name>Dokumenti &quot;Publiskās pārvaldes digitālā akadēmija&quot; projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-29</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-030">
+      <vdvc:name>Dokumenti &quot;Digitālo prasmju pilnveide&quot;</vdvc:name>
+      <vdvc:v1Code>I2-30</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-031">
+      <vdvc:name>Dokumenti &quot;Valsts pārvaldes jomu (domēnu) un attistāmo risinājumu arhitektūras koordinēšanu un pārvaldība&quot;projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-31</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-032">
+      <vdvc:name>Dokumenti &quot;Mākslīgā intelekta risinājumu izmantošanas veivināšanu valsts pārvaldē&quot;projekta ietvaros</vdvc:name>
+      <vdvc:v1Code>I2-32</vdvc:v1Code>
+    </vdvc:project>
+    <vdvc:project id="PRJ-033">
+      <vdvc:name>Projekta Eiropas Savienības Atveseļošanas un noturības mehānisma plāna investīcijas 2.1.2.1.i. “Pārvaldes centralizētās platformas un sistēmas” projekta Nr. 2.1.2.1.i.0/1/23/I/VARAM/009 “Valsts pārval</vdvc:name>
+      <vdvc:officialNumber>2.1.2.1.</vdvc:officialNumber>
+      <vdvc:v1Code>I2-33</vdvc:v1Code>
+    </vdvc:project>
+  </vdvc:projects>
+  <vdvc:audiences>
+    <vdvc:audience id="republic-orgs">
+      <vdvc:name>Republikas iestādes un organizācijas</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="state-admin-public">
+      <vdvc:name>Valsts pārvaldes iestādes, fiziskas un juridiskas personas</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="foreign-institutions">
+      <vdvc:name>Ārvalstu institūcijas</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="internal-units">
+      <vdvc:name>Struktūrvienības (iekšējā)</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="state-admin-official">
+      <vdvc:name>Valsts pārvaldes iestādes (dienesta vajadzībām)</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="infosec-dataprotection">
+      <vdvc:name>Informācijas drošība un personas datu aizsardzība</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="citizen-submissions">
+      <vdvc:name>Fizisko personu iesniegumi</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="capital-companies">
+      <vdvc:name>Kapitālsabiedrības</vdvc:name>
+    </vdvc:audience>
+    <vdvc:audience id="state-secret">
+      <vdvc:name>Valsts noslēpums</vdvc:name>
+    </vdvc:audience>
+  </vdvc:audiences>
+</vdvc:vocabularies>

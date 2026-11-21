@@ -1153,7 +1153,10 @@ async def handle_classification_lookup(ctx: dict) -> dict:
     summary = inp.get("semanticSummary")
     if isinstance(summary, dict):
         parts.append(str(summary.get("summary") or ""))
-    return {"output": lookup("\n".join(parts))}
+    # The institution's real scheme when the binding names it (uapf:schemaRef), else the simulation.
+    from opendms.uapf import classification_scheme
+    real = await classification_scheme.lookup(ctx, "\n".join(parts))
+    return {"output": real if real is not None else lookup("\n".join(parts))}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1269,7 +1272,7 @@ HANDLERS = {
     "document/sent":     (handle_document_sent,     {"namespace": "document", "operation": "sent", "version": 1,
                                                      "summary": "Mark the outgoing document as sent (no real dispatch)."}),
     "classification/lookup": (handle_classification_lookup, {"namespace": "classification", "operation": "lookup", "version": 1,
-                                                     "summary": "Find the classification scheme entry, unit and retention (SIMULATED scheme)."}),
+                                                     "summary": "Find the classification scheme entry, unit and retention: the scheme named by schemaRef (ProcessGit), else a simulated one."}),
 }
 
 
